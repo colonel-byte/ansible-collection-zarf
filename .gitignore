@@ -1,0 +1,23 @@
+.DS_Store
+.direnv/
+.idea/
+.scratch/
+/.tool-versions
+*.tar
+*.tar.gz
+*.tgz
+*.zst
+!**/testdata/**
+coverage.out
+
+# Build output: the two module files, and the package cache the e2e suite fills.
+build/
+
+# Added for goreleaser:
+dist/
+
+# Added for mdbook:
+book/
+
+# Ansible compiles the action plugins on first use.
+__pycache__/
