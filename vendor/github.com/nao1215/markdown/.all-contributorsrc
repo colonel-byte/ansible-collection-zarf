@@ -1,0 +1,117 @@
+{
+  "projectName": "markdown",
+  "projectOwner": "nao1215",
+  "repoType": "github",
+  "repoHost": "https://github.com",
+  "files": [
+    "README.md"
+  ],
+  "imageSize": 50,
+  "commit": true,
+  "commitConvention": "angular",
+  "contributors": [
+    {
+      "login": "nao1215",
+      "name": "CHIKAMATSU Naohiro",
+      "avatar_url": "https://avatars.githubusercontent.com/u/22737008?v=4",
+      "profile": "https://debimate.jp/",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "varmakarthik12",
+      "name": "Karthik Sundari",
+      "avatar_url": "https://avatars.githubusercontent.com/u/17958166?v=4",
+      "profile": "https://github.com/varmakarthik12",
+      "contributions": [
+        "code",
+        "ideas"
+      ]
+    },
+    {
+      "login": "Avihuc",
+      "name": "Avihuc",
+      "avatar_url": "https://avatars.githubusercontent.com/u/32455410?v=4",
+      "profile": "https://github.com/Avihuc",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "claranceliberi",
+      "name": "Clarance Liberiste Ntwari",
+      "avatar_url": "https://avatars.githubusercontent.com/u/60586899?v=4",
+      "profile": "https://www.claranceliberi.me/",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "amitaifrey",
+      "name": "Amitai Frey",
+      "avatar_url": "https://avatars.githubusercontent.com/u/7527632?v=4",
+      "profile": "https://github.com/amitaifrey",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "wI2L",
+      "name": "William Poussier",
+      "avatar_url": "https://avatars.githubusercontent.com/u/6519569?v=4",
+      "profile": "https://github.com/wI2L",
+      "contributions": [
+        "ideas"
+      ]
+    },
+    {
+      "login": "hibare",
+      "name": "Shubham Hibare",
+      "avatar_url": "https://avatars.githubusercontent.com/u/20609766?v=4",
+      "profile": "https://hibare.in/",
+      "contributions": [
+        "bug"
+      ]
+    },
+    {
+      "login": "esacteksab",
+      "name": "Barry Morrison",
+      "avatar_url": "https://avatars.githubusercontent.com/u/689591?v=4",
+      "profile": "https://barrymorrison.com/",
+      "contributions": [
+        "ideas"
+      ]
+    },
+    {
+      "login": "chaunsin",
+      "name": "chaunsin",
+      "avatar_url": "https://avatars.githubusercontent.com/u/33649884?v=4",
+      "profile": "https://github.com/chaunsin",
+      "contributions": [
+        "ideas"
+      ]
+    },
+    {
+      "login": "EvilBit-Labs",
+      "name": "EvilBit Labs LLC",
+      "avatar_url": "https://avatars.githubusercontent.com/u/64295955?v=4",
+      "profile": "https://evilbitlabs.io",
+      "contributions": [
+        "financial"
+      ]
+    },
+    {
+      "login": "unclesp1d3r",
+      "name": "UncleSp1d3r",
+      "avatar_url": "https://avatars.githubusercontent.com/u/251112?v=4",
+      "profile": "https://unclesp1d3r.github.io",
+      "contributions": [
+        "financial"
+      ]
+    }
+  ],
+  "contributorsPerLine": 7,
+  "linkToUsage": true,
+  "commitType": "docs"
+}
