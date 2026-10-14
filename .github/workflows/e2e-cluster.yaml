@@ -58,7 +58,7 @@ jobs:
         run: curl -sSL https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
 
       - name: Install zarf
-        uses: zarf-dev/setup-zarf@10e539efed02f75ec39eb8540b5458d2c8ae2dca # v1.0.1
+        uses: zarf-dev/setup-zarf@745f0990f3d0611774b552930ea053ac61ebf0a6 # main
 
       # Both k3d configs bind-mount this directory into the nodes as the local-path
       # provisioner's root. k3d does not create it, and a missing bind source fails the
