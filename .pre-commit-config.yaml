@@ -1,0 +1,81 @@
+---
+# Every hook that walks files excludes vendor/. The tree is 5,000-odd files of other people's
+# code: addlicense would stamp a copyright header onto it, the whitespace and smartquote fixers
+# would rewrite it, and ruff and golangci-lint would report on it. All of that is noise, and some
+# of it would make the vendored tree differ from what `go mod vendor` produces -- which is the one
+# property the directory has to keep.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        exclude: vendor/.*
+        args:
+          - "--maxkb=1024"
+      - id: check-merge-conflict
+      - id: detect-aws-credentials
+        exclude: vendor/.*
+        args:
+          - "--allow-missing-credentials"
+      - id: fix-byte-order-marker
+        exclude: vendor/.*
+      - id: end-of-file-fixer
+        exclude: vendor/.*
+      - id: trailing-whitespace
+        args:
+          - --markdown-linebreak-ext=md
+        exclude: vendor/.*
+  - repo: https://github.com/sirosen/texthooks
+    rev: 0.7.1
+    hooks:
+      - id: fix-smartquotes
+        exclude: vendor/.*
+  - repo: https://github.com/google/addlicense
+    rev: v1.2.0
+    hooks:
+      - id: addlicense
+        exclude: vendor/.*
+        exclude_types:
+          - yaml
+          - markdown
+        args:
+          - -c
+          - colonel-byte
+          - -l
+          - apache
+          - -y
+          - "2026"
+  - repo: https://github.com/google/keep-sorted
+    rev: v0.10.0
+    hooks:
+      - id: keep-sorted
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v2.14.0
+    hooks:
+      - id: golangci-lint
+        language_version: "1.27.2"
+        exclude: vendor/.*
+      - id: golangci-lint-config-verify
+        language_version: "1.27.2"
+        exclude: vendor/.*
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.0
+    hooks:
+      # Errors only, and deliberately not the formatter. All of this repository's Python is Ansible
+      # action plugins, written against ansible-core's plugin API: a style rule would have opinions
+      # about that API, and a formatter would rewrite files whose shape is dictated by it. What is
+      # wanted is the class of mistake nothing else here catches -- an unused import, a name that
+      # does not exist, an assignment nothing reads -- which is pyflakes (F) plus ruff's syntax and
+      # IO errors (E9).
+      - id: ruff-check
+        args:
+          - --select=F,E9
+          - --target-version=py39
+        exclude: vendor/.*
+  - repo: local
+    hooks:
+      - id: docs-generator
+        name: generate-docs
+        language: system
+        pass_filenames: false
+        entry: go run ./magefiles/core generate:document
