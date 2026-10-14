@@ -27,7 +27,7 @@
 // them.
 //
 // It needs k3d, a zarf on PATH, ansible-playbook, Docker, and the network to pull three packages
-// once. Nothing here runs under `go test ./...`: it is driven by `mage test:endToEndZarf`, and
+// once. Nothing here runs under `go test ./...`: it is driven by `mage test:endToEndCluster`, and
 // every test skips with a reason when a prerequisite is missing.
 package cluster
 
@@ -66,7 +66,7 @@ const (
 	packagePublicKey      = "test/e2e/cluster/testdata/colonel-byte-zarf-packages.pub"
 )
 
-// The module files the suite drives. mage test:endToEndZarf builds them; see
+// The module files the suite drives. mage test:endToEndCluster builds them; see
 // magefiles/pkg/build.ZarfModules.
 const (
 	initWrapper   = "build/zarf_init"
@@ -199,7 +199,7 @@ func prepare(env *environment) string {
 	} {
 		absolute := filepath.Join(env.root, wrapper.path)
 		if _, err := os.Stat(absolute); err != nil {
-			return fmt.Sprintf("the module wrapper %s is not built: run mage test:endToEndZarf, "+
+			return fmt.Sprintf("the module wrapper %s is not built: run mage test:endToEndCluster, "+
 				"which builds both", wrapper.path)
 		}
 		*wrapper.into = absolute
