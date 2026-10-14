@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://colonel-byte.github.io/ansible-collection-zarf/
+    about: The collection reference, the module guide, and the developer guides.
+  - name: ZEP-0072, the proposal this proves
+    url: https://github.com/zarf-dev/proposals/pull/73
+    about: Discussion of the proposal itself belongs upstream, not here.
