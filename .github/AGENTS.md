@@ -2,7 +2,7 @@
 
 ## Keeping `docs/workflows/` in sync
 
-Every file under [`workflows/`](workflows/) has a matching high-level explanation under [`docs/workflows/`](../docs/workflows/), named after the workflow file with a `.md` extension. The index is [`docs/SUMMARY.md`](../docs/SUMMARY.md), which `mage generate:document` writes from what is on disk - there is no hand-written index to keep in step. When you add, remove, or meaningfully change a workflow's triggers, jobs, or behavior, update its doc in the same pull request:
+Every file under [`workflows/`](workflows/) has a matching high-level explanation under [`docs/workflows/`](../docs/workflows/), named after the workflow file with a `.md` extension -- `workflows/e2e.yaml` is documented in `docs/workflows/e2e.yaml.md`, keeping the `.yaml` so the two line up when sorted. The index is [`docs/SUMMARY.md`](../docs/SUMMARY.md), which `mage generate:document` writes from the `Workflows` section's folder walk in `magefiles/pkg/gen/docs/summary.go` - there is no hand-written index to keep in step. When you add, remove, or meaningfully change a workflow's triggers, jobs, or behavior, update its doc in the same pull request:
 
 - New workflow: add `docs/workflows/<name>.md`, then run `go run ./magefiles/core generate:document` so the chapter appears in `docs/SUMMARY.md`.
 - Removed workflow: delete the doc and regenerate.
@@ -12,11 +12,20 @@ Every file under [`workflows/`](workflows/) has a matching high-level explanatio
 
 [`ISSUE_TEMPLATE/`](ISSUE_TEMPLATE/) holds YAML issue forms rather than Markdown templates, because the dropdowns, required fields, and `render: shell` blocks they rely on only exist in the forms schema. A Markdown template would be free text with a preamble, which is what the tracker had before.
 
-Three things in those forms go stale silently, and GitHub fails none of them in CI:
+There are four forms. Three things in them go stale silently, and GitHub fails none of them in CI:
 
-- The `Which CI job` dropdown in [`ISSUE_TEMPLATE/01-failing-build.yml`](ISSUE_TEMPLATE/01-failing-build.yml) lists the `name:` a workflow displays in the checks list, not its filename - `workflows/e2e.yaml` shows as `Basic build`. Adding, renaming, or removing a workflow means updating that list in the same pull request.
-- The phase dropdown in [`ISSUE_TEMPLATE/03-bug.yml`](ISSUE_TEMPLATE/03-bug.yml) tracks `docs/phases/`, and the suite dropdown in [`ISSUE_TEMPLATE/02-flaky-e2e.yml`](ISSUE_TEMPLATE/02-flaky-e2e.yml) tracks the packages under `test/e2e/`. A new phase or suite belongs in both the code and the form.
-- Every label a form names in `labels:` has to exist on the repository. GitHub drops an unknown label from the created issue without reporting anything, so the issue arrives unlabelled and nothing says why. Check with `gh label list --repo colonel-byte/ansible-collection-zarf`.
+| Form                                                              | Label           | Dropdowns that track something in the tree                    |
+| ----------------------------------------------------------------- | --------------- | ------------------------------------------------------------- |
+| [`01-bug.yml`](ISSUE_TEMPLATE/01-bug.yml)                         | `bug`           | `Which module` - the five modules, plus the roles             |
+| [`02-flaky-e2e.yml`](ISSUE_TEMPLATE/02-flaky-e2e.yml)             | `flaky-test`    | `Which suite` - the packages under `test/e2e/`                |
+| [`03-feature-request.yml`](ISSUE_TEMPLATE/03-feature-request.yml) | `enhancement`   | `Which part` - the modules, split by converging and read-only |
+| [`04-documentation.yml`](ISSUE_TEMPLATE/04-documentation.yml)     | `documentation` | None                                                          |
+
+- **A new or removed module or role belongs in the forms.** `Which module` in `01-bug.yml` and `Which part` in `03-feature-request.yml` both enumerate them, and `03-feature-request.yml` splits them by the converging / read-only boundary that [`ansible/colonel_byte/zarf/AGENTS.md`](../ansible/colonel_byte/zarf/AGENTS.md) defines, so a module that changes kind has to move within that list.
+- **A new suite under `test/e2e/` belongs in `02-flaky-e2e.yml`.** Its `Which suite` options name the package and what it needs installed, so the prerequisites belong in the option text too.
+- **Every label a form names in `labels:` has to exist on the repository.** GitHub drops an unknown label from the created issue without reporting anything, so the issue arrives unlabelled and nothing says why. Check with `gh label list --repo colonel-byte/ansible-collection-zarf`.
+
+The forms do not enumerate workflows. A failing CI job is reported through `01-bug.yml` like anything else, so adding or renaming a workflow means updating its page under [`docs/workflows/`](../docs/workflows/) and nothing in `ISSUE_TEMPLATE/`.
 
 A malformed form is reported as a banner on <https://github.com/colonel-byte/ansible-collection-zarf/issues/new/choose> and nowhere else. Open that page on the branch after changing a form; parsing as YAML is not enough to know it renders.
 
@@ -125,7 +134,7 @@ Then add at most three `###` subsections, one per point a reviewer has to know a
 
 Tests and leftover work compete for the same three subsections. Add `### Tests` where the tests are themselves a point of note, saying what they pin down and which checks were run - and do not claim a check passed without running it. Add `### Follow-up` where the change leaves work behind for another branch or repository, saying what and where.
 
-Name symbols, files, and identifiers in backticks - `EncryptAtPath`, `docs/dev/fuzz-tests.md`, `{0, pass: hunter2}` - so a reviewer can search for them.
+Name symbols, files, and identifiers in backticks - `buildDeployArgs`, `docs/dev/e2e-tests.md`, `--verify=always` - so a reviewer can search for them.
 
 Markdown in a pull request body follows the same rule as the rest of the repository: no hard-wrapped lines, one paragraph or list item per line. See [`docs/AGENTS.md`](../docs/AGENTS.md).
 

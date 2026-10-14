@@ -2,7 +2,7 @@
 
 `ansible/colonel_byte/zarf`, `internal/zarfmod`, `cmd/`, and `test/e2e/cluster` exist to prove [ZEP-0072](https://github.com/zarf-dev/proposals/pull/73), which proposes native Ansible module support for zarf. They are not part of what cargoship does. Cargoship builds and installs offline Kubernetes distro packages and runs a cluster lifecycle over SSH; nothing in that needs a zarf module, and no cargoship command calls into any of this.
 
-They live here because the pattern the proposal describes is the one `colonel_byte.cargoship` already runs -- see [choice-ansible-module](choice-ansible-module.md) -- so the cheapest place to find out whether the pattern holds for zarf was beside the implementation it copies. That was the whole reason, and it expires.
+They live here because the pattern the proposal describes is the one `colonel_byte.cargoship` already runs -- see [choice-ansible-module](https://github.com/colonel-byte/cargoship/blob/main/docs/agent/choice-ansible-module.md) -- so the cheapest place to find out whether the pattern holds for zarf was beside the implementation it copies. That was the whole reason, and it expires.
 
 This note exists so that whoever removes it does not have to work out whether it was load-bearing first.
 

@@ -35,8 +35,10 @@ func generateSummary() error {
 
 	// Section order matters beyond the sidebar: docs/css/print.css drops everything from the
 	// first Development chapter to the end of the document out of the print page, so
-	// Development, Agent and Misc have to stay last, in that order. Anything added after them is
-	// excluded from print too.
+	// Development has to stay ahead of the sections meant to be excluded with it. Workflows and
+	// Agent sit after it for that reason, and anything added after them is excluded from print
+	// too. The rule keys on the mdBook slug of the first Development chapter's own H1, so
+	// reordering this list means rewording that selector with it.
 	summary := []struct {
 		title  string
 		folder string
@@ -70,6 +72,15 @@ func generateSummary() error {
 		{
 			title:  "Development",
 			folder: "dev",
+			regex:  `(.+)\.md`,
+			note:   printExcludedNote,
+		},
+		{
+			// One chapter per file under .github/workflows/, which .github/AGENTS.md requires
+			// to exist and to stay current. The folder walk is what makes a new workflow's doc
+			// reach the sidebar without a hand-written index.
+			title:  "Workflows",
+			folder: "workflows",
 			regex:  `(.+)\.md`,
 			note:   printExcludedNote,
 		},

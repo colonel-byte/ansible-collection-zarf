@@ -3,7 +3,7 @@
 | Role                                         | What it does                                                                           |
 | -------------------------------------------- | -------------------------------------------------------------------------------------- |
 | [`packages`](role_packages.md)               | Queries the cluster via `zarf package list` and sets the `zarf_packages` fact.         |
-| [`package_inspect`](role_package_inspect.md) | Inspects a Zarf package definition and sets structured metadata facts.                  |
+| [`package_inspect`](role_package_inspect.md) | Inspects a Zarf package definition and sets structured metadata facts.                 |
 | [`state`](role_state.md)                     | Queries the cluster for the `zarf-state` Secret and sets the parsed `zarf_state` fact. |
 
 ## packages

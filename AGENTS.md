@@ -8,29 +8,30 @@ Nothing here runs on the cluster's nodes. The modules run the installed `zarf` o
 
 ## Layout
 
-| Path | What lives there |
-| ---- | ---------------- |
-| `cmd/init/`, `cmd/deploy/` | A `main` package per wrapper binary. Both are thirty-line entry points; everything they do is in `internal/zarfmod` |
-| `internal/zarfmod/` | The module logic: `argv[0]` dispatch, the WANT_JSON intake, the command-line rendering, the progress reader, the stdout guard, the heartbeat, the response |
-| `internal/testenv/` | Scaffolding the end-to-end suites share: the repo-root chdir, and waiting on a cluster |
-| `ansible/colonel_byte/zarf/` | The collection: action plugins, the shared Python, roles. See [`ansible/colonel_byte/zarf/AGENTS.md`](ansible/colonel_byte/zarf/AGENTS.md) |
-| `ansible/examples/playbooks/` | Runnable example playbooks |
-| `test/e2e/noncluster/` | The suite that needs no cluster: the read-only modules and the state redaction, against a stub zarf |
-| `test/e2e/cluster/` | The suite that needs k3d, zarf and Docker: both wrappers walked across two real clusters |
-| `magefiles/` | The task runner's source: build, test and generate targets. See [`magefiles/AGENTS.md`](magefiles/AGENTS.md) |
-| `docs/` | The mdBook source. Several subpaths are generated and must not be hand-edited -- see [`docs/AGENTS.md`](docs/AGENTS.md) |
-| `docs/agent/choice-*.md` | Records of non-obvious decisions and the tradeoffs behind them -- read before reversing one |
+| Path                          | What lives there                                                                                                                                           |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cmd/init/`, `cmd/deploy/`    | A `main` package per wrapper binary. Both are thirty-line entry points; everything they do is in `internal/zarfmod`                                        |
+| `internal/zarfmod/`           | The module logic: `argv[0]` dispatch, the WANT_JSON intake, the command-line rendering, the progress reader, the stdout guard, the heartbeat, the response |
+| `internal/testenv/`           | Scaffolding the end-to-end suites share: the repo-root chdir, and waiting on a cluster                                                                     |
+| `ansible/colonel_byte/zarf/`  | The collection: action plugins, the shared Python, roles. See [`ansible/colonel_byte/zarf/AGENTS.md`](ansible/colonel_byte/zarf/AGENTS.md)                 |
+| `ansible/examples/playbooks/` | Runnable example playbooks                                                                                                                                 |
+| `test/e2e/noncluster/`        | The suite that needs no cluster: the read-only modules and the state redaction, against a stub zarf                                                        |
+| `test/e2e/cluster/`           | The suite that needs k3d, zarf and Docker: both wrappers walked across two real clusters                                                                   |
+| `magefiles/`                  | The task runner's source: build, test and generate targets. See [`magefiles/AGENTS.md`](magefiles/AGENTS.md)                                               |
+| `docs/`                       | The mdBook source. Several subpaths are generated and must not be hand-edited -- see [`docs/AGENTS.md`](docs/AGENTS.md)                                    |
+| `docs/workflows/`             | One page per file under `.github/workflows/`, named after it with a `.md` extension -- required by [`.github/AGENTS.md`](.github/AGENTS.md)                |
+| `docs/agent/choice-*.md`      | Records of non-obvious decisions and the tradeoffs behind them -- read before reversing one                                                                |
 
 Several directories carry their own `AGENTS.md` with rules specific to that directory. Check the closest one before editing. Keep this table in sync when adding or removing one.
 
-| `AGENTS.md` | Covers |
-| ----------- | ------ |
-| [`ansible/AGENTS.md`](ansible/AGENTS.md) | Markdown and table formatting rules that feed generated docs |
+| `AGENTS.md`                                                                  | Covers                                                                                                                                   |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| [`ansible/AGENTS.md`](ansible/AGENTS.md)                                     | Markdown and table formatting rules that feed generated docs                                                                             |
 | [`ansible/colonel_byte/zarf/AGENTS.md`](ansible/colonel_byte/zarf/AGENTS.md) | The collection's contract: the two kinds of module, the `cli_flag` key, quoting every description, the test lists a new plugin must join |
-| [`docs/AGENTS.md`](docs/AGENTS.md) | Markdown formatting, generated pages, redirects for a moved page |
-| [`magefiles/AGENTS.md`](magefiles/AGENTS.md) | Mage target layout and structure rules |
-| [`test/e2e/AGENTS.md`](test/e2e/AGENTS.md) | Fixtures belong in files, not Go string constants |
-| [`.github/AGENTS.md`](.github/AGENTS.md) | Scorecard-safe workflow changes, PR description format |
+| [`docs/AGENTS.md`](docs/AGENTS.md)                                           | Markdown formatting, generated pages, redirects for a moved page                                                                         |
+| [`magefiles/AGENTS.md`](magefiles/AGENTS.md)                                 | Mage target layout and structure rules                                                                                                   |
+| [`test/e2e/AGENTS.md`](test/e2e/AGENTS.md)                                   | Fixtures belong in files, not Go string constants                                                                                        |
+| [`.github/AGENTS.md`](.github/AGENTS.md)                                     | Scorecard-safe workflow changes, the workflow docs under `docs/workflows/`, the issue forms, PR description format                       |
 
 `CLAUDE.md` in the repository root is a symlink to this file, so a Claude Code session started there loads these rules without being asked. That covers the root and nothing else: the directory-specific files above are not symlinked. Do not treat "nothing was loaded for me" as "there are no rules here", and do not grep a rules file for the one thing you thought to ask about. Open the closest `AGENTS.md` and read it.
 
@@ -67,12 +68,12 @@ The `tool` directives in `go.mod` are vendored too, so `generate:document` runs 
 
 Most of what is worth knowing about this repository is enforced by four tests in `internal/zarfmod`, and it is worth knowing which one catches what:
 
-| Test | What it would catch |
-| ---- | ------------------- |
-| `TestActionPluginDocsMatchModuleParams` | A parameter added to a wrapper module's Go struct and not to its Python `DOCUMENTATION`, or the reverse |
-| `TestInfoPluginDocsMatchRenderedFlags` | A read-only module's documented `cli_flag` values disagreeing with the flags its `command_parts` function names |
-| `TestEveryActionPluginIsCovered` | A new action plugin that no test looks at, and a test list naming a plugin that no longer exists |
-| `TestInitArgsAreKnownFlags`, `TestDeployArgsAreKnownFlags` | A flag the module renders that the recorded zarf does not accept |
+| Test                                                       | What it would catch                                                                                             |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `TestActionPluginDocsMatchModuleParams`                    | A parameter added to a wrapper module's Go struct and not to its Python `DOCUMENTATION`, or the reverse         |
+| `TestInfoPluginDocsMatchRenderedFlags`                     | A read-only module's documented `cli_flag` values disagreeing with the flags its `command_parts` function names |
+| `TestEveryActionPluginIsCovered`                           | A new action plugin that no test looks at, and a test list naming a plugin that no longer exists                |
+| `TestInitArgsAreKnownFlags`, `TestDeployArgsAreKnownFlags` | A flag the module renders that the recorded zarf does not accept                                                |
 
 The last pair checks against a recorded list, not against zarf's own command tree, so it cannot catch a zarf release that renamed a flag. Refresh the lists with `generate:zarfFlags` when the zarf the modules run moves, and read the diff.
 

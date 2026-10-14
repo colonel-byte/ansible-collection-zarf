@@ -12,10 +12,10 @@ A role that configures cluster nodes directly -- writing files on them, installi
 
 ## Two kinds of module, and the boundary between them
 
-| Kind | Modules | How it is built |
-| ---- | ------- | --------------- |
-| Converging | `zarf_init`, `zarf_package_deploy` | A compiled wrapper binary, with its parameters as a Go struct in `internal/zarfmod` and its command line rendered by a Go function. The action plugin holds the documented parameter surface and the delivery, and no translation rules. |
-| Read-only | `zarf_package_info`, `zarf_package_inspect`, `zarf_state_info` | The action plugin is the whole implementation, sharing `ZarfInfoActionBase` in `plugins/plugin_utils/info.py`. No binary, no Go struct. |
+| Kind       | Modules                                                        | How it is built                                                                                                                                                                                                                          |
+| ---------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Converging | `zarf_init`, `zarf_package_deploy`                             | A compiled wrapper binary, with its parameters as a Go struct in `internal/zarfmod` and its command line rendered by a Go function. The action plugin holds the documented parameter surface and the delivery, and no translation rules. |
+| Read-only  | `zarf_package_info`, `zarf_package_inspect`, `zarf_state_info` | The action plugin is the whole implementation, sharing `ZarfInfoActionBase` in `plugins/plugin_utils/info.py`. No binary, no Go struct.                                                                                                  |
 
 The boundary is not stylistic, and [choice-zarf-info-modules](../../../docs/agent/choice-zarf-info-modules.md) records where it sits. The short version: a wrapper earns its keep on a flag surface worth projecting, progress worth following, and a `changed` worth signalling. A read-only command has none of the three. The threshold for crossing back is named in that record -- **a read-only module that grows a second or third parameter-controlled flag, or any flag whose value attaches in a way pflag cares about, wants a wrapper binary** rather than a better regular expression.
 
@@ -34,13 +34,13 @@ Files that do not ship, and links between files inside `docs/`, stay relative.
 
 ## Single sources of truth
 
-| Component | Source of truth | Generated page |
-| --------- | --------------- | -------------- |
-| Roles | `roles/<role>/meta/argument_specs.yml` and `roles/<role>/defaults/main.yml` | `docs/ansible/role_<role>.md` |
-| Modules | `plugins/action/<module>.py` (`DOCUMENTATION` and `EXAMPLES` blocks) | `docs/ansible/module_<module>.md` |
-| Collection overview | `docs/ansible/collection.md` | Hand-written; not generated |
-| Modules overview | `docs/ansible/modules.md` | Hand-written; not generated |
-| Roles overview | `docs/ansible/roles.md` | Hand-written; not generated |
+| Component           | Source of truth                                                             | Generated page                    |
+| ------------------- | --------------------------------------------------------------------------- | --------------------------------- |
+| Roles               | `roles/<role>/meta/argument_specs.yml` and `roles/<role>/defaults/main.yml` | `docs/ansible/role_<role>.md`     |
+| Modules             | `plugins/action/<module>.py` (`DOCUMENTATION` and `EXAMPLES` blocks)        | `docs/ansible/module_<module>.md` |
+| Collection overview | `docs/ansible/collection.md`                                                | Hand-written; not generated       |
+| Modules overview    | `docs/ansible/modules.md`                                                   | Hand-written; not generated       |
+| Roles overview      | `docs/ansible/roles.md`                                                     | Hand-written; not generated       |
 
 ## Quote every description entry
 
