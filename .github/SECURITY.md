@@ -1,0 +1,54 @@
+# Security Policy
+
+## Supported versions
+
+This collection is pre-1.0 and releases from `main` on every conventional commit that warrants one, so fixes land in a new minor release rather than being backported. Only the most recent release line receives security fixes; upgrade before reporting an issue against an older tag.
+
+| Version               | Supported |
+| --------------------- | --------- |
+| Latest `v0.x` release | Yes       |
+| Any earlier release   | No        |
+
+## Reporting a vulnerability
+
+Report privately through GitHub: **[open a draft advisory](https://github.com/colonel-byte/ansible-collection-zarf/security/advisories/new)**. Do not open a public issue, and do not include a working exploit against a third party's cluster.
+
+You should expect an acknowledgement within 3 business days and an assessment -- whether we consider it a vulnerability, and the severity we assign -- within 10 business days. Confirmed issues are fixed in the next release, and we aim to publish the advisory within 90 days of the report, sooner when a fix is already out. You will be credited in the advisory unless you ask not to be.
+
+Include the collection version from `galaxy.yml`, the output of `zarf version` on the node the play runs on, the `ansible --version`, the task that reproduces the behaviour, and what an attacker gains.
+
+## Scope
+
+This collection runs `zarf` on the node a task is delegated to. It holds cluster credentials in flight, and that is where its security surface is.
+
+In scope:
+
+- **Credential delivery to a module.** The action plugin pipes parameters on stdin where the connection can carry them, and falls back to a `0600` file in a `0700` directory where it cannot. A path by which registry or git credentials reach disk unprotected, survive the task, or become readable by another user is in scope.
+- **Credential exposure in output.** The wrappers mask credential values in the command line they report. `zarf_state_info` withholds the eight credentials in the `zarf-state` Secret by default and sets `_ansible_no_log` when asked for them, and the `state` role sets `zarf_no_log` on its `set_fact` as well as on the module call -- see [choice-zarf-info-modules](../docs/agent/choice-zarf-info-modules.md). A credential that reaches a log, a fact cache, or a registered variable's display against those rules is in scope.
+- **Credentials in the process table.** Flags are rendered for the real run, so a secret passed as a parameter is visible to any local user via `/proc` for the duration. This is documented rather than fixed -- name a zarf config file with `zarf_config` to avoid it -- but a case not covered by that advice is in scope.
+- **The `argv[0]` dispatch.** A module file invoked under an unexpected name, or with `ZARF_ANSIBLE_MODULE` set by an untrusted party, must not run something other than the module it names.
+- **Package verification.** The `verify` and `key` parameters, and the `--verify=always` rendering they depend on.
+- **The release workflow and the artifacts it publishes.**
+
+Out of scope:
+
+- **Vulnerabilities in zarf itself** -- report those to [zarf-dev/zarf](https://github.com/zarf-dev/zarf/security). This collection runs the zarf that is installed; it does not vendor or patch it.
+- **Vulnerabilities in Ansible, or in a connection plugin.**
+- Anything that requires an attacker to already have root, or the invoking user's account, on the node the play runs on -- that node holds the kubeconfig by design.
+- Misconfiguration of a user's own cluster, and a playbook author's own failure to set `no_log` on a task of their own.
+
+## Verifying a release
+
+Release archives and `checksums.txt` are signed with cosign using the key whose public half is [`cosign.pub`](https://github.com/colonel-byte/ansible-collection-zarf/blob/main/cosign.pub) in this repository, archives ship with an SBOM, and every tag also publishes `ai-bom.json` -- the AI-usage disclosure manifest described below -- attested and signed the same way.
+
+```console
+cosign verify-blob --key cosign.pub --bundle checksums.txt.sigstore.json checksums.txt
+```
+
+## AI-assisted development
+
+This collection's code, docs, and design records are written with AI coding agents in the loop. See [AI usage](../docs/agent/ai-usage.md) for what's used and how it's reviewed. Each release publishes `ai-bom.json`, a per-release snapshot of that disclosure -- verify it the same way as the other release artifacts, [above](#verifying-a-release).
+
+## Security in CI
+
+Pull requests and `main` are scanned by CodeQL, dependencies are updated by Dependabot, and supply-chain practices are scored weekly by OpenSSF Scorecard. Results appear in the repository's Security tab.

@@ -1,0 +1,37 @@
+name: Feature request
+description: Something this collection should be able to do and cannot.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |-
+        This collection is a proof of [ZEP-0072](https://github.com/zarf-dev/proposals/pull/73), and that bounds it. A change to what the proposal itself specifies belongs upstream in the proposal. A new zarf capability belongs in zarf. What belongs here is a gap between the two.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do and where the collection stops you. Describe this before the solution - the problem usually has more than one answer.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part
+      multiple: true
+      options:
+        - A converging module (zarf_init, zarf_package_deploy)
+        - A read-only module (zarf_package_info, zarf_package_inspect, zarf_state_info)
+        - A role
+        - A new module
+        - The release artifacts
+        - Documentation
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: What you have in mind
+      description: Optional. If this needs a new module, say whether it converges a cluster or reads one - that decides whether it is a wrapper binary or an action plugin. See docs/agent/choice-zarf-info-modules.md.

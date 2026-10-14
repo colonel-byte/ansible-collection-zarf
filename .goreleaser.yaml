@@ -1,0 +1,186 @@
+# Copyright 2026 colonel-byte
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+---
+version: 2
+
+project_name: zarf-ansible-modules
+
+before:
+  hooks:
+    # The Ansible collection is a release artifact of its own: the management node that runs the
+    # playbooks is inside the airlock, so it installs the collection from this tarball rather than
+    # from Galaxy. A snapshot passes no version, because its version is not the one in galaxy.yml.
+    - hack/ansible-build-collection.sh bin/ansible {{ if .IsSnapshot }}""{{ else }}{{ .Version }}{{ end }} ansible/colonel_byte/zarf
+
+builds:
+  # The two Ansible module files. Each is a module file rather than a CLI: it reads JSON
+  # parameters, runs the installed zarf, and writes one JSON object, so it is only ever invoked by
+  # Ansible or by an operator reproducing such a run. See docs/agent/choice-zarf-ansible-module.md.
+  #
+  # Linux only: Ansible runs the module file on the management node, and the management nodes this
+  # is for run Linux. The packages below carry a symlink to each binary, so a package built for an
+  # architecture the binary was not built for would install a dangling one -- which is why both
+  # builds carry the same architecture list.
+  - id: zarf_init
+    main: ./cmd/init
+    binary: zarf_init
+    ldflags:
+      - -s
+      - -w
+    gcflags:
+      - all=-l
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - arm64
+      - amd64
+      - riscv64
+    goamd64:
+      - v1
+    flags:
+      - -trimpath
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+  - id: zarf_package_deploy
+    main: ./cmd/deploy
+    binary: zarf_package_deploy
+    ldflags:
+      - -s
+      - -w
+    gcflags:
+      - all=-l
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - arm64
+      - amd64
+      - riscv64
+    goamd64:
+      - v1
+    flags:
+      - -trimpath
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  # Both module files, archived together. ids is explicit rather than omitted: without it a third
+  # build added later would land in this archive silently.
+  - id: zarf_modules
+    ids:
+      - zarf_init
+      - zarf_package_deploy
+    formats:
+      - tar.gz
+    name_template: >-
+      zarf_ansible_modules_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+
+checksum:
+  name_template: "checksums.txt"
+
+sboms:
+  - artifacts: archive
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+
+nfpms:
+  - id: packagers
+    package_name: zarf-ansible-modules
+    # Both module files, listed explicitly so that adding a third build does not silently add a
+    # third binary to this package.
+    ids:
+      - zarf_init
+      - zarf_package_deploy
+    license: Apache 2.0
+    maintainer: |-
+      Allen Conlon <software@conlon.dev>
+    description: |-
+      Ansible modules for zarf: initialise an air-gapped cluster and deploy zarf packages
+      from a playbook. A proof of ZEP-0072.
+    formats:
+      - apk
+      - deb
+      - rpm
+    goamd64:
+      - v1
+    mtime: "{{ .CommitDate }}"
+    contents:
+      # The Ansible collection. /usr/share/ansible/collections is on ansible-core's default
+      # collections path, so installing the package is all a management node needs beyond a
+      # zarf of its own.
+      - src: ansible/colonel_byte/zarf
+        dst: /usr/share/ansible/collections/ansible_collections/colonel_byte/zarf
+        type: tree
+        # Explicit, and not a tidiness preference.
+        file_info:
+          mode: 0755
+      # The module files. The collection's action plugins invoke /usr/bin/zarf_init and
+      # /usr/bin/zarf_package_deploy directly rather than staging a module file, so these
+      # symlinks are for a conventional Ansible caller that does stage one. There is no Python
+      # module behind either name: the binary answers Ansible when it is invoked under a zarf_
+      # name. See docs/agent/choice-zarf-ansible-module.md.
+      - src: /usr/bin/zarf_init
+        dst: /usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/plugins/modules/zarf_init
+        type: symlink
+      - src: /usr/bin/zarf_package_deploy
+        dst: /usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/plugins/modules/zarf_package_deploy
+        type: symlink
+    rpm:
+      compression: gzip
+
+changelog:
+  sort: asc
+
+signs:
+  - id: checksum
+    cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    args:
+      - "sign-blob"
+      - "--key=env://COSIGN_PRIVATE_KEY"
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+    stdin: "{{ .Env.COSIGN_PASSWORD }}"
+  - id: archive
+    cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    args:
+      - "sign-blob"
+      - "--key=env://COSIGN_PRIVATE_KEY"
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: archive
+    stdin: "{{ .Env.COSIGN_PASSWORD }}"
+
+release:
+  github:
+    owner: colonel-byte
+    name: ansible-collection-zarf
+  name_template: "v{{ .Version }}"
+  mode: append
+  # The collection tarball and its signature are built by the before hook above rather than by a
+  # build, so they reach the release this way. They carry their own cosign bundle because the
+  # checksums file covers artifacts the pipeline built itself.
+  extra_files:
+    - glob: bin/ansible/colonel_byte-zarf-*.tar.gz
+    - glob: bin/ansible/colonel_byte-zarf-*.tar.gz.sigstore.json
