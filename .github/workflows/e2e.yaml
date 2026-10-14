@@ -1,0 +1,55 @@
+---
+name: E2E
+
+# The suite that needs no cluster: the three read-only modules and the state redaction,
+# driven through a real ansible-playbook against a stub zarf. It is a required status check,
+# so the triggers carry no path filter -- a filtered required check never reports at all on a
+# change that only touches the ignored paths, which leaves the check pending forever.
+#
+# The suite that needs k3d, a real zarf and Docker is not run here; see e2e-cluster.yaml.
+on:
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+# Abort prior jobs in the same workflow / PR. github.ref is distinct per merge_group ref, so
+# a queued entry is never cancelled by a push to the pull request it came from.
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e-noncluster:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup golang
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Setup python
+        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.12"
+
+      # Every module in this collection is an action plugin, so only Ansible can run one.
+      # Without ansible-playbook on PATH the whole suite skips itself with a reason and the
+      # job still passes -- which is exactly the failure mode worth preventing here, so the
+      # install is a step rather than an optional convenience.
+      - name: Install ansible-core
+        run: pip install 'ansible-core>=2.16'
+
+      - name: Run the non-cluster e2e suite
+        run: go run -mod=vendor ./magefiles/core test:endToEndNonCluster
+        env:
+          # Everything the build needs is vendored, so make any accidental network access
+          # fail fast rather than quietly succeed on a machine that happens to be online.
+          GOFLAGS: -mod=vendor
+          GOPROXY: "off"
+          GOSUMDB: "off"
+          GOTOOLCHAIN: local

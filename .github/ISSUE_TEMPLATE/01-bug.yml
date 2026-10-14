@@ -1,0 +1,71 @@
+name: Bug report
+description: A module does something other than what it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |-
+        A failure in `zarf` itself belongs in [zarf-dev/zarf](https://github.com/zarf-dev/zarf/issues). This collection runs the zarf that is installed; it does not patch it. If the same `zarf` command fails when you run it by hand, it is a zarf issue.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What the module did, and what you expected instead.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: module
+    attributes:
+      label: Which module
+      multiple: true
+      options:
+        - zarf_init
+        - zarf_package_deploy
+        - zarf_package_info
+        - zarf_package_inspect
+        - zarf_state_info
+        - A role (packages, package_inspect, state)
+        - Not module-specific
+    validations:
+      required: true
+
+  - type: textarea
+    id: task
+    attributes:
+      label: The task that reproduces it
+      description: The playbook task, with credentials removed. Include how you invoked ansible-playbook.
+      render: yaml
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: The task output at `-v`. Check it for credentials before pasting - `zarf_state_info` withholds them by default, but a playbook of your own may not.
+      render: shell
+    validations:
+      required: true
+
+  - type: input
+    id: zarf-version
+    attributes:
+      label: Output of `zarf version`
+      description: From the node the play runs on, which is where the module runs zarf.
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: The collection version from `galaxy.yml`, `ansible --version`, the host OS and architecture of the node the play runs on, and the Kubernetes distribution of the target cluster.
+      placeholder: |-
+        collection: 0.32.1
+        ansible-core: 2.18.1
+        node: Fedora 42, x86_64
+        cluster: k3s v1.31.4
+    validations:
+      required: true

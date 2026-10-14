@@ -1,0 +1,82 @@
+---
+name: E2E cluster
+
+# The suite that walks both wrapper binaries across two real k3d clusters. It stands up two
+# clusters, pulls three zarf packages, and runs a real zarf init against each -- which is why
+# it is not a required check on every push: it is the slowest and least hermetic thing here,
+# and the first run on a cold cache pays for the package pulls.
+#
+# It runs on demand from the Actions tab, and on a pull request carrying the "e2e-cluster"
+# label. Everything it covers that can be covered without a cluster already is, by the unit
+# tests and by e2e.yaml.
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
+    paths-ignore:
+      - "**.md"
+      - "**.jpg"
+      - "**.png"
+      - "**.gif"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-cluster-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cluster:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'e2e-cluster')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup golang
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Setup python
+        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install ansible-core
+        run: pip install 'ansible-core>=2.16'
+
+      - name: Install k3d
+        run: curl -sSL https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+
+      - name: Install zarf
+        uses: zarf-dev/setup-zarf@10e539efed02f75ec39eb8540b5458d2c8ae2dca # v1.0.1
+
+      # Both k3d configs bind-mount this directory into the nodes as the local-path
+      # provisioner's root. k3d does not create it, and a missing bind source fails the
+      # cluster create before any test runs.
+      - name: Create the local-path volume
+        run: mkdir -p /tmp/k3d
+
+      - name: Run the cluster e2e suite
+        run: go run -mod=vendor ./magefiles/core test:endToEndCluster
+        env:
+          # The Go build is fully vendored. The suite itself does reach the network -- it
+          # pulls three zarf packages on a cold cache -- so this closes the module proxy
+          # only, not the network.
+          GOFLAGS: -mod=vendor
+          GOPROXY: "off"
+          GOSUMDB: "off"
+          GOTOOLCHAIN: local
+
+      - name: Tear down any surviving clusters
+        if: always()
+        run: go run -mod=vendor ./magefiles/core test:cleanClusters

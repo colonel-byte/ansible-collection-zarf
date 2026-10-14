@@ -1,0 +1,41 @@
+# End-to-end tests
+
+There are two suites, split by whether they need a cluster. Both drive a real `ansible-playbook`, because every module here is an action plugin and only Ansible can run one. Neither runs under a bare `go test ./...`: both are behind mage targets, and every test skips with a reason when a prerequisite is missing rather than failing.
+
+## `test/e2e/noncluster`
+
+Needs `ansible-playbook` and nothing else. It covers the three read-only modules and the `state` role.
+
+The one impure step in a read-only module is running zarf, so the suite stands a stub in its place: `testdata/zarf-state-stub.sh` prints the base64 of a recorded `zarf-state` Secret, and `zarf-package-list-stub.sh` prints a recorded package list. The playbook passes the stub as the module's `zarf_binary`.
+
+```sh
+go run ./magefiles/core test:endToEndNonCluster
+```
+
+Two things about these tests are deliberate rather than incidental, and both are easy to undo by accident:
+
+- **They count the assertions that reported passing.** A renamed fact or a skipped block leaves every remaining assertion passing, and `failed=0` would call that a success. The expected count is read out of the playbook rather than written in the Go file, so adding an assertion does not quietly stop the count from meaning anything.
+- **They read the playbook, the fixture and the plugin before running anything.** Go's test cache keys on the files the test process opens, and everything these tests exercise is opened by the `ansible-playbook` child. Without those reads, editing a plugin leaves a passing result cached -- which is the shape of mistake that gets a credential leak marked as fixed.
+
+## `test/e2e/cluster`
+
+Needs `k3d`, a `zarf` on `PATH`, `ansible-playbook`, Docker, and the network to pull three packages on the first run. It builds both module files first, stands up two k3d clusters, and walks `zarf_init` and `zarf_package_deploy` across each.
+
+```sh
+go run ./magefiles/core test:endToEndCluster
+```
+
+Two clusters, because the walk differs by what storage the cluster has. `testdata/k3d-config.yaml` is [the config from colonel-byte/uds-bundles](https://github.com/colonel-byte/uds-bundles/blob/main/k3d-config.yaml) copied verbatim, so that what the modules initialise is the cluster shape that repository already deploys onto; `k3d-config-local-storage.yaml` is the same file with k3s local-storage left enabled, which is what lets a walk begin with `init` at all. Each fixture carries a header saying which walk it serves and why. The reasoning behind needing both is in [choice-zarf-ansible-module](../agent/choice-zarf-ansible-module.md).
+
+| Variable                           | What it does                                                                                                              |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `ZARF_ANSIBLE_E2E_INIT_PACKAGE`    | Names an init package to use instead of pulling one. Set it for an offline run, or to test a package built from a branch. |
+| `ZARF_ANSIBLE_E2E_STORAGE_PACKAGE` | The same, for the storage provider package.                                                                               |
+| `ZARF_ANSIBLE_E2E_KEEP`            | Leaves both clusters running afterwards, for looking at what the modules did.                                             |
+
+Packages are cached under `build/tmp/zarf-e2e` between runs, so the three downloads happen once. `test:cleanClusters` removes the clusters a run interrupted before its own cleanup left behind.
+
+Two findings from this suite are worth knowing before changing anything it covers:
+
+- **`--verify` must be rendered as `--verify=always`.** It is a flag with a no-argument default, so pflag reads it the way it reads a boolean: the space form leaves `always` as a positional argument and zarf rejects the command for having one argument too many.
+- **Registry proxy mode is what makes a local cluster usable.** Zarf's default nodeport mode pushes every image through a Kubernetes NodePort, and on k3d that push times out and retries for minutes. `registry_mode: proxy` puts a DaemonSet on a host port instead, and the same initialisation finishes in about a minute.

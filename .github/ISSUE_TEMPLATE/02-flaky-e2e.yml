@@ -1,0 +1,59 @@
+name: Flaky end-to-end test
+description: A test in test/e2e passes and fails on the same tree.
+labels: ["flaky-test"]
+body:
+  - type: markdown
+    attributes:
+      value: |-
+        Both suites skip with a reason when a prerequisite is missing, and a skip is not a flake. Check the output says the test ran before filing.
+
+  - type: dropdown
+    id: suite
+    attributes:
+      label: Which suite
+      options:
+        - test/e2e/noncluster - the read-only modules, needs ansible-playbook
+        - test/e2e/cluster - both wrappers on k3d, needs k3d, zarf, Docker
+    validations:
+      required: true
+
+  - type: input
+    id: test
+    attributes:
+      label: Test name
+      placeholder: TestZarfStateInfoWithholdsCredentials
+    validations:
+      required: true
+
+  - type: input
+    id: command
+    attributes:
+      label: How it was run
+      placeholder: go run ./magefiles/core test:endToEndNonCluster
+    validations:
+      required: true
+
+  - type: input
+    id: rate
+    attributes:
+      label: How often it fails
+      placeholder: 2 runs in 10
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Failure output
+      description: The failing assertion, and the ansible-playbook output around it where the suite drove a playbook.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Host OS and architecture, plus the Go, Docker, k3d, zarf and ansible-playbook versions the suite needs.
+    validations:
+      required: true

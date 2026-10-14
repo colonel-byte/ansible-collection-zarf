@@ -1,0 +1,36 @@
+name: Documentation
+description: A page is wrong, missing, or misleading.
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |-
+        Several pages are generated and carry a `DO NOT EDIT` banner. Report the problem here either way - the fix is in what they are generated from, and it is worth knowing which page a reader hit.
+
+  - type: input
+    id: page
+    attributes:
+      label: Which page
+      placeholder: https://colonel-byte.github.io/ansible-collection-zarf/ansible/module_init.html
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of problem
+      options:
+        - Factually wrong - it describes behaviour the collection does not have
+        - Out of date - it described real behaviour once
+        - Missing - something is not documented anywhere
+        - Unclear - correct, but it misled me
+    validations:
+      required: true
+
+  - type: textarea
+    id: detail
+    attributes:
+      label: Details
+      description: What it says, and what it should say.
+    validations:
+      required: true

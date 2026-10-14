@@ -1,0 +1,46 @@
+---
+name: Unit tests
+
+on:
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+# Abort prior jobs in the same workflow / PR
+concurrency:
+  group: unit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup golang
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      # Everything but the two suites with runners of their own: e2e.yaml drives
+      # ./test/..., which needs Ansible, k3d and Docker. See Test.Unit in magefiles/test.go.
+      #
+      # This is where the collection and the Go code are held against each other --
+      # TestActionPluginDocsMatchModuleParams, TestInfoPluginDocsMatchRenderedFlags,
+      # TestEveryActionPluginIsCovered and the recorded flag lists all run here, and all of
+      # them need nothing installed.
+      #
+      # go run ./magefiles/core rather than mage: same target, and it needs no mage binary
+      # on the runner.
+      - name: Run unit tests
+        run: go run -mod=vendor ./magefiles/core test:unit
+        env:
+          # Everything the build needs is vendored, so make any accidental network access
+          # fail fast rather than quietly succeed on a machine that happens to be online.
+          GOFLAGS: -mod=vendor
+          GOPROXY: "off"
+          GOSUMDB: "off"
+          GOTOOLCHAIN: local

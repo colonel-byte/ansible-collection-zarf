@@ -1,0 +1,38 @@
+---
+name: Check for go mod changes
+
+on:
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-go-mod:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup golang
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Test go mod
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
+      # The vendored tree is committed, and the whole build reads from it, so a go.mod change
+      # that was not re-vendored leaves the two disagreeing. Nothing else notices: `go build`
+      # uses vendor/ and is perfectly happy with a dependency list that no longer matches the
+      # module file, right up until someone drops vendor/ and gets a different build.
+      #
+      # This re-vendors and fails on any diff, which is the one check that keeps them in step.
+      # Dependabot's gomod updates trip it until the branch is re-vendored.
+      - name: Check the vendored tree is current
+        run: |
+          go mod vendor
+          git diff --exit-code vendor/
