@@ -1,0 +1,14 @@
+# Generated files are marked linguist-generated so that GitHub collapses them in a diff and leaves
+# them out of the repository's language statistics. Every path a generator writes belongs here; see
+# the "Keeping .gitattributes in sync with the generators" section of AGENTS.md.
+
+# mage generate:document
+docs/golang/**/*.md linguist-generated
+docs/ansible/module_*.md linguist-generated
+docs/ansible/role_*.md linguist-generated
+docs/index.md linguist-generated
+docs/security.md linguist-generated
+docs/SUMMARY.md linguist-generated
+
+# mage generate:zarfFlags
+internal/zarfmod/testdata/zarf-*-flags.txt linguist-generated
