@@ -6,6 +6,8 @@ Build and test targets run through [mage](https://magefile.org), not a Makefile.
 go run ./magefiles/core -l    # list every target
 ```
 
+The dependency tree is vendored, so every target builds from `vendor/` and needs no module proxy. CI passes `-mod=vendor` with `GOPROXY=off` explicitly, so that an accidental fetch fails fast instead of quietly succeeding on a machine that happens to be online. After changing `go.mod`, run `go mod vendor` and commit the result -- `check-go-mod.yaml` fails the pull request otherwise.
+
 ## `Build`
 
 | Target          | What it does                                                                                                                 |

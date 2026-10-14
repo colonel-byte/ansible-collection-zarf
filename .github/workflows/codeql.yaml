@@ -66,9 +66,14 @@ jobs:
       # which is analyzed by building it, so the exclusion has to live here.
       - name: Build
         if: matrix.build-mode == 'manual'
-        run: go build ./cmd/... ./internal/...
+        run: go build -mod=vendor ./cmd/... ./internal/...
         env:
           CGO_ENABLED: 0
+          # Everything the build needs is vendored, so make any accidental network access
+          # fail fast. Matches unit-tests.yaml and e2e.yaml.
+          GOFLAGS: -mod=vendor
+          GOPROXY: "off"
+          GOSUMDB: "off"
           GOTOOLCHAIN: local
 
       - name: Perform CodeQL analysis

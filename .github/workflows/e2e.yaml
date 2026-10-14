@@ -45,6 +45,11 @@ jobs:
         run: pip install 'ansible-core>=2.16'
 
       - name: Run the non-cluster e2e suite
-        run: go run ./magefiles/core test:endToEndNonCluster
+        run: go run -mod=vendor ./magefiles/core test:endToEndNonCluster
         env:
+          # Everything the build needs is vendored, so make any accidental network access
+          # fail fast rather than quietly succeed on a machine that happens to be online.
+          GOFLAGS: -mod=vendor
+          GOPROXY: "off"
+          GOSUMDB: "off"
           GOTOOLCHAIN: local

@@ -36,6 +36,11 @@ jobs:
       # go run ./magefiles/core rather than mage: same target, and it needs no mage binary
       # on the runner.
       - name: Run unit tests
-        run: go run ./magefiles/core test:unit
+        run: go run -mod=vendor ./magefiles/core test:unit
         env:
+          # Everything the build needs is vendored, so make any accidental network access
+          # fail fast rather than quietly succeed on a machine that happens to be online.
+          GOFLAGS: -mod=vendor
+          GOPROXY: "off"
+          GOSUMDB: "off"
           GOTOOLCHAIN: local

@@ -67,10 +67,16 @@ jobs:
         run: mkdir -p /tmp/k3d
 
       - name: Run the cluster e2e suite
-        run: go run ./magefiles/core test:endToEndCluster
+        run: go run -mod=vendor ./magefiles/core test:endToEndCluster
         env:
+          # The Go build is fully vendored. The suite itself does reach the network -- it
+          # pulls three zarf packages on a cold cache -- so this closes the module proxy
+          # only, not the network.
+          GOFLAGS: -mod=vendor
+          GOPROXY: "off"
+          GOSUMDB: "off"
           GOTOOLCHAIN: local
 
       - name: Tear down any surviving clusters
         if: always()
-        run: go run ./magefiles/core test:cleanClusters
+        run: go run -mod=vendor ./magefiles/core test:cleanClusters

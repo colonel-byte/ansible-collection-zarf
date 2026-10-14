@@ -24,3 +24,7 @@ book/
 
 # Ansible compiles the action plugins on first use.
 __pycache__/
+
+# Added for go mod vendor. The tree is committed: the management node this is for is
+# air-gapped, so a build has to work with no module proxy reachable.
+!/vendor/

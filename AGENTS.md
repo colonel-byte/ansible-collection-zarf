@@ -50,6 +50,17 @@ See [`docs/dev/mage.md`](docs/dev/mage.md) for the full reference and [`docs/dev
 
 Plain Go commands work for anything mage does not wrap -- `go build ./...`, `go vet ./...` -- but exclude `./magefiles/...` from a bare build, for the reason above.
 
+## The dependency tree is vendored
+
+`vendor/` is committed, and every build and CI job reads from it. The management node this collection runs on is typically air-gapped, so a build has to work with no module proxy reachable -- which means the tree is not a cache, it is the dependency list.
+
+Two things follow:
+
+- **A `go.mod` change is not finished until `go mod vendor` has run and the result is committed.** `go build` happily uses a `vendor/` that no longer matches `go.mod`, so nothing fails locally. [`check-go-mod.yaml`](.github/workflows/check-go-mod.yaml) re-vendors and fails on any diff, which is the only thing that catches it.
+- **Nothing edits `vendor/` by hand.** The pre-commit hooks exclude it for that reason: `addlicense` would stamp a header onto other people's code, and the whitespace fixers would rewrite it, in both cases making the tree differ from what `go mod vendor` produces. If a hook starts touching `vendor/`, the fix is an exclude, not a reformatted dependency.
+
+The `tool` directives in `go.mod` are vendored too, so `generate:document` runs gomarkdoc from `vendor/` and needs nothing fetched.
+
 **Never run `go test ./...` without scoping it.** The e2e suites need Ansible, k3d and Docker. Use `test:unit`, or name packages explicitly.
 
 ## The tests that hold the two halves together
