@@ -13,6 +13,9 @@ coverage.out
 # Build output: the two module files, and the package cache the e2e suite fills.
 build/
 
+# The collection tarball the goreleaser before hook builds.
+bin/
+
 # Added for goreleaser:
 dist/
 
