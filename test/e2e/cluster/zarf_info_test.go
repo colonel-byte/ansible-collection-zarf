@@ -174,10 +174,29 @@ func assertStateRecordIsRedacted(t *testing.T, result map[string]any, out string
 
 	// The full-state run is in the same transcript, and it set _ansible_no_log so that its result
 	// was censored. This is what says the censoring held.
-	if strings.Contains(out, "pushPassword") {
-		t.Error("the playbook transcript names pushPassword, so a credential was displayed")
+	//
+	// It looks for the censoring rather than for a credential's name. Searching the transcript for
+	// "pushPassword" is what this used to do, and it cannot work: the redacted list names every
+	// path it withheld -- "registryInfo.pushPassword" among them -- and printing that list is the
+	// module's documented output, the thing that tells an operator which parameter to set. The
+	// search fired on the module behaving correctly, and it could not have told that apart from a
+	// leak, because a leaked value and a withheld path appear in the transcript as the same
+	// substring.
+	//
+	// What is checkable is that ansible censored the opted-in result, which is the mechanism the
+	// credentials rely on. A value is kept out of the transcript by that censoring and by every
+	// assertion below reading a length rather than a value; see testdata/info-modules.yml.
+	if !strings.Contains(out, ansibleCensoredMarker) {
+		t.Error("no task in the transcript was censored, so the include_credentials run printed " +
+			"its result: the module's _ansible_no_log is not taking effect")
 	}
 }
+
+// ansibleCensoredMarker is what ansible-core prints in place of a result it censored. The module
+// asks for that by returning _ansible_no_log; see executor/task_result.py and the include_credentials
+// branch of plugins/action/zarf_state_info.py.
+const ansibleCensoredMarker = "the output has been hidden due to the fact that 'no_log: true' " +
+	"was specified for this result"
 
 // isCredentialName mirrors the leaf names zarf_state_info withholds. See CREDENTIAL_NAMES and
 // CREDENTIAL_SUBSTRINGS in the plugin, and docs/agent/choice-zarf-info-modules.md for why the
