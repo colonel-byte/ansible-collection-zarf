@@ -66,6 +66,7 @@
 
 - [ai-usage](agent/ai-usage.md)
 - [choice-dependabot-title-length](agent/choice-dependabot-title-length.md)
+- [choice-version-tracks-zarf](agent/choice-version-tracks-zarf.md)
 - [choice-zarf-ansible-module](agent/choice-zarf-ansible-module.md)
 - [choice-zarf-collection-removal](agent/choice-zarf-collection-removal.md)
 - [choice-zarf-info-modules](agent/choice-zarf-info-modules.md)
