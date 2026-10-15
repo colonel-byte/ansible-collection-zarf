@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-a7c96d88.js";
+            window.path_to_searchindex_js = "../searchindex-fdd17963.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-f7683bd3.js"></script>
@@ -202,7 +202,7 @@
 <h2 id="installing"><a class="header" href="#installing">Installing</a></h2>
 <p>The release <code>.rpm</code>, <code>.deb</code>, and <code>.apk</code> install the collection to <code>/usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/</code> – on Ansible’s default collections path – along with <code>/usr/bin/zarf_init</code> and <code>/usr/bin/zarf_package_deploy</code> and the module symlinks that point at them. Installing the package is all a management node needs, beyond a zarf of its own.</p>
 <p>From a checkout, build the module files and put them on the path:</p>
-<pre><code class="language-sh">go run ./magefiles/core test:endToEndZarf   # builds both, then runs the e2e suite
+<pre><code class="language-sh">go run ./magefiles/core test:endToEndCluster   # builds both, then runs the e2e suite
 # or just the binaries:
 go build -o build/zarf_init ./cmd/init
 go build -o build/zarf_package_deploy ./cmd/deploy
@@ -326,7 +326,7 @@ go build -o build/zarf_package_deploy ./cmd/deploy
 </code></pre>
 <p>This is the invocation the action plugin makes, so it is the one to reach for when a task fails and the question is whether the module or the playbook is wrong.</p>
 <h2 id="testing"><a class="header" href="#testing">Testing</a></h2>
-<p><code>mage test:endToEndZarf</code> builds both wrappers and runs the e2e suite, which stands up two k3d clusters – one with a storage provider and one without – and walks the uds-bundle’s four packages across each. It needs <code>k3d</code>, <code>zarf</code>, <code>ansible-playbook</code>, Docker, and the network to pull the packages once; each test skips with a reason when one is missing. <code>mage test:cleanZarfClusters</code> removes the clusters a killed run left behind.</p>
+<p><code>mage test:endToEndCluster</code> builds both wrappers and runs the e2e suite, which stands up two k3d clusters – one with a storage provider and one without – and walks the uds-bundle’s four packages across each. It needs <code>k3d</code>, <code>zarf</code>, <code>ansible-playbook</code>, Docker, and the network to pull the packages once; each test skips with a reason when one is missing. <code>mage test:cleanClusters</code> removes the clusters a killed run left behind.</p>
 
                     </main>
 
