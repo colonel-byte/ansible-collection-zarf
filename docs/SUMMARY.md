@@ -55,6 +55,7 @@
 - [release.yaml](workflows/release.yaml.md)
 - [scan-lint.yaml](workflows/scan-lint.yaml.md)
 - [scorecard.yaml](workflows/scorecard.yaml.md)
+- [test-build-containers.yaml](workflows/test-build-containers.yaml.md)
 - [unit-tests.yaml](workflows/unit-tests.yaml.md)
 
 

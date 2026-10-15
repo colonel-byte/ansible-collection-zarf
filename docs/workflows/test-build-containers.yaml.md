@@ -1,0 +1,11 @@
+# Test build containers
+
+Builds the management node image on a pull request that touches it, and on the merge queue. Paths-filtered to `containers/**`, `.goreleaser.yaml`, the collection, `cmd/**`, `internal/zarfmod/**`, and the workflow itself.
+
+This is a test rather than a packaging check. The smoke-check `RUN` block in [`containers/ansible/Dockerfile`](https://github.com/colonel-byte/ansible-collection-zarf/blob/main/containers/ansible/Dockerfile) is the only place in the tree where the collection, the two module files, a `zarf` and an `ansible-core` exist at once, so it is the only place the argv dispatch contract is checked end to end: a module file invoked under a `zarf_` name it does not answer as must exit non-zero, one given parameters it cannot read must still write one JSON object and exit 0, check mode must report the task as skipped, and a deploy against a bad kubeconfig must come back with `failed` and a `zarf.exitCode`. Each of those fails the image build.
+
+The Dockerfile cannot be built with a plain `docker build`: it `COPY`s the nfpm-produced `*.rpm` out of a `${TARGETPLATFORM}` directory that only GoReleaser stages. So the job runs `goreleaser release --snapshot --clean --skip=sign,sbom`. `--snapshot` skips publish, validate and announce -- nfpm still builds the rpm and the `dockers_v2` pipe still runs `buildx build` -- which is why the job needs no registry login and no `packages: write`. `--skip=sign,sbom` avoids failing on the cosign key the workflow has no reason to hold.
+
+QEMU and Buildx are installed because the pipe builds `linux/amd64` and `linux/arm64` in one pass, and `ansible-core` because GoReleaser's `before` hook shells out to `ansible-galaxy` for the collection tarball.
+
+[`scan-lint.yaml`](scan-lint.yaml.md) runs hadolint over the same Dockerfile. That checks syntax and never builds, so a base image bump that breaks the build is caught here and nowhere else.

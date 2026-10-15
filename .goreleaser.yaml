@@ -145,6 +145,52 @@ nfpms:
     rpm:
       compression: gzip
 
+dockers_v2:
+  # A management node image: ansible-core, the collection, both module files, and a zarf for
+  # them to drive. It pulls in the nfpms artifacts rather than the raw binaries because
+  # containers/ansible/Dockerfile installs the rpm, which is what puts the collection on
+  # ansible-core's collections path and both symlinks under plugins/modules -- the layout its
+  # smoke checks assert.
+  - id: zarf-ansible
+    ids:
+      - packagers
+    dockerfile: containers/ansible/Dockerfile
+    images:
+      - "ghcr.io/colonel-byte/zarf-ansible-modules"
+    tags:
+      - "{{ .Tag }}"
+      - "latest"
+    # No riscv64: the builds carry one, but neither base image publishes a manifest for it.
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    flags:
+      - "--pull"
+    build_args:
+      ANSIBLE_CORE_VERSION: 2.16.16-2.el10_2.1
+      BASH_COMPLETION_VERSION: 2.11-16.el10
+    labels:
+      "org.opencontainers.image.description": |-
+        Ansible modules for zarf, with ansible-core and zarf installed
+      "org.opencontainers.image.version": |-
+        {{ .Version }}
+      "org.opencontainers.image.revision": |-
+        {{ .FullCommit }}
+      "org.opencontainers.image.created": |-
+        {{ .CommitDate }}
+      "org.opencontainers.image.base.name": |-
+        {{ .BaseImage }}
+      "org.opencontainers.image.base.digest": |-
+        {{ .BaseImageDigest }}
+      "index,manifest:org.opencontainers.image.source": |-
+        https://github.com/colonel-byte/ansible-collection-zarf
+      "index,manifest:org.opencontainers.image.title": |-
+        zarf-ansible-modules
+      "index,manifest:org.opencontainers.image.licenses": |-
+        Apache-2.0
+      "index,manifest:org.opencontainers.image.description": |-
+        Ansible modules for zarf, with ansible-core and zarf installed
+
 changelog:
   sort: asc
 
