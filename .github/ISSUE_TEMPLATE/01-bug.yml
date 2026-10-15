@@ -63,7 +63,7 @@ body:
       label: Environment
       description: The collection version from `galaxy.yml`, `ansible --version`, the host OS and architecture of the node the play runs on, and the Kubernetes distribution of the target cluster.
       placeholder: |-
-        collection: 0.87.0
+        collection: <version>
         ansible-core: 2.18.1
         node: Fedora 42, x86_64
         cluster: k3s v1.31.4

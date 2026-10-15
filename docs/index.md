@@ -40,10 +40,14 @@ ln -s "$PWD/ansible/colonel_byte/zarf" ~/.ansible/collections/ansible_collection
 
 Zarf itself is a prerequisite: the modules run the installed `zarf`, and nothing is installed on the cluster's nodes. `ghcr.io/colonel-byte/zarf-ansible-modules` comes with all of it -- `ansible-core`, the collection, both module files and a `zarf` -- for a management node that would rather not install any of them:
 
+<!-- x-release-please-start-version -->
+
 ```sh
-docker run --rm -v "$PWD:/workspace" ghcr.io/colonel-byte/zarf-ansible-modules:latest \
+docker run --rm -v "$PWD:/workspace" ghcr.io/colonel-byte/zarf-ansible-modules:v0.87.0 \
   ansible-playbook -i management.ini playbooks/zarf-bundle-order.yml
 ```
+
+<!-- x-release-please-end-version -->
 
 ## Using it
 
