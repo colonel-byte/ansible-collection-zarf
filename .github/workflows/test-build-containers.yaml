@@ -1,0 +1,61 @@
+---
+name: Test build containers
+
+# containers/ansible/Dockerfile is where the module files, the collection, a zarf and an
+# ansible-core are in one place, and its smoke-check RUN block is the only thing in the tree
+# that asserts the argv dispatch contract end to end. That makes it a test, so it runs on pull
+# requests rather than only at release.
+#
+# The Dockerfile is written for goreleaser's dockers_v2 pipe, not a plain `docker build`: it
+# COPYs the nfpm-produced *.rpm out of a ${TARGETPLATFORM} directory that only goreleaser
+# stages. A snapshot release is therefore the cheapest way to build it at all.
+on:
+  pull_request:
+    paths:
+      - "containers/**"
+      - ".goreleaser.yaml"
+      - "ansible/colonel_byte/zarf/**"
+      - "cmd/**"
+      - "internal/zarfmod/**"
+      - ".github/workflows/test-build-containers.yaml"
+  merge_group:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-build-containers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup golang
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      # The goreleaser before hook shells out to ansible-galaxy to build the collection
+      # tarball, so the snapshot fails at its first step without this.
+      - name: Setup ansible-core
+        run: pipx install ansible-core
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
+
+      # --snapshot implies skipping publish/validate/announce: nfpm still builds the rpm the
+      # Dockerfile installs and the dockers_v2 pipe still runs buildx build, but nothing is
+      # pushed, so no registry login and no packages: write are needed. --skip=sign,sbom avoids
+      # failing on the absent cosign key, which this workflow has no reason to hold.
+      - name: Run GoReleaser (snapshot build only)
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          distribution: goreleaser
+          args: release --snapshot --clean --skip=sign,sbom

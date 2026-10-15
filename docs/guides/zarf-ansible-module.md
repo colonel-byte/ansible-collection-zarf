@@ -28,7 +28,15 @@ go build -o build/zarf_init ./cmd/init
 go build -o build/zarf_package_deploy ./cmd/deploy
 ```
 
-There is no container image for this collection yet. A management node needs `ansible-core`, the collection on Ansible's collections path, the two module files, and a `zarf` of its own.
+A management node needs `ansible-core`, the collection on Ansible's collections path, the two module files, and a `zarf` of its own. `ghcr.io/colonel-byte/zarf-ansible-modules` is all four: it installs the release `.rpm` on top of `ansible-core` and carries the `zarf` binary out of zarf's own agent image. A tag per release, plus `latest`.
+
+```sh
+docker run --rm -v "$PWD:/workspace" -v "$HOME/.kube:/home/nonroot/.kube:ro" \
+  ghcr.io/colonel-byte/zarf-ansible-modules:latest \
+  ansible-playbook -i management.ini playbooks/zarf-bundle-order.yml
+```
+
+The image is built on every pull request that touches it, because its build asserts the module files' dispatch contract -- see [`test-build-containers.yaml`](../workflows/test-build-containers.yaml.md).
 
 A task can name a wrapper outright rather than relying on the path, which is what the e2e suite does:
 

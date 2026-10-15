@@ -28,3 +28,11 @@ updates:
       commitlint:
         patterns:
           - "*"
+  - package-ecosystem: docker
+    directory: "/containers/ansible"
+    schedule:
+      interval: daily
+    groups:
+      containers:
+        patterns:
+          - "*"
