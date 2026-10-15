@@ -1,6 +1,8 @@
 # CodeQL
 
-GitHub's static analysis, feeding the repository's security tab. Runs on pushes to `main`, on pull requests, on the merge queue, and weekly on a schedule -- the scheduled run is what keeps the tab current for advisories published after a commit landed.
+GitHub's static analysis, feeding the repository's security tab. Runs on pushes to `main`, on pull requests, and weekly on a schedule -- the scheduled run is what keeps the tab current for advisories published after a commit landed.
+
+The merge queue is deliberately not a trigger. CodeQL gates no merge, so the queue does not wait for it and deletes the `gh-readonly-queue` ref as soon as the entry merges, leaving the slower Go analysis nowhere to upload its results; the pull request and the push to `main` cover the same commits either side of the queue.
 
 Three languages are analysed in a matrix:
 
