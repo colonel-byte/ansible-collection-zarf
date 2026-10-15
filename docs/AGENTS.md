@@ -48,7 +48,7 @@ Annotate with the block form, as HTML comments on their own lines around the fen
 ````markdown
 <!-- x-release-please-start-version -->
 ```sh
-ansible-galaxy collection install colonel_byte.zarf:0.32.1
+ansible-galaxy collection install colonel_byte.zarf:0.87.0
 ```
 <!-- x-release-please-end-version -->
 ````
@@ -61,7 +61,7 @@ Then add the page to `extra-files` in [`release-please-config.json`](../release-
 
 A version in a generated page is annotated where it is written, not where it lands: a pinned version in `README.md` gets the markers in `README.md`, since `docs/index.md` is rewritten from it on the next `generate:document`.
 
-Illustrative output is the one place to prefer a placeholder over an annotation. `rpm -q` prints `zarf-modules-0.32.1-1.x86_64`, where the trailing `-1.x86_64` is the RPM release and reads as a semver prerelease, so a rewrite of that region can swallow it. Write `zarf-modules-<version>-1.x86_64` instead, which cannot go stale.
+Illustrative output is the one place to prefer a placeholder over an annotation. `rpm -q` prints `zarf-modules-0.87.0-1.x86_64`, where the trailing `-1.x86_64` is the RPM release and reads as a semver prerelease, so a rewrite of that region can swallow it. Write `zarf-modules-<version>-1.x86_64` instead, which cannot go stale.
 
 Set the version to the current release when adding the annotation, rather than leaving whatever was there. The markers fix the page from the next release onward and do nothing for the one in front of a reader today.
 
