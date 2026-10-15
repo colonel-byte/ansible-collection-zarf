@@ -108,7 +108,8 @@ RUN ansible-galaxy collection list >/tmp/collections 2>/dev/null \
     | python3 -c 'import json,sys; r=json.load(sys.stdin); sys.exit(0 if r.get("skipped") else 1)' \
   && printf '%s' '{"package":"/tmp/pkg.tar.zst","kubeconfig":"/tmp/none"}' \
     | ZARF_ANSIBLE_MODULE=package_deploy zarf_package_deploy \
-    | python3 -c 'import json,sys; r=json.load(sys.stdin); d=r.get("zarf",{}); sys.exit(0 if r.get("failed") and d.get("exitCode") else 1)'
+    | python3 -c 'import json,sys; r=json.load(sys.stdin); d=r.get("zarf",{}); sys.exit(0 if r.get("failed") and d.get("exitCode") else 1)' \
+  && zarf completion bash |  tee /etc/bash_completion.d/zarf > /dev/null
 
 ENV HOME=/home/nonroot
 
