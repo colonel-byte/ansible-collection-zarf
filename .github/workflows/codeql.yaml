@@ -5,7 +5,11 @@ on:
   push:
     branches: [main]
   pull_request:
-  merge_group:
+  # No merge_group. CodeQL is not a required status check, so the queue does not wait for
+  # it: the gh-readonly-queue ref is deleted the moment the entry merges, and the go leg --
+  # the only one that builds, so the slowest -- then has nowhere to upload its SARIF, which
+  # fails the job. The pull request that got queued and the push to main that follows it
+  # already analyse the same commits.
   schedule:
     # Weekly, off the hour: scheduled scans keep the security tab current for
     # advisories published after a commit landed.
