@@ -38,10 +38,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-93908780.js";
+            window.path_to_searchindex_js = "searchindex-5ed71987.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-93d38264.js"></script>
+        <script src="toc-a4627192.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -211,7 +211,10 @@ sudo install -m 0755 zarf_init zarf_package_deploy /usr/local/bin/
 <p>Then make the collection visible to Ansible:</p>
 <pre><code class="language-sh">ln -s "$PWD/ansible/colonel_byte/zarf" ~/.ansible/collections/ansible_collections/colonel_byte/zarf
 </code></pre>
-<p>Zarf itself is a prerequisite: the modules run the installed <code>zarf</code>, and nothing is installed on the cluster’s nodes.</p>
+<p>Zarf itself is a prerequisite: the modules run the installed <code>zarf</code>, and nothing is installed on the cluster’s nodes. <code>ghcr.io/colonel-byte/zarf-ansible-modules</code> comes with all of it – <code>ansible-core</code>, the collection, both module files and a <code>zarf</code> – for a management node that would rather not install any of them:</p>
+<pre><code class="language-sh">docker run --rm -v "$PWD:/workspace" ghcr.io/colonel-byte/zarf-ansible-modules:latest \
+  ansible-playbook -i management.ini playbooks/zarf-bundle-order.yml
+</code></pre>
 <h2 id="using-it"><a class="header" href="#using-it">Using it</a></h2>
 <pre><code class="language-yaml">- name: Initialise the cluster
   hosts: localhost
@@ -332,7 +335,12 @@ go run ./magefiles/core generate:document        # regenerate docs/ansible, docs
 go build -o build/zarf_init ./cmd/init
 go build -o build/zarf_package_deploy ./cmd/deploy
 </code></pre>
-<p>There is no container image for this collection yet. A management node needs <code>ansible-core</code>, the collection on Ansible’s collections path, the two module files, and a <code>zarf</code> of its own.</p>
+<p>A management node needs <code>ansible-core</code>, the collection on Ansible’s collections path, the two module files, and a <code>zarf</code> of its own. <code>ghcr.io/colonel-byte/zarf-ansible-modules</code> is all four: it installs the release <code>.rpm</code> on top of <code>ansible-core</code> and carries the <code>zarf</code> binary out of zarf’s own agent image. A tag per release, plus <code>latest</code>.</p>
+<pre><code class="language-sh">docker run --rm -v "$PWD:/workspace" -v "$HOME/.kube:/home/nonroot/.kube:ro" \
+  ghcr.io/colonel-byte/zarf-ansible-modules:latest \
+  ansible-playbook -i management.ini playbooks/zarf-bundle-order.yml
+</code></pre>
+<p>The image is built on every pull request that touches it, because its build asserts the module files’ dispatch contract – see <a href="#test-build-containers"><code>test-build-containers.yaml</code></a>.</p>
 <p>A task can name a wrapper outright rather than relying on the path, which is what the e2e suite does:</p>
 <pre><code class="language-yaml">- name: Initialise the cluster
   colonel_byte.zarf.zarf_init:
@@ -1065,11 +1073,14 @@ go build -o build/zarf_package_deploy ./cmd/deploy
 <tbody>
 <tr><td><code>generate:document</code></td><td><code>docs/ansible/module_*.md</code> and <code>role_*.md</code>, <code>docs/golang/</code>, <code>docs/index.md</code>, <code>docs/security.md</code>, <code>docs/SUMMARY.md</code>.</td></tr>
 <tr><td><code>generate:zarfFlags</code></td><td><code>internal/zarfmod/testdata/zarf-init-flags.txt</code> and <code>zarf-package-deploy-flags.txt</code>, read from the installed zarf.</td></tr>
+<tr><td><code>generate:dnfPins</code></td><td>The <code>ansible-core</code> and <code>bash-completion</code> pins in <code>containers/ansible/Dockerfile</code> and <code>.goreleaser.yaml</code>.</td></tr>
 </tbody>
 </table>
 </div>
 <p><code>generate:document</code> rewrites generated pages in place. The hand-written overviews beside them – <code>docs/ansible/collection.md</code>, <code>modules.md</code>, <code>roles.md</code> – are left alone, which is why only the <code>module_*</code> and <code>role_*</code> patterns are cleared before a run.</p>
 <p><code>generate:zarfFlags</code> is the refresh for the recorded flag lists <code>TestInitArgsAreKnownFlags</code> and <code>TestDeployArgsAreKnownFlags</code> check against. Run it when the zarf the modules run moves, and review the diff: a flag that disappeared is a module parameter that no longer works. Set <code>ZARF_ANSIBLE_FLAGS_BINARY</code> to name a zarf that is not on <code>PATH</code>. It deliberately does not read the flags at test time – the unit tests run with no zarf on the machine, in CI and on a contributor’s laptop, and a test that needs a binary to say anything is a test that gets skipped.</p>
+<p><code>generate:dnfPins</code> moves the two dnf package pins the management node image installs. It fetches <code>repomd.xml</code> and <code>primary.xml.gz</code> from the AlmaLinux 10 AppStream and BaseOS repodata over HTTP, picks the newest <code>ansible-core</code> and <code>bash-completion</code> by RPM epoch-version-release ordering, and rewrites the <code>ARG</code> lines in <code>containers/ansible/Dockerfile</code> along with the <code>zarf-ansible</code> <code>build_args</code> in <code>.goreleaser.yaml</code>. Both files carry the same two versions on purpose – the <code>ARG</code> defaults are what a local build gets and the <code>build_args</code> are what the release build passes – so one run writes both, and a rewriter that no longer finds what it edits fails the target rather than leaving one of them behind. Dependabot’s <code>docker</code> ecosystem moves the two <code>FROM</code> digests and nothing else, which is why these pins need a target at all.</p>
+<p>Read the diff rather than committing it unseen: a pin that jumped a minor line is a change to what the image installs, and the image’s own build is what proves it still works.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="check-for-go-mod-changes"><a class="header" href="#check-for-go-mod-changes">Check for go mod changes</a></h1>
 <p>Holds <code>go.mod</code>, <code>go.sum</code> and <code>vendor/</code> to each other. Runs on every pull request and on the merge queue.</p>
@@ -1159,7 +1170,7 @@ go build -o build/zarf_package_deploy ./cmd/deploy
 <h1 id="goreleaser"><a class="header" href="#goreleaser">goreleaser</a></h1>
 <p>Builds and publishes a release. Triggered by pushing a tag, which is what <a href="#release-please"><code>release-please.yaml</code></a> does when the release pull request merges.</p>
 <p>GoReleaser builds the wrapper binaries and the archives per <a href="https://github.com/colonel-byte/ansible-collection-zarf/blob/main/.goreleaser.yaml"><code>.goreleaser.yaml</code></a>. Its <code>before</code> hook shells out to <code>ansible-galaxy</code> to build the collection tarball, which is why the job installs <code>ansible-core</code> with <code>pipx</code> – without it the release fails at its first step.</p>
-<p>The job asks for three writes, each for one reason:</p>
+<p>The job asks for four writes, each for one reason:</p>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -1169,17 +1180,20 @@ go build -o build/zarf_package_deploy ./cmd/deploy
 <tr><td><code>contents: write</code></td><td>Creating the release and uploading the archives</td></tr>
 <tr><td><code>id-token: write</code></td><td>The OIDC token cosign signs against</td></tr>
 <tr><td><code>attestations: write</code></td><td>Proving provenance of the built artifacts</td></tr>
+<tr><td><code>packages: write</code></td><td>Pushing the management node image manifest to <code>ghcr.io</code></td></tr>
 </tbody>
 </table>
 </div>
+<p>The <code>dockers_v2</code> pipe builds <code>containers/ansible/Dockerfile</code> for <code>linux/amd64</code> and <code>linux/arm64</code> and pushes <code>ghcr.io/colonel-byte/zarf-ansible-modules</code>, so the job also installs QEMU and Buildx and logs into <code>ghcr.io</code> with the job token. The same image is built without being pushed on every pull request that touches it – see <a href="#test-build-containers"><code>test-build-containers.yaml</code></a>.</p>
 <p>Beyond the archives, the workflow publishes provenance. <code>actions/attest</code> attests the checksums file, and a second attestation covers an AI-BOM: <code>.github/ai-bom.json</code> is rendered with the tag, commit and timestamp filled in by <code>jq</code>, then attested and uploaded alongside the release as <code>dist/ai-bom.json</code>. Both attestation bundles are uploaded as <code>.intoto.jsonl</code> files with <code>gh release upload --clobber</code>.</p>
 <p>Signing uses cosign with the key and password in the <code>COSIGN_PRIVATE_KEY</code> and <code>COSIGN_PASSWORD</code> secrets, and Syft is installed for SBOM generation.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="validate-lint"><a class="header" href="#validate-lint">Validate Lint</a></h1>
-<p>Runs golangci-lint over the tree. Runs on every pull request and on the merge queue.</p>
+<p>Runs golangci-lint over the tree, and hadolint over <code>containers/ansible/Dockerfile</code>. Runs on every pull request and on the merge queue.</p>
 <p>The interesting part is how the version is chosen. <code>golangci-lint-action</code> installs the <strong>latest release</strong> when it is given no version, so CI once ran 2.14.0 against a tree whose hooks pinned 2.13.2 – a lint failure that reproduced nowhere locally.</p>
 <p>So the workflow reads the version out of <code>.pre-commit-config.yaml</code> instead of carrying a pin of its own. An <code>awk</code> program finds the <code>golangci/golangci-lint</code> repo block, takes its <code>rev:</code>, and exports it as a step output the action then consumes. Leaving that block without having seen a <code>rev</code> exits rather than reporting the next repo’s pin back, and an empty result fails the step with a message.</p>
 <p>Reading rather than restating is the point: Dependabot’s <code>pre-commit</code> ecosystem bumps that <code>rev</code>, and its <code>github-actions</code> ecosystem updates <code>uses:</code> references, not inputs inside a <code>with:</code> block. A second pin here would be one nothing keeps in step with the first – the same “every pin needs an owner” rule that <a href="https://github.com/colonel-byte/ansible-collection-zarf/blob/main/magefiles/AGENTS.md"><code>magefiles/AGENTS.md</code></a> states.</p>
+<p>The <code>containers</code> job runs hadolint. Its path is listed explicitly rather than globbed: the action’s <code>recursive</code> mode globs from the repository root, which would drag in the vendored Dockerfiles under <code>vendor/</code>. hadolint checks syntax and never builds the image – the build runs in <a href="#test-build-containers"><code>test-build-containers.yaml</code></a>.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="scorecards-supply-chain-security"><a class="header" href="#scorecards-supply-chain-security">Scorecards supply-chain security</a></h1>
 <p>Recomputes the repository’s <a href="https://securityscorecards.dev/viewer/?uri=github.com/colonel-byte/ansible-collection-zarf">OpenSSF Scorecard</a> and uploads the result to the code scanning dashboard. Borrowed from <a href="https://github.com/zarf-dev/zarf/blob/main/.github/workflows/scorecard.yaml">zarf’s own workflow</a>.</p>
@@ -1192,6 +1206,13 @@ curl -fsSL "https://github.com/ossf/scorecard/releases/download/${ver}/scorecard
 <p><code>--local</code> reads the working tree, so it scores a change that is not yet committed. Prefer the release binary over <code>gcr.io/openssf/scorecard</code>, which is not reliably pullable. For an honest before and after, take the baseline from a clean export – <code>git archive HEAD | tar -x -C "$(mktemp -d)"</code> – rather than by stashing.</p>
 <p><a href="https://github.com/colonel-byte/ansible-collection-zarf/blob/main/.github/AGENTS.md"><code>.github/AGENTS.md</code></a> records the handful of checks this repository has actually tripped: granting a permission on the job rather than at the top of the file, never taking a checkout <code>ref:</code> from the event payload, pinning every action to a full commit SHA, and passing an untrusted value through <code>env:</code> rather than into <code>run:</code>.</p>
 <p>The workflow itself declares <code>permissions: read-all</code> at the top and takes <code>security-events: write</code> on the job to upload the SARIF, plus <code>id-token: write</code> to receive the badge. Its checkout sets <code>persist-credentials: false</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="test-build-containers"><a class="header" href="#test-build-containers">Test build containers</a></h1>
+<p>Builds the management node image on a pull request that touches it, and on the merge queue. Paths-filtered to <code>containers/**</code>, <code>.goreleaser.yaml</code>, the collection, <code>cmd/**</code>, <code>internal/zarfmod/**</code>, and the workflow itself.</p>
+<p>This is a test rather than a packaging check. The smoke-check <code>RUN</code> block in <a href="https://github.com/colonel-byte/ansible-collection-zarf/blob/main/containers/ansible/Dockerfile"><code>containers/ansible/Dockerfile</code></a> is the only place in the tree where the collection, the two module files, a <code>zarf</code> and an <code>ansible-core</code> exist at once, so it is the only place the argv dispatch contract is checked end to end: a module file invoked under a <code>zarf_</code> name it does not answer as must exit non-zero, one given parameters it cannot read must still write one JSON object and exit 0, check mode must report the task as skipped, and a deploy against a bad kubeconfig must come back with <code>failed</code> and a <code>zarf.exitCode</code>. Each of those fails the image build.</p>
+<p>The Dockerfile cannot be built with a plain <code>docker build</code>: it <code>COPY</code>s the nfpm-produced <code>*.rpm</code> out of a <code>${TARGETPLATFORM}</code> directory that only GoReleaser stages. So the job runs <code>goreleaser release --snapshot --clean --skip=sign,sbom</code>. <code>--snapshot</code> skips publish, validate and announce – nfpm still builds the rpm and the <code>dockers_v2</code> pipe still runs <code>buildx build</code> – which is why the job needs no registry login and no <code>packages: write</code>. <code>--skip=sign,sbom</code> avoids failing on the cosign key the workflow has no reason to hold.</p>
+<p>QEMU and Buildx are installed because the pipe builds <code>linux/amd64</code> and <code>linux/arm64</code> in one pass, and <code>ansible-core</code> because GoReleaser’s <code>before</code> hook shells out to <code>ansible-galaxy</code> for the collection tarball.</p>
+<p><a href="#validate-lint"><code>scan-lint.yaml</code></a> runs hadolint over the same Dockerfile. That checks syntax and never builds, so a base image bump that breaks the build is caught here and nowhere else.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="unit-tests"><a class="header" href="#unit-tests">Unit tests</a></h1>
 <p>Runs <code>test:unit</code> – everything but the two suites that have runners of their own. Runs on every pull request and on the merge queue.</p>

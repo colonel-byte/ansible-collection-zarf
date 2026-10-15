@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-93908780.js";
+            window.path_to_searchindex_js = "../searchindex-5ed71987.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-93d38264.js"></script>
+        <script src="../toc-a4627192.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -223,11 +223,14 @@
 <tbody>
 <tr><td><code>generate:document</code></td><td><code>docs/ansible/module_*.md</code> and <code>role_*.md</code>, <code>docs/golang/</code>, <code>docs/index.md</code>, <code>docs/security.md</code>, <code>docs/SUMMARY.md</code>.</td></tr>
 <tr><td><code>generate:zarfFlags</code></td><td><code>internal/zarfmod/testdata/zarf-init-flags.txt</code> and <code>zarf-package-deploy-flags.txt</code>, read from the installed zarf.</td></tr>
+<tr><td><code>generate:dnfPins</code></td><td>The <code>ansible-core</code> and <code>bash-completion</code> pins in <code>containers/ansible/Dockerfile</code> and <code>.goreleaser.yaml</code>.</td></tr>
 </tbody>
 </table>
 </div>
 <p><code>generate:document</code> rewrites generated pages in place. The hand-written overviews beside them – <code>docs/ansible/collection.md</code>, <code>modules.md</code>, <code>roles.md</code> – are left alone, which is why only the <code>module_*</code> and <code>role_*</code> patterns are cleared before a run.</p>
 <p><code>generate:zarfFlags</code> is the refresh for the recorded flag lists <code>TestInitArgsAreKnownFlags</code> and <code>TestDeployArgsAreKnownFlags</code> check against. Run it when the zarf the modules run moves, and review the diff: a flag that disappeared is a module parameter that no longer works. Set <code>ZARF_ANSIBLE_FLAGS_BINARY</code> to name a zarf that is not on <code>PATH</code>. It deliberately does not read the flags at test time – the unit tests run with no zarf on the machine, in CI and on a contributor’s laptop, and a test that needs a binary to say anything is a test that gets skipped.</p>
+<p><code>generate:dnfPins</code> moves the two dnf package pins the management node image installs. It fetches <code>repomd.xml</code> and <code>primary.xml.gz</code> from the AlmaLinux 10 AppStream and BaseOS repodata over HTTP, picks the newest <code>ansible-core</code> and <code>bash-completion</code> by RPM epoch-version-release ordering, and rewrites the <code>ARG</code> lines in <code>containers/ansible/Dockerfile</code> along with the <code>zarf-ansible</code> <code>build_args</code> in <code>.goreleaser.yaml</code>. Both files carry the same two versions on purpose – the <code>ARG</code> defaults are what a local build gets and the <code>build_args</code> are what the release build passes – so one run writes both, and a rewriter that no longer finds what it edits fails the target rather than leaving one of them behind. Dependabot’s <code>docker</code> ecosystem moves the two <code>FROM</code> digests and nothing else, which is why these pins need a target at all.</p>
+<p>Read the diff rather than committing it unseen: a pin that jumped a minor line is a change to what the image installs, and the image’s own build is what proves it still works.</p>
 
                     </main>
 

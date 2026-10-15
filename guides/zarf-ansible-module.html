@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-93908780.js";
+            window.path_to_searchindex_js = "../searchindex-5ed71987.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-93d38264.js"></script>
+        <script src="../toc-a4627192.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -207,7 +207,12 @@
 go build -o build/zarf_init ./cmd/init
 go build -o build/zarf_package_deploy ./cmd/deploy
 </code></pre>
-<p>There is no container image for this collection yet. A management node needs <code>ansible-core</code>, the collection on Ansible’s collections path, the two module files, and a <code>zarf</code> of its own.</p>
+<p>A management node needs <code>ansible-core</code>, the collection on Ansible’s collections path, the two module files, and a <code>zarf</code> of its own. <code>ghcr.io/colonel-byte/zarf-ansible-modules</code> is all four: it installs the release <code>.rpm</code> on top of <code>ansible-core</code> and carries the <code>zarf</code> binary out of zarf’s own agent image. A tag per release, plus <code>latest</code>.</p>
+<pre><code class="language-sh">docker run --rm -v "$PWD:/workspace" -v "$HOME/.kube:/home/nonroot/.kube:ro" \
+  ghcr.io/colonel-byte/zarf-ansible-modules:latest \
+  ansible-playbook -i management.ini playbooks/zarf-bundle-order.yml
+</code></pre>
+<p>The image is built on every pull request that touches it, because its build asserts the module files’ dispatch contract – see <a href="../workflows/test-build-containers.yaml.html"><code>test-build-containers.yaml</code></a>.</p>
 <p>A task can name a wrapper outright rather than relying on the path, which is what the e2e suite does:</p>
 <pre><code class="language-yaml">- name: Initialise the cluster
   colonel_byte.zarf.zarf_init:

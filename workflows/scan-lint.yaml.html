@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-93908780.js";
+            window.path_to_searchindex_js = "../searchindex-5ed71987.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-93d38264.js"></script>
+        <script src="../toc-a4627192.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -183,10 +183,11 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="validate-lint"><a class="header" href="#validate-lint">Validate Lint</a></h1>
-<p>Runs golangci-lint over the tree. Runs on every pull request and on the merge queue.</p>
+<p>Runs golangci-lint over the tree, and hadolint over <code>containers/ansible/Dockerfile</code>. Runs on every pull request and on the merge queue.</p>
 <p>The interesting part is how the version is chosen. <code>golangci-lint-action</code> installs the <strong>latest release</strong> when it is given no version, so CI once ran 2.14.0 against a tree whose hooks pinned 2.13.2 – a lint failure that reproduced nowhere locally.</p>
 <p>So the workflow reads the version out of <code>.pre-commit-config.yaml</code> instead of carrying a pin of its own. An <code>awk</code> program finds the <code>golangci/golangci-lint</code> repo block, takes its <code>rev:</code>, and exports it as a step output the action then consumes. Leaving that block without having seen a <code>rev</code> exits rather than reporting the next repo’s pin back, and an empty result fails the step with a message.</p>
 <p>Reading rather than restating is the point: Dependabot’s <code>pre-commit</code> ecosystem bumps that <code>rev</code>, and its <code>github-actions</code> ecosystem updates <code>uses:</code> references, not inputs inside a <code>with:</code> block. A second pin here would be one nothing keeps in step with the first – the same “every pin needs an owner” rule that <a href="https://github.com/colonel-byte/ansible-collection-zarf/blob/main/magefiles/AGENTS.md"><code>magefiles/AGENTS.md</code></a> states.</p>
+<p>The <code>containers</code> job runs hadolint. Its path is listed explicitly rather than globbed: the action’s <code>recursive</code> mode globs from the repository root, which would drag in the vendored Dockerfiles under <code>vendor/</code>. hadolint checks syntax and never builds the image – the build runs in <a href="test-build-containers.yaml.html"><code>test-build-containers.yaml</code></a>.</p>
 
                     </main>
 

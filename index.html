@@ -37,10 +37,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-93908780.js";
+            window.path_to_searchindex_js = "searchindex-5ed71987.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-93d38264.js"></script>
+        <script src="toc-a4627192.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -213,7 +213,10 @@ sudo install -m 0755 zarf_init zarf_package_deploy /usr/local/bin/
 <p>Then make the collection visible to Ansible:</p>
 <pre><code class="language-sh">ln -s "$PWD/ansible/colonel_byte/zarf" ~/.ansible/collections/ansible_collections/colonel_byte/zarf
 </code></pre>
-<p>Zarf itself is a prerequisite: the modules run the installed <code>zarf</code>, and nothing is installed on the cluster’s nodes.</p>
+<p>Zarf itself is a prerequisite: the modules run the installed <code>zarf</code>, and nothing is installed on the cluster’s nodes. <code>ghcr.io/colonel-byte/zarf-ansible-modules</code> comes with all of it – <code>ansible-core</code>, the collection, both module files and a <code>zarf</code> – for a management node that would rather not install any of them:</p>
+<pre><code class="language-sh">docker run --rm -v "$PWD:/workspace" ghcr.io/colonel-byte/zarf-ansible-modules:latest \
+  ansible-playbook -i management.ini playbooks/zarf-bundle-order.yml
+</code></pre>
 <h2 id="using-it"><a class="header" href="#using-it">Using it</a></h2>
 <pre><code class="language-yaml">- name: Initialise the cluster
   hosts: localhost
