@@ -1,0 +1,43 @@
+---
+# The prerequisites document the fixture package carries, and the YAML half of its `documentation:`
+# mapping.
+#
+# It is deliberately the smallest document that names every section of the format: a Kubernetes
+# version, a Flux version, a controller with a minAvailable, a CRD, a storage requirement, an
+# accessModes entry, and a prerequisite package.
+#
+# Nothing here is contacted.
+apiVersion: colonel-byte.dev/v1alpha1
+kind: PackagePrerequisites
+metadata:
+  package: inspect-fixture
+  version: 1.2.3
+  description: Prerequisites for the inspect fixture, which deploys one file
+
+requires:
+  kubernetes:
+    version: ">=1.30.0"
+  fluxcd:
+    version: ">=2.9.0"
+    controllers:
+      - name: source-controller
+        namespace: flux-system
+        minAvailable: 1
+    crds:
+      - helmreleases.helm.toolkit.fluxcd.io
+  storage:
+    defaultClass: true
+    classes:
+      - local-path
+    accessModes:
+      - ReadWriteOnce
+  packages:
+    - name: init
+      version: ">=0.85.0"
+
+provides:
+  capabilities:
+    - name: one-file
+      version: "1.2.3"
+  namespaces:
+    - default
