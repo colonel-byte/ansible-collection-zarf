@@ -20,7 +20,10 @@
         { "type": "build", "section": "Build" }
       ],
       "extra-files": [
-        "ansible/colonel_byte/zarf/galaxy.yml"
+        "ansible/colonel_byte/zarf/galaxy.yml",
+        "README.md",
+        "docs/index.md",
+        "docs/guides/zarf-ansible-module.md"
       ]
     }
   },

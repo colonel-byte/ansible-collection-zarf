@@ -28,13 +28,17 @@ go build -o build/zarf_init ./cmd/init
 go build -o build/zarf_package_deploy ./cmd/deploy
 ```
 
-A management node needs `ansible-core`, the collection on Ansible's collections path, the two module files, and a `zarf` of its own. `ghcr.io/colonel-byte/zarf-ansible-modules` is all four: it installs the release `.rpm` on top of `ansible-core` and carries the `zarf` binary out of zarf's own agent image. A tag per release, plus `latest`.
+A management node needs `ansible-core`, the collection on Ansible's collections path, the two module files, and a `zarf` of its own. `ghcr.io/colonel-byte/zarf-ansible-modules` is all four: it installs the release `.rpm` on top of `ansible-core` and carries the `zarf` binary out of zarf's own agent image. One tag per release, and no `latest` -- a management node is meant to pin the image it runs, the way it pins everything else it carries through the airlock.
+
+<!-- x-release-please-start-version -->
 
 ```sh
 docker run --rm -v "$PWD:/workspace" -v "$HOME/.kube:/home/nonroot/.kube:ro" \
-  ghcr.io/colonel-byte/zarf-ansible-modules:latest \
+  ghcr.io/colonel-byte/zarf-ansible-modules:v0.87.0 \
   ansible-playbook -i management.ini playbooks/zarf-bundle-order.yml
 ```
+
+<!-- x-release-please-end-version -->
 
 The image is built on every pull request that touches it, because its build asserts the module files' dispatch contract -- see [`test-build-containers.yaml`](../workflows/test-build-containers.yaml.md).
 
