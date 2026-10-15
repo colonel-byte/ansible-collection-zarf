@@ -1,0 +1,329 @@
+---
+# Check a cluster against the prerequisites a package declares.
+#
+# The role is a sequence of checks, each appending to a list of what was not satisfied, and one
+# assert at the end. It is written that way rather than as an assert per check so that a run reports
+# every unmet prerequisite at once: an operator who has to install Flux and a storage provider wants
+# to be told both, not told one, fix it, and be told the other.
+#
+# Three facts come out of it, and the third matters as much as the other two.
+# zarf_prerequisites_checked is what was checked and held, zarf_prerequisites_unmet is what did not,
+# and zarf_prerequisites_skipped is what could not be checked at all -- a compound version range, or
+# an accessModes requirement that cannot be verified without creating a PersistentVolumeClaim. A
+# check that cannot be made is named rather than quietly passed, because a role that reports success
+# for a document it mostly ignored is worse than no role.
+#
+# Each check is its own task, and the accumulating lists are facts rather than one large expression.
+# That is deliberate: the alternative is a single set_fact whose Jinja assembles every message for
+# every section, which is unreviewable and gets the wrong answer quietly.
+#
+# Nothing here runs on the cluster's nodes. Everything is zarf on the delegated node, reaching one
+# cluster through a kubeconfig.
+
+# zarf_package and zarf_prerequisites both have empty defaults rather than being required in
+# argument_specs.yml, because a role variable with a default is always satisfied and the validator
+# would never fire. The check is here, so that the message names the role variable the operator got
+# wrong rather than the module parameter it becomes.
+- name: Check that a package or a document was supplied
+  ansible.builtin.assert:
+    that:
+      - (zarf_package | length > 0) or (zarf_prerequisites | length > 0)
+    fail_msg: >-
+      the prerequisites role needs either zarf_package, naming the package to read the document out
+      of, or zarf_prerequisites, supplying the document directly.
+    quiet: "{{ zarf_quiet | bool }}"
+  run_once: true
+  delegate_to: "{{ zarf_delegate_to }}"
+
+- name: Extract the prerequisites document the package carries
+  colonel_byte.zarf.zarf_package_documentation:
+    package: "{{ zarf_package }}"
+    keys:
+      - prerequisites
+    public_key: "{{ zarf_public_key | default(omit) if (zarf_public_key | length > 0) else omit }}"
+    verify: >-
+      {{ zarf_verify if (zarf_verify | length > 0)
+         else ('always' if (zarf_public_key | length > 0) else omit) }}
+    kubeconfig: "{{ zarf_kubeconfig | default(omit) if (zarf_kubeconfig | length > 0) else omit }}"
+    zarf_binary: "{{ zarf_binary }}"
+  delegate_to: "{{ zarf_delegate_to }}"
+  run_once: true
+  register: _zarf_prereq_extract
+  when: zarf_prerequisites | length == 0
+
+# The document the rest of the role reads, from whichever of the two sources supplied it. The module
+# omits its `prerequisites` key for a package that carries no document, or one whose file under that
+# key does not declare the right apiVersion and kind, so an absent key here means "this package
+# states no prerequisites" rather than "something went wrong".
+- name: Set the prerequisites document and the facts the checks accumulate into
+  ansible.builtin.set_fact:
+    zarf_prerequisites_document: >-
+      {{ zarf_prerequisites if (zarf_prerequisites | length > 0)
+         else (_zarf_prereq_extract.prerequisites | default({})) }}
+    zarf_prerequisites_checked: []
+    zarf_prerequisites_unmet: []
+    zarf_prerequisites_skipped: []
+  run_once: true
+
+- name: Report that the package declares no prerequisites
+  ansible.builtin.debug:
+    msg: >-
+      {{ zarf_package }} carries no colonel-byte.dev/v1alpha1 PackagePrerequisites document, so
+      there is nothing to check against the cluster.
+  run_once: true
+  when: zarf_prerequisites_document | length == 0
+
+- name: Check the cluster against the document
+  when: zarf_prerequisites_document | length > 0
+  block:
+    - name: Read the cluster
+      colonel_byte.zarf.zarf_cluster_info:
+        kubeconfig: "{{ zarf_kubeconfig | default(omit) if (zarf_kubeconfig | length > 0) else omit }}"
+        zarf_binary: "{{ zarf_binary }}"
+      delegate_to: "{{ zarf_delegate_to }}"
+      run_once: true
+      register: _zarf_prereq_cluster
+
+    - name: Query the packages already deployed to the cluster
+      colonel_byte.zarf.zarf_package_info:
+        kubeconfig: "{{ zarf_kubeconfig | default(omit) if (zarf_kubeconfig | length > 0) else omit }}"
+        zarf_binary: "{{ zarf_binary }}"
+      delegate_to: "{{ zarf_delegate_to }}"
+      run_once: true
+      register: _zarf_prereq_packages
+      when:
+        - zarf_check_packages | bool
+        - (zarf_prerequisites_document.requires.packages | default([])) | length > 0
+
+    # Every check below reads these rather than reaching back into the registered results, so that
+    # the expressions say what they are checking instead of where it came from.
+    - name: Collect what the document asks for and what the cluster reported
+      ansible.builtin.set_fact:
+        _zarf_prereq_requires: "{{ zarf_prerequisites_document.requires | default({}) }}"
+        _zarf_prereq_controllers: "{{ zarf_prerequisites_document.requires.fluxcd.controllers | default([]) }}"
+        _zarf_prereq_storage: "{{ zarf_prerequisites_document.requires.storage | default({}) }}"
+        _zarf_prereq_required_crds: "{{ zarf_prerequisites_document.requires.fluxcd.crds | default([]) }}"
+        _zarf_prereq_required_packages: "{{ zarf_prerequisites_document.requires.packages | default([]) }}"
+        _zarf_prereq_deployments: "{{ _zarf_prereq_cluster.deployments }}"
+        _zarf_prereq_crds: "{{ _zarf_prereq_cluster.crds }}"
+        _zarf_prereq_classes: "{{ _zarf_prereq_cluster.storage_classes | map(attribute='name') | list }}"
+        _zarf_prereq_deployed: "{{ _zarf_prereq_packages.packages | default([]) }}"
+        _zarf_prereq_version_checks: []
+      run_once: true
+
+    # The document travels separately from the package it describes -- it is extracted on its own --
+    # so a document copied from the package beside it and not fully edited would otherwise be
+    # checked against a cluster and pass while describing something else entirely.
+    - name: Check that the document says which package it describes
+      ansible.builtin.assert:
+        that:
+          - (zarf_prerequisites_document.metadata.package | default('')) | length > 0
+        fail_msg: >-
+          the prerequisites document extracted from {{ zarf_package }} names no package in
+          metadata.package, so there is no telling which package it describes.
+        quiet: "{{ zarf_quiet | bool }}"
+      run_once: true
+      when: zarf_prerequisites | length == 0
+
+    - name: Record the Kubernetes version constraint
+      ansible.builtin.set_fact:
+        _zarf_prereq_version_checks: >-
+          {{ _zarf_prereq_version_checks
+             + [{'label': "the cluster's Kubernetes version",
+                 'constraint': _zarf_prereq_requires.kubernetes.version,
+                 'actual': _zarf_prereq_cluster.kubernetes_semver}] }}
+      run_once: true
+      when: (_zarf_prereq_requires.kubernetes.version | default('')) | length > 0
+
+    # The Flux version a controller Deployment reports. Flux's own manifests label every component
+    # with the flux2 release they were built from, which is what requires.fluxcd.version
+    # constrains -- the controllers' own versions are a different set of numbers entirely, and a
+    # document naming ">=2.9.0" is not talking about source-controller v1.9.5.
+    #
+    # The namespaces and names come from the document's own controller list, so that a Flux
+    # installed outside flux-system is still found. A document that requires a version and names no
+    # controller falls back to the usual pair, and if neither is there the constraint is reported as
+    # unchecked rather than satisfied -- tasks/version_check.yml does that for an empty version.
+    - name: Record the FluxCD version constraint, and the version the cluster reports
+      ansible.builtin.set_fact:
+        _zarf_prereq_version_checks: >-
+          {{ _zarf_prereq_version_checks
+             + [{'label': "the cluster's FluxCD version",
+                 'constraint': _zarf_prereq_requires.fluxcd.version,
+                 'actual': _reported}] }}
+      vars:
+        _namespaces: >-
+          {{ (_zarf_prereq_controllers | map(attribute='namespace') | reject('equalto', '') | list
+              | unique) | default(['flux-system'], true) }}
+        _names: >-
+          {{ (_zarf_prereq_controllers | map(attribute='name') | list)
+             | default(['source-controller'], true) }}
+        _reported: >-
+          {{ (_zarf_prereq_deployments
+              | selectattr('namespace', 'in', _namespaces)
+              | selectattr('name', 'in', _names)
+              | selectattr('version', '!=', '')
+              | map(attribute='version') | unique | sort | last) | default('', true) }}
+      run_once: true
+      when: (_zarf_prereq_requires.fluxcd.version | default('')) | length > 0
+
+    # One entry per prerequisite package that states a version. The deployed version comes from the
+    # list `zarf package list` reported, and is empty when the package is not deployed at all --
+    # which the presence check below reports, so that an absent package is one message and not two.
+    - name: Record the prerequisite package version constraints
+      ansible.builtin.set_fact:
+        _zarf_prereq_version_checks: >-
+          {{ _zarf_prereq_version_checks
+             + [{'label': 'the deployed zarf package ' ~ item.name,
+                 'constraint': item.version,
+                 'actual': _deployed_version}] }}
+      vars:
+        _deployed_version: >-
+          {{ (_zarf_prereq_deployed | selectattr('package', 'equalto', item.name)
+              | map(attribute='version') | first) | default('', true) }}
+      loop: "{{ _zarf_prereq_required_packages | selectattr('version', 'defined') | list }}"
+      loop_control:
+        label: "{{ item.name }}"
+      run_once: true
+      when:
+        - zarf_check_packages | bool
+        - item.name in (_zarf_prereq_deployed | map(attribute='package') | list)
+
+    - name: Evaluate every version constraint the document states
+      ansible.builtin.include_tasks: version_check.yml
+      loop: "{{ _zarf_prereq_version_checks }}"
+      loop_control:
+        label: "{{ item.label }} {{ item.constraint }}"
+
+    - name: Check that each prerequisite package is deployed
+      ansible.builtin.set_fact:
+        zarf_prerequisites_checked: >-
+          {{ zarf_prerequisites_checked + ['the zarf package ' ~ item.name ~ ' is deployed'] }}
+        zarf_prerequisites_unmet: >-
+          {{ zarf_prerequisites_unmet
+             + ([] if item.name in (_zarf_prereq_deployed | map(attribute='package') | list)
+                else [_absent]) }}
+      vars:
+        # The message is built outside the expression above rather than written across two lines
+        # inside it. A string literal that spans lines in a folded scalar keeps the newline and the
+        # indentation that follows it, because YAML does not fold a more-indented line -- so the
+        # message reaches the operator with a line break and ten spaces in the middle of it.
+        _absent: "the zarf package {{ item.name }} is required and is not deployed to this cluster"
+      loop: "{{ _zarf_prereq_required_packages }}"
+      loop_control:
+        label: "{{ item.name }}"
+      run_once: true
+      when: zarf_check_packages | bool
+
+    - name: Note that the prerequisite packages were not checked
+      ansible.builtin.set_fact:
+        zarf_prerequisites_skipped: >-
+          {{ zarf_prerequisites_skipped
+             + ['requires.packages names ' ~ (_zarf_prereq_required_packages
+                | map(attribute='name') | join(', ')) ~ ', and zarf_check_packages is false'] }}
+      run_once: true
+      when:
+        - not zarf_check_packages | bool
+        - _zarf_prereq_required_packages | length > 0
+
+    # A controller must be there and must have an available replica. Availability rather than
+    # readiness is what minAvailable means, and it is the distinction that matters here: a replica
+    # that is ready but not available has passed its probes and not satisfied minReadySeconds, and a
+    # controller in that state is in the middle of a rollout.
+    - name: Check each required FluxCD controller
+      ansible.builtin.set_fact:
+        zarf_prerequisites_checked: >-
+          {{ zarf_prerequisites_checked
+             + ['the Flux controller ' ~ item.name ~ ' in ' ~ _namespace ~ ' has '
+                ~ _minimum ~ ' available replica(s)'] }}
+        zarf_prerequisites_unmet: "{{ zarf_prerequisites_unmet + _messages }}"
+      vars:
+        _namespace: "{{ item.namespace | default('flux-system') }}"
+        _minimum: "{{ item.minAvailable | default(1) | int }}"
+        _found: >-
+          {{ _zarf_prereq_deployments | selectattr('namespace', 'equalto', _namespace)
+             | selectattr('name', 'equalto', item.name) | list }}
+        _absent: "the Flux controller {{ item.name }} is not deployed in {{ _namespace }}"
+        _short: "the Flux controller {{ item.name }} in {{ _namespace }} has {{ (_found | first).available | default(0) }} available replica(s), and the package requires {{ _minimum }}"
+        _messages: >-
+          {{ [_absent] if (_found | length == 0)
+             else ([] if ((_found | first).available | int) >= (_minimum | int) else [_short]) }}
+      loop: "{{ _zarf_prereq_controllers }}"
+      loop_control:
+        label: "{{ item.name }}"
+      run_once: true
+
+    - name: Check the required CRDs are established
+      ansible.builtin.set_fact:
+        zarf_prerequisites_checked: >-
+          {{ zarf_prerequisites_checked
+             + (_zarf_prereq_required_crds | map('regex_replace', '^(.*)$',
+                'the CRD \1 is established') | list) }}
+        zarf_prerequisites_unmet: >-
+          {{ zarf_prerequisites_unmet
+             + (_zarf_prereq_required_crds | reject('in', _zarf_prereq_crds) | list
+                | map('regex_replace', '^(.*)$',
+                      'the CRD \1 is required and is not established on this cluster') | list) }}
+      run_once: true
+      when: _zarf_prereq_required_crds | length > 0
+
+    - name: Check the storage requirements
+      ansible.builtin.set_fact:
+        zarf_prerequisites_checked: >-
+          {{ zarf_prerequisites_checked
+             + (['the cluster has a default StorageClass'] if _wants_default | bool else [])
+             + (_wanted_classes | map('regex_replace', '^(.*)$',
+                'the StorageClass \1 exists') | list) }}
+        zarf_prerequisites_unmet: >-
+          {{ zarf_prerequisites_unmet
+             + (['the package needs a default StorageClass and the cluster has none']
+                if (_wants_default | bool) and (_zarf_prereq_cluster.default_storage_class | length == 0)
+                else [])
+             + (_wanted_classes | reject('in', _zarf_prereq_classes) | list
+                | map('regex_replace', '^(.*)$',
+                      'the StorageClass \1 is required and does not exist on this cluster')
+                | list) }}
+        # What a provisioner will actually bind is not discoverable without creating a
+        # PersistentVolumeClaim, which is not something a read-only check does. Naming it is the
+        # honest outcome; passing it silently is what this list exists to prevent.
+        zarf_prerequisites_skipped: >-
+          {{ zarf_prerequisites_skipped
+             + (['requires.storage.accessModes names ' ~ (_wanted_modes | join(', '))
+                 ~ ', which cannot be checked without creating a PersistentVolumeClaim']
+                if _wanted_modes | length > 0 else []) }}
+      vars:
+        _wants_default: "{{ _zarf_prereq_storage.defaultClass | default(false) }}"
+        _wanted_classes: "{{ _zarf_prereq_storage.classes | default([]) }}"
+        _wanted_modes: "{{ _zarf_prereq_storage.accessModes | default([]) }}"
+      run_once: true
+      when: _zarf_prereq_storage | length > 0
+
+    - name: Report what was checked, what was not satisfied, and what was skipped
+      ansible.builtin.debug:
+        msg:
+          package: "{{ zarf_prerequisites_document.metadata.package | default('unnamed') }}"
+          kubernetes: "{{ _zarf_prereq_cluster.kubernetes_version }}"
+          checked: "{{ zarf_prerequisites_checked }}"
+          unmet: "{{ zarf_prerequisites_unmet }}"
+          skipped: "{{ zarf_prerequisites_skipped }}"
+      run_once: true
+
+    # The one assert, and the reason every check above appends to a list instead of asserting: this
+    # names everything that is wrong, once.
+    - name: Enforce the prerequisites the cluster does not satisfy
+      ansible.builtin.assert:
+        that:
+          - zarf_prerequisites_unmet | length == 0
+        fail_msg: >-
+          this cluster does not satisfy the prerequisites of
+          {{ zarf_prerequisites_document.metadata.package | default('the package') }}
+          {{ zarf_prerequisites_document.metadata.version | default('') }}:
+          {{ zarf_prerequisites_unmet | join('; ') }}
+        success_msg: >-
+          this cluster satisfies the
+          {{ zarf_prerequisites_checked | length }} prerequisite(s) of
+          {{ zarf_prerequisites_document.metadata.package | default('the package') }}
+          {{ zarf_prerequisites_document.metadata.version | default('') }}
+        quiet: "{{ zarf_quiet | bool }}"
+      run_once: true
+      when: zarf_prerequisites_enforce | bool

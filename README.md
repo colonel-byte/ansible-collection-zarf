@@ -20,15 +20,30 @@ The proof began in [colonel-byte/cargoship](https://github.com/colonel-byte/carg
 
 The first two converge a cluster and are the proof. The other five read one, are not part of the proof, and are plain action plugins with no binary behind them -- [choice-zarf-info-modules](docs/agent/choice-zarf-info-modules.md) records why, and why `zarf_state_info` redacts.
 
-Each read-only module has a role apiece: `packages`, `package_inspect` and `state`.
+There are four roles: `packages`, `package_inspect` and `state` wrap a read-only module apiece, and [`prerequisites`](docs/ansible/role_prerequisites.md) refuses to deploy a package onto a cluster that cannot run it.
 
 ## Package prerequisites
 
-A package can state what it needs of a cluster in a machine-readable document carried inside the package itself, so that a deployment can refuse to proceed when the cluster does not satisfy it. That is the second thing in this repository: a `colonel-byte.dev/v1alpha1` `PackagePrerequisites` format and a [generated JSON Schema](https://github.com/colonel-byte/ansible-collection-zarf/blob/main/schema/zarf-v1alpha1-package-prerequisites-schema.json) for it.
+A package can state what it needs of a cluster in a machine-readable document carried inside the package itself, and a deployment can refuse to proceed when the cluster does not satisfy it. That is the second thing in this repository: a `colonel-byte.dev/v1alpha1` `PackagePrerequisites` format, a [generated JSON Schema](https://github.com/colonel-byte/ansible-collection-zarf/blob/main/schema/zarf-v1alpha1-package-prerequisites-schema.json), and the modules and role that read one.
 
 It exists for a failure that reports itself as a success. A workload package delivered as a `HelmRelease` needs a running `helm-controller` to do anything at all; deploy it onto a cluster without one and zarf applies the manifests, the API server accepts them, `zarf package deploy` reports a successful deployment, and nothing is ever reconciled.
 
-The document travels inside the package, under zarf's own `documentation:` mapping, so a tarball carried into an air-gapped facility carries its own requirements. `zarf_package_documentation` is what takes it back out, and `zarf_cluster_info` reports the cluster facts it is checked against -- read through `zarf tools kubectl`, so this needs no `kubernetes.core`. [The guide](docs/guides/package-prerequisites.md) is the format and how it is written; [`examples/packages`](https://github.com/colonel-byte/ansible-collection-zarf/tree/main/examples/packages) holds two reference packages that declare one.
+```yaml
+- name: Refuse to deploy onto a cluster that cannot run this package
+  ansible.builtin.include_role:
+    name: colonel_byte.zarf.prerequisites
+  vars:
+    zarf_package: /srv/staging/zarf-package-operator-external-secrets-amd64-2.12.0.tar.zst
+    zarf_public_key: /etc/zarf/colonel-byte-zarf-packages.pub
+    zarf_kubeconfig: /etc/rancher/rke2/rke2.yaml
+
+- name: Report what could not be checked
+  ansible.builtin.debug:
+    msg: "{{ zarf_prerequisites_skipped }}"
+  when: zarf_prerequisites_skipped | length > 0
+```
+
+The cluster is read through `zarf tools kubectl`, so this needs no `kubernetes.core` -- the management node is typically air-gapped, and a second Galaxy collection to stage onto it is a cost every consumer would pay. [The guide](docs/guides/package-prerequisites.md) is the format and what reads it; [`examples/packages`](https://github.com/colonel-byte/ansible-collection-zarf/tree/main/examples/packages) holds two reference packages that declare one.
 
 ## Installing
 

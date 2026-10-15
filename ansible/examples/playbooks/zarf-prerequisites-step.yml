@@ -1,0 +1,43 @@
+---
+# One package of the bundle: check, then deploy.
+#
+# Included once per package by zarf-prerequisites.yml, which passes the package as
+# zarf_bundle_package. It is a separate file because `include_role` and a module call cannot share
+# one loop iteration, and because a bundle step is a thing worth naming.
+
+- name: Check the cluster against what this package requires
+  ansible.builtin.include_role:
+    name: colonel_byte.zarf.prerequisites
+  vars:
+    zarf_package: "{{ zarf_bundle_package }}"
+    # Naming the key makes the role require a signature, which is the role's own policy rather than
+    # the module's: zarf's default is if-possible, and a run that supplies a key and then accepts an
+    # unsigned package is doing the opposite of what supplying the key asked for.
+    zarf_public_key: "{{ zarf_public_key }}"
+    zarf_kubeconfig: "{{ zarf_kubeconfig }}"
+
+- name: Report what could not be checked
+  # zarf_prerequisites_skipped is the list worth printing even on a successful run. A compound
+  # version range, or an accessModes requirement that cannot be verified without creating a
+  # PersistentVolumeClaim, is a prerequisite nobody checked -- and a run that printed only its
+  # successes would read as though everything in the document had been verified.
+  ansible.builtin.debug:
+    msg: "{{ zarf_prerequisites_skipped }}"
+  when: zarf_prerequisites_skipped | length > 0
+
+- name: Deploy the package
+  colonel_byte.zarf.zarf_package_deploy:
+    package: "{{ zarf_bundle_package }}"
+    kubeconfig: "{{ zarf_kubeconfig }}"
+    public_key: "{{ zarf_public_key }}"
+    verify: always
+    timeout: "{{ zarf_timeout }}"
+  delegate_to: localhost
+  run_once: true
+  register: zarf_bundle_step
+
+- name: Report what was deployed
+  ansible.builtin.debug:
+    msg: >-
+      {{ zarf_prerequisites_document.metadata.package | default(zarf_bundle_package | basename) }}
+      deployed after {{ zarf_prerequisites_checked | length }} prerequisite(s) held

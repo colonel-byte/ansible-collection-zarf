@@ -28,7 +28,7 @@ body:
         - zarf_package_info
         - zarf_package_inspect
         - zarf_state_info
-        - A role (packages, package_inspect, state)
+        - A role (packages, package_inspect, prerequisites, state)
         - Not module-specific
     validations:
       required: true
