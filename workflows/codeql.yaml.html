@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-8d95268a.js";
+            window.path_to_searchindex_js = "../searchindex-93908780.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-93d38264.js"></script>
@@ -183,7 +183,8 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="codeql"><a class="header" href="#codeql">CodeQL</a></h1>
-<p>GitHub’s static analysis, feeding the repository’s security tab. Runs on pushes to <code>main</code>, on pull requests, on the merge queue, and weekly on a schedule – the scheduled run is what keeps the tab current for advisories published after a commit landed.</p>
+<p>GitHub’s static analysis, feeding the repository’s security tab. Runs on pushes to <code>main</code>, on pull requests, and weekly on a schedule – the scheduled run is what keeps the tab current for advisories published after a commit landed.</p>
+<p>The merge queue is deliberately not a trigger. CodeQL gates no merge, so the queue does not wait for it and deletes the <code>gh-readonly-queue</code> ref as soon as the entry merges, leaving the slower Go analysis nowhere to upload its results; the pull request and the push to <code>main</code> cover the same commits either side of the queue.</p>
 <p>Three languages are analysed in a matrix:</p>
 <div class="table-wrapper">
 <table>
