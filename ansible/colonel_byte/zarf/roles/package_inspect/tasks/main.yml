@@ -31,4 +31,5 @@
     zarf_package_name: "{{ _zarf_package_inspect_res.package_name }}"
     zarf_package_version: "{{ _zarf_package_inspect_res.package_version }}"
     zarf_package_flavor: "{{ _zarf_package_inspect_res.package_flavor }}"
+    zarf_package_documentation: "{{ _zarf_package_inspect_res.package_documentation }}"
   run_once: true

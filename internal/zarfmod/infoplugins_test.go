@@ -26,6 +26,8 @@ import (
 // rather than a wrapper binary driven from this package. docs/agent/choice-zarf-info-modules.md is
 // the record of why, and of what this file can and cannot check as a result.
 var infoModules = []string{
+	"zarf_cluster_info",
+	"zarf_package_documentation",
 	"zarf_package_info",
 	"zarf_package_inspect",
 	"zarf_state_info",
@@ -34,7 +36,13 @@ var infoModules = []string{
 // commandPartsBody finds the body of a plugin's command_parts function: everything from its def
 // line up to the next line that starts a new top-level statement. Python has no brace to match on,
 // so the end of the body is the first line at column 0 that is not blank.
-var commandPartsBody = regexp.MustCompile(`(?sm)^def command_parts\(params\):\n(.*?)(?:\n[^\s#]|\z)`)
+//
+// command_parts_all is matched too, and every match is read rather than the first. zarf_cluster_info
+// asks the cluster four questions, so its flags are spread across the two functions: command_parts
+// returns the first command, because that is the one this test's name promises to read, and
+// command_parts_all returns all four. Reading only the first would make the other three invisible
+// here -- which is the state this whole file exists to prevent.
+var commandPartsBody = regexp.MustCompile(`(?sm)^def command_parts(?:_all)?\(params\):\n(.*?)(?:\n[^\s#]|\z)`)
 
 // renderedFlagLiteral is a flag spelled as a string literal inside command_parts. Every flag a
 // read-only module renders is written there and nowhere else, which is the whole reason the
@@ -66,6 +74,10 @@ var equalsFlags = map[string]bool{
 // playbook could read.
 var infoOwnFlags = map[string]bool{
 	"output-format": true,
+	// Every namespace, on the Deployment query zarf_cluster_info runs. No parameter narrows it:
+	// a prerequisites document names the namespace a controller must be in, so a module that only
+	// looked in one would be answering a question the caller had already had to answer.
+	"all-namespaces": true,
 }
 
 // TestEveryActionPluginIsCovered is what stops a module being added with no contract test at all.
@@ -188,21 +200,23 @@ func renderedFlagLiterals(t *testing.T, module string) []string {
 		t.Fatalf("unable to read %s: %v", path, err)
 	}
 
-	body := commandPartsBody.FindSubmatch(source)
-	if body == nil {
+	bodies := commandPartsBody.FindAllSubmatch(source, -1)
+	if bodies == nil {
 		t.Fatalf("%s declares no command_parts(params) function, which is where a read-only "+
 			"module names the flags it renders", path)
 	}
 
 	seen := map[string]bool{}
-	for _, match := range renderedFlagLiteral.FindAllSubmatch(body[1], -1) {
-		name := strings.TrimPrefix(string(match[1]), "--")
-		if equalsFlags[name] && len(match[2]) == 0 {
-			t.Errorf("command_parts in %s renders --%s as a separate word. It declares a "+
-				"no-argument default, so it has to be written --%s=<value>; see equalsFlags.",
-				path, name, name)
+	for _, body := range bodies {
+		for _, match := range renderedFlagLiteral.FindAllSubmatch(body[1], -1) {
+			name := strings.TrimPrefix(string(match[1]), "--")
+			if equalsFlags[name] && len(match[2]) == 0 {
+				t.Errorf("command_parts in %s renders --%s as a separate word. It declares a "+
+					"no-argument default, so it has to be written --%s=<value>; see equalsFlags.",
+					path, name, name)
+			}
+			seen[name] = true
 		}
-		seen[name] = true
 	}
 	return sortedKeys(seen)
 }

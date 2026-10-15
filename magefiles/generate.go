@@ -23,6 +23,7 @@ import (
 
 	"github.com/colonel-byte/ansible-collection-zarf/magefiles/pkg/devtools/dnfpins"
 	"github.com/colonel-byte/ansible-collection-zarf/magefiles/pkg/gen/docs"
+	"github.com/colonel-byte/ansible-collection-zarf/magefiles/pkg/gen/schema"
 	"github.com/colonel-byte/ansible-collection-zarf/magefiles/pkg/gen/zarfflags"
 	"github.com/magefile/mage/mg"
 )
@@ -36,6 +37,12 @@ type (
 // docs/SUMMARY.md.
 func (Generate) Document() error {
 	return docs.GenerateDocument()
+}
+
+// Schema regenerates the JSON Schema documents under schema/ from the Go types in api/. Run it
+// after changing a type or a doc comment there; the schema's descriptions are those comments.
+func (Generate) Schema() error {
+	return schema.Generate()
 }
 
 // ZarfFlags records the flag surface of the zarf commands the modules wrap, read from the

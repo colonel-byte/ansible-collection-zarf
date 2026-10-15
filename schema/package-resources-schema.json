@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://colonel-byte.github.io/ansible-collection-zarf/schema/package-resources-schema.json",
+  "$defs": {
+    "Project": {
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path is the subdirectory under the package's upstream/ tree.",
+          "examples": [
+            "core"
+          ]
+        },
+        "component": {
+          "type": "string",
+          "description": "Component is the zarf component in the package's zarf.yaml whose images are refreshed from\nthese manifests. It is named here rather than inferred, because the mapping is the one thing\na reader of either file cannot work out from the other.",
+          "examples": [
+            "fluxcd-core"
+          ]
+        },
+        "match": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Match are the filenames to take out of the release asset, which is also the resource list of\nthe generated kustomization and so the order the manifests are applied in.\n\nThey are exact names rather than globs. The upstream archive is a flat handful of files whose\nnames are part of its interface, and a glob that silently stops matching -- because upstream\nrenamed one -- produces a component that deploys less than it used to and fails nothing.\nA name that is not in the archive is an error."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "path",
+        "component",
+        "match"
+      ],
+      "description": "Project is one subdirectory of vendored manifests, and the zarf component that deploys it."
+    }
+  },
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Schema is the generated JSON Schema this file validates against, as a relative path. It is\nread and rewritten unchanged; it exists for the editor, not for this package."
+    },
+    "tag": {
+      "type": "string",
+      "description": "Tag is the upstream release tag to vendor. It is the pin, and the only copy of it: Vendor\nwrites it into the package's zarf.yaml and into every generated kustomization.",
+      "examples": [
+        "v2.9.5"
+      ]
+    },
+    "renovate": {
+      "type": "string",
+      "description": "Renovate is the annotation a Renovate configuration reads to offer a bump of Tag. It is\ncarried from zarf-pkg-fluxcd, where Renovate is wired up; nothing in this repository reads\nit, and `examples:refresh` is what moves the pin here.",
+      "examples": [
+        "datasource=github-releases depName=fluxcd/flux2"
+      ]
+    },
+    "repo": {
+      "type": "string",
+      "description": "Repo is the upstream repository's URL.",
+      "examples": [
+        "https://github.com/fluxcd/flux2"
+      ]
+    },
+    "asset": {
+      "type": "string",
+      "description": "Asset is the release asset to download, by name.",
+      "examples": [
+        "manifests.tar.gz"
+      ]
+    },
+    "namespace": {
+      "type": "string",
+      "description": "Namespace is the namespace every generated kustomization places its resources in.",
+      "examples": [
+        "flux-system"
+      ]
+    },
+    "registry": {
+      "type": "string",
+      "description": "Registry re-homes every image the vendored manifests name without one onto this host, as a\nkustomize image transform in the generated kustomization.\n\nUpstream's manifests name their images as `fluxcd/source-controller:v1.9.5`, which resolves\nto Docker Hub -- where an anonymous pull is rate-limited per IP, and a zarf package create\npulls every image in the package at once. The same images are published to ghcr.io, so this\nis the difference between a create that works and a create that fails partway through on a\nshared outbound address. Left empty, the manifests are vendored as they came.",
+      "examples": [
+        "ghcr.io"
+      ]
+    },
+    "projects": {
+      "items": {
+        "$ref": "#/$defs/Project"
+      },
+      "type": "array",
+      "description": "Projects are the subdirectories the asset's contents are split into."
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "tag",
+    "repo",
+    "asset",
+    "namespace",
+    "projects"
+  ],
+  "description": "Resources is a package's resources.json: one upstream release, and the projects extracted from it."
+}

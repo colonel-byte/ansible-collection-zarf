@@ -10,5 +10,13 @@ docs/index.md linguist-generated
 docs/security.md linguist-generated
 docs/SUMMARY.md linguist-generated
 
+# mage generate:schema
+schema/*.json linguist-generated
+
+# mage examples:vendor -- the vendored upstream manifests and the kustomizations written over them.
+# The manifests are somebody else's work and the kustomizations are this repository's generator
+# output; both are removed and rewritten wholesale by the target, and neither is edited by hand.
+examples/packages/*/upstream/**/*.yaml linguist-generated
+
 # mage generate:zarfFlags
 internal/zarfmod/testdata/zarf-*-flags.txt linguist-generated

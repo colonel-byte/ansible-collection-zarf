@@ -1,0 +1,74 @@
+---
+# The role's documented interface.
+argument_specs:
+  main:
+    short_description: Check a cluster against the prerequisites a Zarf package declares
+    description:
+      - "Reads a C(colonel-byte.dev/v1alpha1) C(PackagePrerequisites) document out of a package's documentation layer, reads the cluster with C(colonel_byte.zarf.zarf_cluster_info), and fails the play when the cluster does not satisfy the document."
+      - "This is the check that belongs in front of C(colonel_byte.zarf.zarf_package_deploy). A workload package deployed onto a cluster whose GitOps engine is absent is accepted, reported as a success, and never reconciled; the point of the document is to turn that into a refusal."
+      - "Supply the package in C(zarf_package) and the role extracts its document, or supply the document directly in C(zarf_prerequisites) for a package that carries none."
+      - "Sets the C(zarf_prerequisites_document), C(zarf_prerequisites_checked), C(zarf_prerequisites_unmet), and C(zarf_prerequisites_skipped) facts. A package carrying no document is not a failure: nothing is checked and C(zarf_prerequisites_checked) is empty."
+      - "C(requires.storage.accessModes) is reported in C(zarf_prerequisites_skipped) rather than checked. What a provisioner will bind is not discoverable without creating a PersistentVolumeClaim, and a check that cannot be made is better named than quietly passed."
+      - "Every task carries C(run_once: true) and delegates to C(zarf_delegate_to)."
+    version_added: "0.33.0"
+    options:
+      zarf_package:
+        type: str
+        default: ""
+        description:
+          - "The package whose prerequisites are checked: a path to a staged tarball, an C(oci://) reference, or a deployed package name."
+          - "Not required when C(zarf_prerequisites) supplies the document directly."
+      zarf_prerequisites:
+        type: dict
+        default: {}
+        description:
+          - "A prerequisites document supplied directly, instead of being read out of a package."
+          - "For a bundle whose requirements are known to the playbook rather than to the packages in it, or a package built before the format existed. When set, C(zarf_package) is not inspected."
+      zarf_public_key:
+        type: str
+        default: ""
+        description:
+          - "Path to the public key the package's signature is verified against."
+      zarf_verify:
+        type: str
+        default: ""
+        choices:
+          - ""
+          - never
+          - if-possible
+          - always
+        description:
+          - "When to verify the package signature."
+          - "Left empty, the role requires a signature when C(zarf_public_key) names a key, and leaves zarf's own C(if-possible) default alone when it does not. Set it explicitly to override."
+      zarf_kubeconfig:
+        type: str
+        default: ""
+        description:
+          - "Path to the kubeconfig file the cluster is read through."
+      zarf_binary:
+        type: str
+        default: zarf
+        description:
+          - "Path to the C(zarf) binary on the delegated host."
+      zarf_check_packages:
+        type: bool
+        default: true
+        description:
+          - "Whether to check C(requires.packages) against the cluster's deployed packages."
+          - "It is the one check that needs a second query, and C(zarf package list) needs an initialised cluster, so it can be turned off for a run that has not initialised one yet."
+      zarf_prerequisites_enforce:
+        type: bool
+        default: true
+        description:
+          - "Whether an unsatisfied prerequisite fails the play."
+          - "Set it false to report rather than enforce: every check still runs and C(zarf_prerequisites_unmet) still lists what failed, and the play continues. That is what a survey across a fleet of clusters wants, and what a deployment does not."
+      zarf_quiet:
+        type: bool
+        default: true
+        description:
+          - "Whether to suppress verbose assert output when asserting inputs."
+      zarf_delegate_to:
+        type: str
+        default: localhost
+        description:
+          - "The node on which to run zarf."

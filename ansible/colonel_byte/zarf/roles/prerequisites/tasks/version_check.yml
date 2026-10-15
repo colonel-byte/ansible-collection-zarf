@@ -1,0 +1,47 @@
+---
+# One version constraint, evaluated and recorded.
+#
+# Included once per entry of _zarf_prereq_version_checks, each of which is a mapping of:
+#
+#   label:      what is being constrained, as it appears in a message
+#   constraint: the constraint the document states, e.g. ">=1.30.0"
+#   actual:     the version the cluster reported, which may be empty
+#
+# The three constraints in a prerequisites document -- the Kubernetes version, the Flux version and
+# a prerequisite package's version -- are the same comparison over different data, so they are one
+# file rather than three blocks of near-identical Jinja.
+#
+# A constraint is read as one comparator and one version. That covers ">=2.9.0", which is what a
+# document holds in practice, and it deliberately does not cover a compound range like
+# ">=1.30.0 <1.34.0": evaluating one needs a semver library, Jinja is not one, and a half-parsed
+# range would silently check only its first half and pass. A constraint this cannot read is
+# recorded in zarf_prerequisites_skipped, so it is never counted as satisfied.
+- name: "Check {{ item.label }} against {{ item.constraint }}"
+  ansible.builtin.set_fact:
+    zarf_prerequisites_checked: >-
+      {{ zarf_prerequisites_checked
+         + ([item.label ~ ' ' ~ item.constraint] if _vc_evaluable | bool else []) }}
+    zarf_prerequisites_skipped: >-
+      {{ zarf_prerequisites_skipped + ([] if _vc_evaluable | bool else [_vc_skipped]) }}
+    zarf_prerequisites_unmet: >-
+      {{ zarf_prerequisites_unmet
+         + ([] if (not _vc_evaluable | bool) or (_vc_have is version(_vc_want, _vc_op))
+            else [item.label ~ ' is ' ~ _vc_have ~ ', and the package requires ' ~ item.constraint]) }}
+  vars:
+    _vc_op: "{{ ((item.constraint | regex_search('^\\s*(>=|<=|==|=|>|<)', '\\1')) or ['>=']) | first }}"
+    _vc_want: "{{ ((item.constraint | regex_search('v?([0-9]+\\.[0-9]+\\.[0-9]+)', '\\1')) or ['']) | first }}"
+    _vc_compound: "{{ (item.constraint | regex_findall('>=|<=|==|=|>|<') | length) > 1 }}"
+    # Kubernetes reports v1.31.2 and a chart's version label reads v2.9.5, while a constraint is
+    # written without the v. Stripping it here rather than in the module keeps the module reporting
+    # what the cluster actually said.
+    _vc_have: "{{ item.actual | regex_replace('^v', '') }}"
+    _vc_evaluable: >-
+      {{ (not _vc_compound | bool) and (_vc_want | length > 0) and (_vc_have | length > 0) }}
+    # Both messages are whole lines rather than literals spanning two. A string literal that spans
+    # lines in a folded scalar keeps the newline and the indentation after it, because YAML does not
+    # fold a more-indented line, and the message then reaches the operator broken in the middle.
+    _vc_unreadable: "{{ item.label }} {{ item.constraint }} is a range this role cannot evaluate: it reads one comparator and one version"
+    _vc_unknown: "{{ item.label }} {{ item.constraint }} could not be checked: the cluster reported no version to compare"
+    _vc_skipped: >-
+      {{ _vc_unreadable if (_vc_compound | bool) or (_vc_want | length == 0) else _vc_unknown }}
+  run_once: true

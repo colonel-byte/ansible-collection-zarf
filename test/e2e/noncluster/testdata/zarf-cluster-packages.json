@@ -1,0 +1,21 @@
+[
+  {
+    "package": "init",
+    "version": "v0.85.0",
+    "connectivity": "airgap",
+    "components": [
+      "zarf-injector",
+      "zarf-seed-registry",
+      "zarf-registry",
+      "zarf-agent"
+    ]
+  },
+  {
+    "package": "app-fluxcd",
+    "version": "v2.9.5",
+    "connectivity": "airgap",
+    "components": [
+      "fluxcd-core"
+    ]
+  }
+]

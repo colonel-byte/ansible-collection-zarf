@@ -7,6 +7,7 @@
 
 # Guides
 
+- [package-prerequisites](guides/package-prerequisites.md)
 - [zarf-ansible-module](guides/zarf-ansible-module.md)
 
 
@@ -16,14 +17,17 @@
 
 - [zarf collection](ansible/collection.md)
 - [zarf modules](ansible/modules.md)
+  - [cluster_info](ansible/module_cluster_info.md)
   - [init](ansible/module_init.md)
   - [package_deploy](ansible/module_package_deploy.md)
+  - [package_documentation](ansible/module_package_documentation.md)
   - [package_info](ansible/module_package_info.md)
   - [package_inspect](ansible/module_package_inspect.md)
   - [state_info](ansible/module_state_info.md)
 - [zarf roles](ansible/roles.md)
   - [package_inspect](ansible/role_package_inspect.md)
   - [packages](ansible/role_packages.md)
+  - [prerequisites](ansible/role_prerequisites.md)
   - [state](ansible/role_state.md)
 
 
@@ -67,6 +71,7 @@
 
 - [ai-usage](agent/ai-usage.md)
 - [choice-dependabot-title-length](agent/choice-dependabot-title-length.md)
+- [choice-package-documentation-module](agent/choice-package-documentation-module.md)
 - [choice-version-tracks-zarf](agent/choice-version-tracks-zarf.md)
 - [choice-zarf-ansible-module](agent/choice-zarf-ansible-module.md)
 - [choice-zarf-collection-removal](agent/choice-zarf-collection-removal.md)
