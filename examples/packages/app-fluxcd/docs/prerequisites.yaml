@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=../../../../schema/zarf-v1alpha1-package-prerequisites-schema.json
+---
+# The engine provider's half of the contract: it requires little and provides the thing every
+# GitOps workload package downstream of it requires.
+#
+# The $schema line above is what makes an editor complete and validate this file. It is a relative
+# path because that is what resolves in a checkout of this repository; a package in its own
+# repository points at the published schema by URL, or at a copy vendored beside its zarf.yaml. See
+# docs/guides/package-prerequisites.md.
+apiVersion: colonel-byte.dev/v1alpha1
+kind: PackagePrerequisites
+metadata:
+  package: app-fluxcd
+  version: 2.9.3
+  description: Foundation GitOps engine provider for Kubernetes clusters
+
+requires:
+  kubernetes:
+    version: ">=1.30.0"
+  packages:
+    # The initialised cluster itself. The name is `init` rather than anything longer because that
+    # is what `zarf package list` reports the init package as, and a name in this list is only
+    # useful if it is the name a consumer can look up -- see the packages role, which is where the
+    # prerequisites role gets the deployed list from.
+    - name: init
+      version: ">=0.85.0"
+
+provides:
+  capabilities:
+    - name: fluxcd-engine
+      version: "2.9.3"
+  crds:
+    - helmreleases.helm.toolkit.fluxcd.io
+    - kustomizations.kustomize.toolkit.fluxcd.io
+    - ocirepositories.source.toolkit.fluxcd.io
+    - gitrepositories.source.toolkit.fluxcd.io
+  namespaces:
+    - flux-system

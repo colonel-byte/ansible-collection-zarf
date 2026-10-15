@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=../../../../schema/zarf-v1alpha1-package-prerequisites-schema.json
+---
+# A workload package's half of the contract: everything it needs the cluster to already be.
+#
+# This is the case the format exists for. The External Secrets Operator is delivered here as a
+# HelmRelease, so a cluster with no helm-controller running accepts the manifests and reconciles
+# nothing: `zarf package deploy` succeeds, no operator appears, and the only symptom is a
+# HelmRelease that never becomes ready -- followed later by workloads that cannot start because the
+# Secrets an ExternalSecret promised were never written. Stating the requirement is what lets an
+# orchestrator refuse to deploy instead.
+apiVersion: colonel-byte.dev/v1alpha1
+kind: PackagePrerequisites
+metadata:
+  package: operator-external-secrets
+  version: 2.12.0
+  description: Prerequisites for the External Secrets Operator and its webhook
+
+requires:
+  kubernetes:
+    version: ">=1.30.0"
+  fluxcd:
+    version: ">=2.9.0"
+    controllers:
+      - name: source-controller
+        namespace: flux-system
+        minAvailable: 1
+      - name: helm-controller
+        namespace: flux-system
+        minAvailable: 1
+    crds:
+      - helmreleases.helm.toolkit.fluxcd.io
+      - ocirepositories.source.toolkit.fluxcd.io
+  packages:
+    - name: app-fluxcd
+      version: ">=2.9.0"
+
+provides:
+  capabilities:
+    - name: external-secrets-engine
+      version: "2.12.0"
+  crds:
+    - externalsecrets.external-secrets.io
+    - secretstores.external-secrets.io
+    - clustersecretstores.external-secrets.io
+    - clusterexternalsecrets.external-secrets.io
+    - pushsecrets.external-secrets.io
+    - clusterpushsecrets.external-secrets.io
+  namespaces:
+    - external-secrets
