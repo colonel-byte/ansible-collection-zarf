@@ -10,5 +10,8 @@ docs/index.md linguist-generated
 docs/security.md linguist-generated
 docs/SUMMARY.md linguist-generated
 
+# mage generate:schema
+schema/*.json linguist-generated
+
 # mage generate:zarfFlags
 internal/zarfmod/testdata/zarf-*-flags.txt linguist-generated

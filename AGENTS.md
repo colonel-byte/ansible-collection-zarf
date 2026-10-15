@@ -10,6 +10,7 @@ Nothing here runs on the cluster's nodes. The modules run the installed `zarf` o
 
 | Path                          | What lives there                                                                                                                                           |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api/colonel-byte.dev/`       | The `colonel-byte.dev/v1alpha1` `PackagePrerequisites` Go types, which the published JSON Schema is reflected from                                         |
 | `cmd/init/`, `cmd/deploy/`    | A `main` package per wrapper binary. Both are thirty-line entry points; everything they do is in `internal/zarfmod`                                        |
 | `internal/zarfmod/`           | The module logic: `argv[0]` dispatch, the WANT_JSON intake, the command-line rendering, the progress reader, the stdout guard, the heartbeat, the response |
 | `internal/testenv/`           | Scaffolding the end-to-end suites share: the repo-root chdir, and waiting on a cluster                                                                     |
@@ -21,6 +22,7 @@ Nothing here runs on the cluster's nodes. The modules run the installed `zarf` o
 | `docs/`                       | The mdBook source. Several subpaths are generated and must not be hand-edited -- see [`docs/AGENTS.md`](docs/AGENTS.md)                                    |
 | `docs/workflows/`             | One page per file under `.github/workflows/`, named after it with a `.md` extension -- required by [`.github/AGENTS.md`](.github/AGENTS.md)                |
 | `docs/agent/choice-*.md`      | Records of non-obvious decisions and the tradeoffs behind them -- read before reversing one                                                                |
+| `schema/`                     | The generated JSON Schemas, written by `generate:schema` and committed because other repositories reference them                                           |
 | `containers/ansible/`         | The management node image: `ansible-core`, the collection, both module files and a `zarf`. Its build asserts the dispatch contract                         |
 
 Several directories carry their own `AGENTS.md` with rules specific to that directory. Check the closest one before editing. Keep this table in sync when adding or removing one.
@@ -46,6 +48,7 @@ go run ./magefiles/core test:unit                # everything but the e2e suites
 go run ./magefiles/core test:endToEndNonCluster  # needs ansible-playbook
 go run ./magefiles/core test:endToEndCluster     # needs k3d, zarf, Docker, network
 go run ./magefiles/core generate:document        # regenerate the book's generated pages
+go run ./magefiles/core generate:schema          # regenerate schema/ from the Go types in api/
 ```
 
 See [`docs/dev/mage.md`](docs/dev/mage.md) for the full reference and [`docs/dev/e2e-tests.md`](docs/dev/e2e-tests.md) for what each suite covers.
@@ -75,6 +78,12 @@ Most of what is worth knowing about this repository is enforced by four tests in
 | `TestInfoPluginDocsMatchRenderedFlags`                     | A read-only module's documented `cli_flag` values disagreeing with the flags its `command_parts` function names |
 | `TestEveryActionPluginIsCovered`                           | A new action plugin that no test looks at, and a test list naming a plugin that no longer exists                |
 | `TestInitArgsAreKnownFlags`, `TestDeployArgsAreKnownFlags` | A flag the module renders that the recorded zarf does not accept                                                |
+
+One more, in `magefiles/pkg/gen/schema`, holds the `PackagePrerequisites` format together the same way:
+
+| Test                             | What it would catch                                                                                                       |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `TestCommittedSchemasAreCurrent` | A field added to a type in `api/` without `generate:schema` being run, leaving a schema that validates the wrong document |
 
 The last pair checks against a recorded list, not against zarf's own command tree, so it cannot catch a zarf release that renamed a flag. Refresh the lists with `generate:zarfFlags` when the zarf the modules run moves, and read the diff.
 
