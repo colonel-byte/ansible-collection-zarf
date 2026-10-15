@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ed71987.js";
+            window.path_to_searchindex_js = "../searchindex-ad88743a.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-a4627192.js"></script>
@@ -207,11 +207,13 @@
 go build -o build/zarf_init ./cmd/init
 go build -o build/zarf_package_deploy ./cmd/deploy
 </code></pre>
-<p>A management node needs <code>ansible-core</code>, the collection on Ansible’s collections path, the two module files, and a <code>zarf</code> of its own. <code>ghcr.io/colonel-byte/zarf-ansible-modules</code> is all four: it installs the release <code>.rpm</code> on top of <code>ansible-core</code> and carries the <code>zarf</code> binary out of zarf’s own agent image. A tag per release, plus <code>latest</code>.</p>
+<p>A management node needs <code>ansible-core</code>, the collection on Ansible’s collections path, the two module files, and a <code>zarf</code> of its own. <code>ghcr.io/colonel-byte/zarf-ansible-modules</code> is all four: it installs the release <code>.rpm</code> on top of <code>ansible-core</code> and carries the <code>zarf</code> binary out of zarf’s own agent image. One tag per release, and no <code>latest</code> – a management node is meant to pin the image it runs, the way it pins everything else it carries through the airlock.</p>
+<!-- x-release-please-start-version -->
 <pre><code class="language-sh">docker run --rm -v "$PWD:/workspace" -v "$HOME/.kube:/home/nonroot/.kube:ro" \
-  ghcr.io/colonel-byte/zarf-ansible-modules:latest \
+  ghcr.io/colonel-byte/zarf-ansible-modules:v0.87.0 \
   ansible-playbook -i management.ini playbooks/zarf-bundle-order.yml
 </code></pre>
+<!-- x-release-please-end-version -->
 <p>The image is built on every pull request that touches it, because its build asserts the module files’ dispatch contract – see <a href="../workflows/test-build-containers.yaml.html"><code>test-build-containers.yaml</code></a>.</p>
 <p>A task can name a wrapper outright rather than relying on the path, which is what the e2e suite does:</p>
 <pre><code class="language-yaml">- name: Initialise the cluster
