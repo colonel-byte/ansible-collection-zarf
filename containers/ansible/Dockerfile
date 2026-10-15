@@ -31,6 +31,10 @@ FROM ghcr.io/zarf-dev/zarf/agent:v0.87.0@sha256:63c400ea3a859ca1cac21c23e1a50240
 FROM ghcr.io/almalinux/10-base:10.2@sha256:ed618ca107e9fd47ee2a64d1d33119ef356cfaf65a338daaa3fad19b80ae5da4
 
 ARG TARGETPLATFORM
+# Both pins are moved by `go run ./magefiles/core generate:dnfPins`, which reads the newest
+# version of each out of the AlmaLinux 10 repodata and rewrites these lines and the matching
+# build_args in .goreleaser.yaml together. Dependabot moves the two FROM digests above and
+# leaves these alone.
 ARG ANSIBLE_CORE_VERSION="2.16.16-2.el10_2.1"
 ARG BASH_COMPLETION_VERSION="2.11-16.el10"
 
