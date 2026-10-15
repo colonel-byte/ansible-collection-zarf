@@ -22,7 +22,7 @@ body:
       multiple: true
       options:
         - A converging module (zarf_init, zarf_package_deploy)
-        - A read-only module (zarf_package_info, zarf_package_inspect, zarf_state_info)
+        - A read-only module (zarf_package_documentation, zarf_package_info, zarf_package_inspect, zarf_state_info)
         - A role
         - A new module
         - The release artifacts

@@ -2,7 +2,7 @@
 
 Initialise an air-gapped cluster with [zarf](https://zarf.dev) from an Ansible playbook. This collection is a proof of [ZEP-0072](https://github.com/zarf-dev/proposals/pull/73). It began in [colonel-byte/cargoship](https://github.com/colonel-byte/cargoship), because the pattern it proposes already runs there as `colonel_byte.cargoship`, and moved here once it had outgrown being a guest in that repository.
 
-`zarf_init` and `zarf_package_deploy` are that proof, and most of this file is about them. Three further modules read a cluster rather than converging it -- `zarf_package_info`, `zarf_package_inspect` and `zarf_state_info` -- with a role apiece: `packages`, `package_inspect` and `state`. They are plain action plugins rather than wrapper binaries, they are not part of the proof, and [choice-zarf-info-modules](../../../docs/agent/choice-zarf-info-modules.md) records why.
+`zarf_init` and `zarf_package_deploy` are that proof, and most of this file is about them. Four further modules read a cluster rather than converging it -- `zarf_package_documentation`, `zarf_package_info`, `zarf_package_inspect` and `zarf_state_info` -- and three of them have a role apiece: `packages`, `package_inspect` and `state`. They are plain action plugins rather than wrapper binaries, they are not part of the proof, and [choice-zarf-info-modules](../../../docs/agent/choice-zarf-info-modules.md) records why.
 
 ## Architecture
 

@@ -26,6 +26,7 @@ import (
 // rather than a wrapper binary driven from this package. docs/agent/choice-zarf-info-modules.md is
 // the record of why, and of what this file can and cannot check as a result.
 var infoModules = []string{
+	"zarf_package_documentation",
 	"zarf_package_info",
 	"zarf_package_inspect",
 	"zarf_state_info",

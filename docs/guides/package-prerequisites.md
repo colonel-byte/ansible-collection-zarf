@@ -104,6 +104,42 @@ That is the whole reason to use `documentation:` rather than a file in the repos
 
 The annotations beside it are a deliberate duplicate of two facts from the document. They are readable from `zarf package inspect definition` alone, which is one command and no extraction, so a consumer that only needs to order a bundle can read them. The document is for the consumer that is going to check a cluster against it, and it is the source of truth.
 
+## Reading it
+
+Two things in this collection read a package's documentation, and they do different amounts of work.
+
+| What                                                                       | Reads                                                                          |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| [`zarf_package_inspect`](../ansible/module_package_inspect.md)             | The `documentation:` mapping itself, as `package_documentation`: keys to paths |
+| [`zarf_package_documentation`](../ansible/module_package_documentation.md) | The files, extracted and parsed, including the prerequisites document          |
+
+The mapping alone tells you the package declares a prerequisites document and where it was in the source tree. It does not get you the contents -- the file is inside the tarball, and `zarf package inspect documentation` is what takes it out.
+
+```yaml
+- name: Report the documentation a package carries
+  colonel_byte.zarf.zarf_package_inspect:
+    package: /srv/staging/zarf-package-operator-external-secrets-amd64-2.12.0.tar.zst
+  delegate_to: localhost
+  run_once: true
+  register: pkg
+
+- name: Read the prerequisites document out of the package
+  colonel_byte.zarf.zarf_package_documentation:
+    package: /srv/staging/zarf-package-operator-external-secrets-amd64-2.12.0.tar.zst
+    keys:
+      - prerequisites
+  delegate_to: localhost
+  run_once: true
+  register: docs
+
+- name: Report the Flux version it needs
+  ansible.builtin.debug:
+    msg: "{{ docs.prerequisites.requires.fluxcd.version }}"
+  when: docs.prerequisites is defined
+```
+
+`prerequisites` is returned only when the extracted file declares the right `apiVersion` and `kind`. A package is free to use that documentation key for a prose file, and returning that as a prerequisites document would hand a caller a mapping with no `requires` for the most boring possible reason.
+
 ## The reference packages
 
 [`examples/packages`](https://github.com/colonel-byte/ansible-collection-zarf/tree/main/examples/packages) holds two packages that declare documents, as a provider and a consumer of the same capability.
