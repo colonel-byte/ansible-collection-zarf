@@ -22,7 +22,7 @@ The release `.rpm`, `.deb`, and `.apk` install the collection to `/usr/share/ans
 From a checkout, build the module files and put them on the path:
 
 ```sh
-go run ./magefiles/core test:endToEndZarf   # builds both, then runs the e2e suite
+go run ./magefiles/core test:endToEndCluster   # builds both, then runs the e2e suite
 # or just the binaries:
 go build -o build/zarf_init ./cmd/init
 go build -o build/zarf_package_deploy ./cmd/deploy
@@ -195,4 +195,4 @@ This is the invocation the action plugin makes, so it is the one to reach for wh
 
 ## Testing
 
-`mage test:endToEndZarf` builds both wrappers and runs the e2e suite, which stands up two k3d clusters -- one with a storage provider and one without -- and walks the uds-bundle's four packages across each. It needs `k3d`, `zarf`, `ansible-playbook`, Docker, and the network to pull the packages once; each test skips with a reason when one is missing. `mage test:cleanZarfClusters` removes the clusters a killed run left behind.
+`mage test:endToEndCluster` builds both wrappers and runs the e2e suite, which stands up two k3d clusters -- one with a storage provider and one without -- and walks the uds-bundle's four packages across each. It needs `k3d`, `zarf`, `ansible-playbook`, Docker, and the network to pull the packages once; each test skips with a reason when one is missing. `mage test:cleanClusters` removes the clusters a killed run left behind.
