@@ -41,6 +41,19 @@
         success_msg: ASSERTED an unsigned package inspects with verify unset, and parses
         fail_msg: the inspected definition is not the fixture that was built
 
+    - name: The documentation mapping comes back as the package declared it
+      # package_documentation is lifted out of the definition rather than left in it, so that a
+      # playbook reading it does not have to guard the level above: zarf omits the key entirely for
+      # a package that declares no documentation, and `| default({})` on a nested path guards the
+      # wrong one. An always-present mapping that is sometimes empty is one less way for a
+      # prerequisite check to pass by looking at nothing.
+      ansible.builtin.assert:
+        that:
+          - "plain.package_documentation == {'prerequisites': 'docs/prerequisites.yaml', 'notes': 'docs/notes.md'}"
+          - plain.definition.documentation == plain.package_documentation
+        success_msg: ASSERTED the documentation mapping is reported as the package declared it
+        fail_msg: the documentation mapping is not the one the fixture declares
+
     - name: Inspect the package with verify never
       colonel_byte.zarf.zarf_package_inspect:
         package: "{{ zarf_package }}"
@@ -93,6 +106,7 @@
           - zarf_package_version == '1.2.3'
           - zarf_package_flavor == ''
           - zarf_package_definition == plain.definition
+          - zarf_package_documentation == plain.package_documentation
         success_msg: ASSERTED the package_inspect role sets the facts it documents
         fail_msg: the package_inspect role did not set the facts its reference page documents
 

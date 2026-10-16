@@ -96,6 +96,10 @@ EXAMPLES = r"""
   run_once: true
   register: pkg_inspect
 
+- name: Report the documentation the package carries
+  ansible.builtin.debug:
+    msg: "the package declares {{ pkg_inspect.package_documentation.keys() | list | join(', ') or 'no documentation' }}"
+
 - name: Display package version and flavor
   ansible.builtin.debug:
     msg:
@@ -179,6 +183,14 @@ class ActionModule(ZarfInfoActionBase):
         build = definition.get("build") or {}
 
         result["definition"] = definition
+        # The documentation mapping is lifted out of the definition rather than left in it, even
+        # though it is right there under result["definition"]["documentation"]. A playbook that
+        # reads it has to handle its absence -- zarf omits the key entirely for a package that
+        # declares none -- and `| default({})` on a nested path guards the wrong level: it is
+        # `definition.documentation` that may be missing, not the key below it. An always-present
+        # mapping that is sometimes empty is one less way for a prerequisite check to pass by
+        # looking at nothing.
+        result["package_documentation"] = definition.get("documentation") or {}
         result["package_name"] = metadata.get("name", "")
         result["package_version"] = metadata.get("version", "")
         result["package_flavor"] = build.get("flavor", "")
