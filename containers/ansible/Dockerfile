@@ -26,7 +26,7 @@
 #
 # It costs about 200MB in the image, which is zarf's own size: it vendors Helm, the Kubernetes
 # clients, Kustomize and cosign. There is no smaller artifact that is still the whole CLI.
-FROM ghcr.io/zarf-dev/zarf/agent:v0.87.0@sha256:63c400ea3a859ca1cac21c23e1a50240fc128bd00fac6fac189fe4b4348c484d AS zarf
+FROM ghcr.io/zarf-dev/zarf/agent:v0.88.0@sha256:288b3b4d1eb171eec11e5a794e92746001c3931319a9ef203f0cbd6dfc73a389 AS zarf
 
 FROM ghcr.io/almalinux/10-base:10.2@sha256:ed618ca107e9fd47ee2a64d1d33119ef356cfaf65a338daaa3fad19b80ae5da4
 
