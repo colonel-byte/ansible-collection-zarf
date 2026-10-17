@@ -25,6 +25,7 @@ Nothing here runs on the cluster's nodes. The modules run the installed `zarf` o
 | `containers/ansible/`         | The management node image: `ansible-core`, the collection, both module files and a `zarf`. Its build asserts the dispatch contract                         |
 | `schema/`                     | The generated JSON Schemas, written by `generate:schema` and committed because other repositories reference them                                           |
 | `examples/packages/`          | Reference Zarf packages declaring their cluster prerequisites. Read, linted and inspected; nothing builds one                                              |
+| `skills/`                     | Skills for the two authoring tasks this repository is about: writing a Zarf package, and declaring its prerequisites                                       |
 
 Several directories carry their own `AGENTS.md` with rules specific to that directory. Check the closest one before editing. Keep this table in sync when adding or removing one.
 
@@ -37,7 +38,7 @@ Several directories carry their own `AGENTS.md` with rules specific to that dire
 | [`test/e2e/AGENTS.md`](test/e2e/AGENTS.md)                                   | Fixtures belong in files, not Go string constants                                                                                        |
 | [`.github/AGENTS.md`](.github/AGENTS.md)                                     | Scorecard-safe workflow changes, the workflow docs under `docs/workflows/`, the issue forms, PR description format                       |
 
-`CLAUDE.md` in the repository root is a symlink to this file, so a Claude Code session started there loads these rules without being asked. That covers the root and nothing else: the directory-specific files above are not symlinked. Do not treat "nothing was loaded for me" as "there are no rules here", and do not grep a rules file for the one thing you thought to ask about. Open the closest `AGENTS.md` and read it.
+`CLAUDE.md` in the repository root is a symlink to this file, and `.claude/skills` is a symlink to [`skills/`](skills), so a Claude Code session started here loads these rules and those skills without being asked. Both exist so that the real file sits where a reader would look for it rather than inside a tool's directory. That covers the root and nothing else: the directory-specific files above are not symlinked. Do not treat "nothing was loaded for me" as "there are no rules here", and do not grep a rules file for the one thing you thought to ask about. Open the closest `AGENTS.md` and read it.
 
 ## Building and testing
 
