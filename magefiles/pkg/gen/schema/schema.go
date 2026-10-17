@@ -48,6 +48,13 @@ import (
 // another repository can reference one by a path that survives being vendored next to it.
 var Dir = "schema"
 
+// SkillDir gets a second copy of the prerequisites schema, because the skill there has to be
+// self-contained: it is read by an agent working in somebody else's package tree, where no path
+// into this repository resolves. The copy is generated rather than committed by hand for the
+// reason the original is -- see TestCommittedSchemasAreCurrent, which holds both against a fresh
+// render.
+var SkillDir = filepath.Join("skills", "zarf-package-prerequisites")
+
 // ResourcesFile is the schema of a reference package's resources.json, the declaration
 // magefiles/pkg/pkgvendor reads to vendor upstream manifests from a pinned release.
 //
@@ -84,37 +91,55 @@ const (
 // directory on somebody's disk.
 const schemaIDBase = "https://colonel-byte.github.io/ansible-collection-zarf/schema/"
 
-// Generate writes every schema under Dir.
+// Generate writes every schema, each to every directory that publishes it.
 func Generate() error {
 	if err := os.MkdirAll(Dir, 0o775); err != nil {
 		return err
 	}
 
-	for _, document := range []struct {
-		file   string
-		render func() ([]byte, error)
-	}{
-		{
-			file:   PrerequisitesFile,
-			render: RenderPrerequisites,
-		},
-		{
-			file:   ResourcesFile,
-			render: RenderResources,
-		},
-	} {
-		rendered, err := document.render()
+	for _, document := range Documents() {
+		rendered, err := document.Render()
 		if err != nil {
 			return err
 		}
 
-		path := filepath.Join(Dir, document.file)
+		path := filepath.Join(document.Dir, document.File)
 		fmt.Println(path)
 		if err := os.WriteFile(path, rendered, 0o644); err != nil { //nolint:gosec // a published schema is world-readable
 			return err
 		}
 	}
 	return nil
+}
+
+// Document is one generated schema at one of the paths it is committed to. Generate writes the
+// list and schema_test.go checks it, so a new copy of a schema is kept current by being added
+// here and nowhere else.
+type Document struct {
+	Dir    string
+	File   string
+	Render func() ([]byte, error)
+}
+
+// Documents returns every schema this repository commits, at every path it commits it to.
+func Documents() []Document {
+	return []Document{
+		{
+			Dir:    Dir,
+			File:   PrerequisitesFile,
+			Render: RenderPrerequisites,
+		},
+		{
+			Dir:    SkillDir,
+			File:   PrerequisitesFile,
+			Render: RenderPrerequisites,
+		},
+		{
+			Dir:    Dir,
+			File:   ResourcesFile,
+			Render: RenderResources,
+		},
+	}
 }
 
 // RenderPrerequisites returns the PackagePrerequisites schema as it belongs on disk.

@@ -47,32 +47,20 @@ func TestMain(m *testing.M) {
 // The fix when this fails is to run the generator, not to edit the file:
 //
 //	go run ./magefiles/core generate:schema
+// It covers every copy, not just the one under schema/: the prerequisites schema is committed a
+// second time inside skills/zarf-package-prerequisites so that the skill is self-contained, and a
+// second copy nothing checks is the same stale schema with an extra place to hide.
 func TestCommittedSchemasAreCurrent(t *testing.T) {
-	for _, tt := range []struct {
-		name   string
-		file   string
-		render func() ([]byte, error)
-	}{
-		{
-			name:   "the PackagePrerequisites schema",
-			file:   PrerequisitesFile,
-			render: RenderPrerequisites,
-		},
-		{
-			name:   "the package-resources schema",
-			file:   ResourcesFile,
-			render: RenderResources,
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			path := filepath.Join(Dir, tt.file)
+	for _, document := range Documents() {
+		path := filepath.Join(document.Dir, document.File)
 
+		t.Run(path, func(t *testing.T) {
 			committed, err := os.ReadFile(path) //nolint:gosec // a path from this package's own constants
 			if err != nil {
 				t.Fatalf("unable to read the committed schema at %s: %v", path, err)
 			}
 
-			rendered, err := tt.render()
+			rendered, err := document.Render()
 			if err != nil {
 				t.Fatalf("unable to render the schema: %v", err)
 			}

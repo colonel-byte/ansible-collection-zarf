@@ -14,18 +14,80 @@ description: >
 
 A Zarf package deploys onto a cluster that cannot run it and reports success. Zarf applies the `HelmRelease`, the API server accepts it, nothing reconciles it, and the only symptom is a resource that never becomes ready in a cluster nobody is watching. A `PackagePrerequisites` document is the package stating its requirements where a machine can check them.
 
-**Read [`docs/guides/package-prerequisites.md`](../../docs/guides/package-prerequisites.md) first.** It is the format's reference: every section, a full example, and why each one is shaped the way it is. The two reference packages under [`examples/packages/`](../../examples/packages/) are working copies to start from. This page is the procedure and the traps.
+The format's full reference -- every section and why each is shaped the way it is -- is [`docs/guides/package-prerequisites.md`](https://github.com/colonel-byte/ansible-collection-zarf/blob/main/docs/guides/package-prerequisites.md), and the two [reference packages](https://github.com/colonel-byte/ansible-collection-zarf/tree/main/examples/packages) are a provider and a consumer of one capability, to be read as working copies. Everything needed to write a document is below.
+
+## The document
+
+| Section               | Required | What it states                                                                     |
+| --------------------- | -------- | ---------------------------------------------------------------------------------- |
+| `apiVersion`          | yes      | Fixed to `colonel-byte.dev/v1alpha1`.                                              |
+| `kind`                | yes      | Fixed to `PackagePrerequisites`.                                                   |
+| `metadata`            | yes      | The package's name and version, and a sentence for a human.                        |
+| `requires`            | yes      | What the cluster must already be.                                                  |
+| `requires.kubernetes` | no       | A SemVer constraint on the API server's version.                                   |
+| `requires.fluxcd`     | no       | A Flux version, the controller Deployments that must be available, and the CRDs.   |
+| `requires.storage`    | no       | A default StorageClass, named StorageClasses, and the access modes claims ask for. |
+| `requires.packages`   | no       | Other Zarf packages that must be deployed first, with SemVer constraints.          |
+| `provides`            | no       | The capabilities, CRDs and namespaces this package contributes to the cluster.     |
+
+`requires` is required and `provides` is not, which is the asymmetry the format is for: a package that requires nothing has no reason to ship the document, while a leaf workload that provides nothing downstream is the common case.
+
+```yaml
+# yaml-language-server: $schema=../../schema/zarf-v1alpha1-package-prerequisites-schema.json
+---
+apiVersion: colonel-byte.dev/v1alpha1
+kind: PackagePrerequisites
+metadata:
+  package: operator-external-secrets
+  version: 2.12.0
+  description: Prerequisites for the External Secrets Operator and its webhook
+
+requires:
+  kubernetes:
+    version: ">=1.30.0"
+  fluxcd:
+    version: ">=2.9.0"
+    controllers:
+      - name: source-controller
+        namespace: flux-system
+        minAvailable: 1
+      - name: helm-controller
+        namespace: flux-system
+        minAvailable: 1
+    crds:
+      - helmreleases.helm.toolkit.fluxcd.io
+      - ocirepositories.source.toolkit.fluxcd.io
+  packages:
+    - name: app-fluxcd
+      version: ">=2.9.0"
+
+provides:
+  capabilities:
+    - name: external-secrets-engine
+      version: "2.12.0"
+  crds:
+    - externalsecrets.external-secrets.io
+    - secretstores.external-secrets.io
+    - clustersecretstores.external-secrets.io
+  namespaces:
+    - external-secrets
+```
+
+The Flux section is three things because a version alone catches the least interesting failure: a cluster can hold the right Flux release with its controllers scaled to zero, or hold the controllers and not the CRDs the package's own `HelmRelease` needs.
 
 ## Adding a document to a package
 
-1. **Write `docs/prerequisites.yaml`** in the package's source tree, starting from `examples/packages/operator-external-secrets/docs/prerequisites.yaml`.
-2. **Point `$schema` at [`schema/zarf-v1alpha1-package-prerequisites-schema.json`](../../schema/zarf-v1alpha1-package-prerequisites-schema.json)** -- a relative path in a checkout, a URL otherwise. It is what makes an editor complete and validate the file as it is written.
+1. **Write `docs/prerequisites.yaml`** in the package's source tree, starting from the example above.
+2. **Keep the `$schema` line, pointing at a path that resolves from the document.** `zarf-v1alpha1-package-prerequisites-schema.json` sits beside this page -- copy it into the package, under `schema/` beside the `zarf.yaml`, and name it relative to `docs/prerequisites.yaml` as above. It is what makes an editor complete and validate the file as it is written, and a package carrying its own schema can be validated in the air-gapped facility it is opened in.
 3. **Add it to the package's `documentation:` mapping**, which is what packages it into a layer that `zarf package inspect documentation` extracts without deploying anything:
 
    ```yaml
    documentation:
      prerequisites: docs/prerequisites.yaml
+     schema: schema/zarf-v1alpha1-package-prerequisites-schema.json
    ```
+
+   Naming the schema there packages it too, so the document can be validated wherever the tarball is opened.
 
 4. **State only what you can defend.** Every requirement is a deployment somebody will be refused. A CRD the package's own manifests reference is defensible; a Kubernetes version copied from another package is not.
 5. **Lint and check it**: `zarf dev lint <dir>`, then run the role against a real cluster.
@@ -52,7 +114,7 @@ The role extracts the document with `zarf_package_documentation`, reads the clus
 
 **Print `zarf_prerequisites_skipped` even on a successful run.** A run that printed only its successes reads as though the whole document had been verified. Set `zarf_prerequisites_enforce: false` to report without failing the play, and `zarf_check_packages: false` on a cluster that is not initialised yet -- `zarf package list` needs one.
 
-Deploying a bundle in order means checking inside the loop, not ahead of it: the first package is what satisfies the second one's requirements. See [`ansible/examples/playbooks/zarf-prerequisites.yml`](../../ansible/examples/playbooks/zarf-prerequisites.yml).
+Deploying a bundle in order means checking inside the loop, not ahead of it: the first package is what satisfies the second one's requirements. See [`ansible/examples/playbooks/zarf-prerequisites.yml`](https://github.com/colonel-byte/ansible-collection-zarf/blob/main/ansible/examples/playbooks/zarf-prerequisites.yml).
 
 ## The traps
 
