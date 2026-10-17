@@ -41,7 +41,7 @@ Zarf itself is a prerequisite: the modules run the installed `zarf`, and nothing
 <!-- x-release-please-start-version -->
 
 ```sh
-docker run --rm -v "$PWD:/workspace" ghcr.io/colonel-byte/zarf-ansible-modules:v0.87.0 \
+docker run --rm -v "$PWD:/workspace" ghcr.io/colonel-byte/zarf-ansible-modules:v0.87.1 \
   ansible-playbook -i management.ini playbooks/zarf-bundle-order.yml
 ```
 

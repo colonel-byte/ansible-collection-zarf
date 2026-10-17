@@ -34,7 +34,7 @@ A management node needs `ansible-core`, the collection on Ansible's collections 
 
 ```sh
 docker run --rm -v "$PWD:/workspace" -v "$HOME/.kube:/home/nonroot/.kube:ro" \
-  ghcr.io/colonel-byte/zarf-ansible-modules:v0.87.0 \
+  ghcr.io/colonel-byte/zarf-ansible-modules:v0.87.1 \
   ansible-playbook -i management.ini playbooks/zarf-bundle-order.yml
 ```
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.87.1](https://github.com/colonel-byte/ansible-collection-zarf/compare/v0.87.0...v0.87.1) (2026-10-17)
+
+
+### CI/CD
+
+* **fuzz:** add fuzzing to golang ([#38](https://github.com/colonel-byte/ansible-collection-zarf/issues/38)) ([39cff2a](https://github.com/colonel-byte/ansible-collection-zarf/commit/39cff2a3f115c61f9ec27df132b91e2a053e3113))
+
+
+### Build
+
+* **deps:** Bump zarf-dev/zarf/agent from v0.87.0 to v0.88.0 in /containers/ansible in the containers group ([#36](https://github.com/colonel-byte/ansible-collection-zarf/issues/36)) ([f00e08f](https://github.com/colonel-byte/ansible-collection-zarf/commit/f00e08ff15eb52e91fcffd9f99afb935d35d289b))
+
 ## [0.87.0](https://github.com/colonel-byte/ansible-collection-zarf/compare/v0.86.0...v0.87.0) (2026-10-15)
 
 
