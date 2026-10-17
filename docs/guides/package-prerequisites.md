@@ -104,6 +104,23 @@ That is the whole reason to use `documentation:` rather than a file in the repos
 
 The annotations beside it are a deliberate duplicate of two facts from the document. They are readable from `zarf package inspect definition` alone, which is one command and no extraction, so a consumer that only needs to order a bundle can read them. The document is for the consumer that is going to check a cluster against it, and it is the source of truth.
 
+## The reference packages
+
+[`examples/packages`](https://github.com/colonel-byte/ansible-collection-zarf/tree/main/examples/packages) holds two packages that declare documents, as a provider and a consumer of the same capability.
+
+| Package                     | Role     | What it shows                                                                                        |
+| --------------------------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| `app-fluxcd`                | Provider | A `provides:` section, and the generated kustomization that makes its version readable off a cluster |
+| `operator-external-secrets` | Consumer | A `requires:` section for a HelmRelease that needs a reconciler to exist                             |
+
+Neither is built or deployed by anything here -- `zarf package create` on either reaches the network. They are to be read, linted and inspected:
+
+```sh
+go run ./magefiles/core examples:lint
+```
+
+`app-fluxcd` is packaged from the upstream flux2 release manifests, vendored from a pinned tag by `examples:vendor` and with its image lists discovered by `examples:images`. See [the mage reference](../dev/mage.md) for those targets, and `magefiles/pkg/pkgvendor` for what they do.
+
 ## When a document changes
 
 The schema is generated from the Go types, so changing the format is a change to [`spec.go`](https://github.com/colonel-byte/ansible-collection-zarf/blob/main/api/colonel-byte.dev/v1alpha1/prerequisites/spec.go) followed by:
@@ -114,6 +131,6 @@ go run ./magefiles/core generate:schema
 
 The descriptions in the schema are the doc comments on those types, which is why they are written as prose for a package author rather than as notes for a Go reader: an editor with YAML schema support shows them while the document is being written.
 
-`TestCommittedSchemasAreCurrent` is what holds the pieces together. It fails when the committed schema stops matching the types -- a stale schema does not fail, it validates the wrong document, which is worse than not validating one.
+Two tests hold the pieces together. `TestCommittedSchemasAreCurrent` fails when the committed schema stops matching the types -- a stale schema does not fail, it validates the wrong document, which is worse than not validating one. `TestExampleDocumentsMatchTheTypes` decodes each reference package's document into the types with unknown fields rejected, so an example written against an older shape of the format fails rather than quietly becoming the thing readers copy.
 
 The version is `v1alpha1` and means it: the format is a proof alongside [ZEP-0072](https://github.com/zarf-dev/proposals/pull/73), not a published API.

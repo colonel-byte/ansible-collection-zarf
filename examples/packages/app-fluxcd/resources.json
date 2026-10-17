@@ -1,0 +1,38 @@
+{
+  "$schema": "../../../schema/package-resources-schema.json",
+  "tag": "v2.9.5",
+  "renovate": "datasource=github-releases depName=fluxcd/flux2",
+  "repo": "https://github.com/fluxcd/flux2",
+  "asset": "manifests.tar.gz",
+  "namespace": "flux-system",
+  "registry": "ghcr.io",
+  "projects": [
+    {
+      "path": "core",
+      "component": "fluxcd-core",
+      "match": [
+        "helm-controller.yaml",
+        "kustomize-controller.yaml",
+        "notification-controller.yaml",
+        "source-controller.yaml",
+        "rbac.yaml",
+        "policies.yaml"
+      ]
+    },
+    {
+      "path": "images",
+      "component": "fluxcd-image-controller",
+      "match": [
+        "image-automation-controller.yaml",
+        "image-reflector-controller.yaml"
+      ]
+    },
+    {
+      "path": "source",
+      "component": "fluxcd-source-watcher",
+      "match": [
+        "source-watcher.yaml"
+      ]
+    }
+  ]
+}
