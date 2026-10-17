@@ -10,16 +10,17 @@ The proof began in [colonel-byte/cargoship](https://github.com/colonel-byte/carg
 
 ## Modules
 
-| Module                       | What it does                                                                | How it is built                   |
-| ---------------------------- | --------------------------------------------------------------------------- | --------------------------------- |
-| `zarf_init`                  | `zarf init` against the cluster in a kubeconfig                             | Wrapper binary, from `cmd/init`   |
-| `zarf_package_deploy`        | `zarf package deploy`                                                       | Wrapper binary, from `cmd/deploy` |
-| `zarf_package_documentation` | Extracts the files a package carries in its `documentation:` mapping        | Action plugin                     |
-| `zarf_package_info`          | Lists the packages deployed to a cluster                                    | Action plugin                     |
-| `zarf_package_inspect`       | Reads and verifies a package without deploying it                           | Action plugin                     |
-| `zarf_state_info`            | Reads the `zarf-state` Secret, withholding its eight credentials by default | Action plugin                     |
+| Module                       | What it does                                                                   | How it is built                   |
+| ---------------------------- | ------------------------------------------------------------------------------ | --------------------------------- |
+| `zarf_init`                  | `zarf init` against the cluster in a kubeconfig                                | Wrapper binary, from `cmd/init`   |
+| `zarf_package_deploy`        | `zarf package deploy`                                                          | Wrapper binary, from `cmd/deploy` |
+| `zarf_cluster_info`          | Reports the cluster's Kubernetes version, CRDs, StorageClasses and Deployments | Action plugin                     |
+| `zarf_package_documentation` | Extracts the files a package carries in its `documentation:` mapping           | Action plugin                     |
+| `zarf_package_info`          | Lists the packages deployed to a cluster                                       | Action plugin                     |
+| `zarf_package_inspect`       | Reads and verifies a package without deploying it                              | Action plugin                     |
+| `zarf_state_info`            | Reads the `zarf-state` Secret, withholding its eight credentials by default    | Action plugin                     |
 
-The first two converge a cluster and are the proof. The other four read one, are not part of the proof, and are plain action plugins with no binary behind them -- [choice-zarf-info-modules](agent/choice-zarf-info-modules.md) records why, and why `zarf_state_info` redacts.
+The first two converge a cluster and are the proof. The other five read one, are not part of the proof, and are plain action plugins with no binary behind them -- [choice-zarf-info-modules](agent/choice-zarf-info-modules.md) records why, and why `zarf_state_info` redacts.
 
 Each read-only module has a role apiece: `packages`, `package_inspect` and `state`.
 
@@ -29,7 +30,7 @@ A package can state what it needs of a cluster in a machine-readable document ca
 
 It exists for a failure that reports itself as a success. A workload package delivered as a `HelmRelease` needs a running `helm-controller` to do anything at all; deploy it onto a cluster without one and zarf applies the manifests, the API server accepts them, `zarf package deploy` reports a successful deployment, and nothing is ever reconciled.
 
-The document travels inside the package, under zarf's own `documentation:` mapping, so a tarball carried into an air-gapped facility carries its own requirements. `zarf_package_documentation` is what takes it back out. [The guide](guides/package-prerequisites.md) is the format and how it is written; [`examples/packages`](https://github.com/colonel-byte/ansible-collection-zarf/tree/main/examples/packages) holds two reference packages that declare one.
+The document travels inside the package, under zarf's own `documentation:` mapping, so a tarball carried into an air-gapped facility carries its own requirements. `zarf_package_documentation` is what takes it back out, and `zarf_cluster_info` reports the cluster facts it is checked against -- read through `zarf tools kubectl`, so this needs no `kubernetes.core`. [The guide](guides/package-prerequisites.md) is the format and how it is written; [`examples/packages`](https://github.com/colonel-byte/ansible-collection-zarf/tree/main/examples/packages) holds two reference packages that declare one.
 
 ## Installing
 
