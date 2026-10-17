@@ -27,6 +27,7 @@
 - [zarf roles](ansible/roles.md)
   - [package_inspect](ansible/role_package_inspect.md)
   - [packages](ansible/role_packages.md)
+  - [prerequisites](ansible/role_prerequisites.md)
   - [state](ansible/role_state.md)
 
 

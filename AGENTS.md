@@ -22,9 +22,9 @@ Nothing here runs on the cluster's nodes. The modules run the installed `zarf` o
 | `docs/`                       | The mdBook source. Several subpaths are generated and must not be hand-edited -- see [`docs/AGENTS.md`](docs/AGENTS.md)                                    |
 | `docs/workflows/`             | One page per file under `.github/workflows/`, named after it with a `.md` extension -- required by [`.github/AGENTS.md`](.github/AGENTS.md)                |
 | `docs/agent/choice-*.md`      | Records of non-obvious decisions and the tradeoffs behind them -- read before reversing one                                                                |
+| `containers/ansible/`         | The management node image: `ansible-core`, the collection, both module files and a `zarf`. Its build asserts the dispatch contract                         |
 | `schema/`                     | The generated JSON Schemas, written by `generate:schema` and committed because other repositories reference them                                           |
 | `examples/packages/`          | Reference Zarf packages declaring their cluster prerequisites. Read, linted and inspected; nothing builds one                                              |
-| `containers/ansible/`         | The management node image: `ansible-core`, the collection, both module files and a `zarf`. Its build asserts the dispatch contract                         |
 
 Several directories carry their own `AGENTS.md` with rules specific to that directory. Check the closest one before editing. Keep this table in sync when adding or removing one.
 
