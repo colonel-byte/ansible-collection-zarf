@@ -1,18 +1,19 @@
 # Modules
 
-Five modules ship. Two of them converge a cluster, and three read it.
+Six modules ship. Two of them converge a cluster, and four read it.
 
 `zarf_init` and `zarf_package_deploy` are the converging pair: they are the proof of [ZEP-0072](https://github.com/zarf-dev/proposals/pull/73), each is a compiled wrapper binary with its parameters and command line in Go, and [choice-zarf-ansible-module](../agent/choice-zarf-ansible-module.md) records how. Package creation is not among them -- it builds an artifact from a definition in a repository, which belongs in a pipeline rather than in a convergence run -- and neither is package removal, which nothing here has needed yet.
 
-`zarf_package_info`, `zarf_package_inspect` and `zarf_state_info` read. They change nothing, they answer during a check-mode play rather than skipping, and they are plain action plugins with no wrapper binary behind them, for the reasons in [choice-zarf-info-modules](../agent/choice-zarf-info-modules.md).
+`zarf_package_documentation`, `zarf_package_info`, `zarf_package_inspect` and `zarf_state_info` read. They change nothing, they answer during a check-mode play rather than skipping, and they are plain action plugins with no wrapper binary behind them, for the reasons in [choice-zarf-info-modules](../agent/choice-zarf-info-modules.md) and -- for the one added for the prerequisites format, which is the first to push past the threshold that record names -- in [choice-package-documentation-module](../agent/choice-package-documentation-module.md).
 
-| Module                                              | What it does                                                                              |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| [`zarf_init`](module_init.md)                       | Initialises a cluster: the injector, the seed registry, the registry, the agent.          |
-| [`zarf_package_deploy`](module_package_deploy.md)   | Puts a package on a cluster, from a path, an `oci://` reference, or an `https://` URL.    |
-| [`zarf_package_info`](module_package_info.md)       | Lists the packages deployed to a cluster, via `zarf package list`.                        |
-| [`zarf_package_inspect`](module_package_inspect.md) | Reads the `zarf.yaml` of a package tarball, an `oci://` reference, or a deployed package. |
-| [`zarf_state_info`](module_state_info.md)           | Reads the cluster's `zarf-state` Secret, withholding the credentials in it.               |
+| Module                                                          | What it does                                                                                    |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| [`zarf_init`](module_init.md)                                   | Initialises a cluster: the injector, the seed registry, the registry, the agent.                |
+| [`zarf_package_deploy`](module_package_deploy.md)               | Puts a package on a cluster, from a path, an `oci://` reference, or an `https://` URL.          |
+| [`zarf_package_documentation`](module_package_documentation.md) | Extracts the files a package carries in its `documentation:` mapping, and parses the YAML ones. |
+| [`zarf_package_info`](module_package_info.md)                   | Lists the packages deployed to a cluster, via `zarf package list`.                              |
+| [`zarf_package_inspect`](module_package_inspect.md)             | Reads the `zarf.yaml` of a package tarball, an `oci://` reference, or a deployed package.       |
+| [`zarf_state_info`](module_state_info.md)                       | Reads the cluster's `zarf-state` Secret, withholding the credentials in it.                     |
 
 ## The surfaces differ because the commands do
 
@@ -32,8 +33,12 @@ Credentials given as parameters are rendered as flags, which puts them in the pr
 
 The two converging modules report `changed: true` with `changedSignal: partial` on every successful run, and name every component they deployed in `changedUndeclared`. Zarf reports which components ran and not whether any of them found the cluster already as it wanted, so `partial` is the honest answer rather than an unfinished one. Check mode reports the task as skipped, because neither command has a dry run.
 
-The three read-only modules report `changed: false`, which is not an approximation, and they run in check mode rather than skipping: answering a question during a run an operator asked to be told about is the honest thing to do.
+The four read-only modules report `changed: false`, which is not an approximation, and they run in check mode rather than skipping: answering a question during a run an operator asked to be told about is the honest thing to do.
 
 `zarf_state_info` withholds what it reads. The `zarf-state` Secret carries the registry, git and artifact server credentials and the agent webhook's TLS private key, so the returned `state` has them removed and `redacted` names the paths that went. `include_credentials: true` returns them and censors the task's own output in the same breath; the task that reads the result afterwards needs its own `no_log`, because `set_fact` prints what the module hid.
+
+## The one that exists for the prerequisites format
+
+`zarf_package_documentation` is there because a package states what it needs of a cluster in a [`PackagePrerequisites`](../guides/package-prerequisites.md) document carried in its own `documentation:` mapping, and that mapping is a set of paths inside a tarball. [`zarf_package_inspect`](module_package_inspect.md) reports the mapping; this is what takes the files out of the package and parses them.
 
 The [module guide](../guides/zarf-ansible-module.md) covers installing the modules, the ordering a cluster with no storage provider needs, the live progress display, and the shape of the result.
