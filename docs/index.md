@@ -22,6 +22,14 @@ The first two converge a cluster and are the proof. The last three read one, are
 
 Each read-only module has a role apiece: `packages`, `package_inspect` and `state`.
 
+## Package prerequisites
+
+A package can state what it needs of a cluster in a machine-readable document carried inside the package itself, so that a deployment can refuse to proceed when the cluster does not satisfy it. That is the second thing in this repository: a `colonel-byte.dev/v1alpha1` `PackagePrerequisites` format and a [generated JSON Schema](https://github.com/colonel-byte/ansible-collection-zarf/blob/main/schema/zarf-v1alpha1-package-prerequisites-schema.json) for it.
+
+It exists for a failure that reports itself as a success. A workload package delivered as a `HelmRelease` needs a running `helm-controller` to do anything at all; deploy it onto a cluster without one and zarf applies the manifests, the API server accepts them, `zarf package deploy` reports a successful deployment, and nothing is ever reconciled.
+
+The document travels inside the package, under zarf's own `documentation:` mapping, so a tarball carried into an air-gapped facility carries its own requirements. [The guide](guides/package-prerequisites.md) is the format and how it is written.
+
 ## Installing
 
 Build the two wrapper binaries and put them on the path of the node the play runs on:
@@ -102,9 +110,10 @@ go run ./magefiles/core test:unit                # everything but the e2e suites
 go run ./magefiles/core test:endToEndNonCluster  # needs ansible-playbook; no cluster
 go run ./magefiles/core test:endToEndCluster     # needs k3d, zarf, Docker and the network
 go run ./magefiles/core generate:document        # regenerate docs/ansible, docs/golang, docs/index.md, docs/SUMMARY.md
+go run ./magefiles/core generate:schema          # regenerate schema/ from the Go types in api/
 ```
 
-The unit tests are where the collection and the Go code are held against each other: `TestActionPluginDocsMatchModuleParams` holds each action plugin's `DOCUMENTATION` block against the Go parameter struct, `TestInfoPluginDocsMatchRenderedFlags` does the same for the read-only modules against the flags their `command_parts` functions name, and `TestEveryActionPluginIsCovered` fails on a plugin that neither test looks at. `TestInitArgsAreKnownFlags` holds every flag the wrappers can render against a recorded list; refresh it with `generate:zarfFlags` when the zarf they run moves.
+The unit tests are where the collection and the Go code are held against each other: `TestActionPluginDocsMatchModuleParams` holds each action plugin's `DOCUMENTATION` block against the Go parameter struct, `TestInfoPluginDocsMatchRenderedFlags` does the same for the read-only modules against the flags their `command_parts` functions name, and `TestEveryActionPluginIsCovered` fails on a plugin that neither test looks at. `TestInitArgsAreKnownFlags` holds every flag the wrappers can render against a recorded list; refresh it with `generate:zarfFlags` when the zarf they run moves. On the prerequisites side, `TestCommittedSchemasAreCurrent` fails when the committed schema stops matching the Go type it is reflected from.
 
 ## Known limits of the proof
 

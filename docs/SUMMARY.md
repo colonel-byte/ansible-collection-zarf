@@ -7,6 +7,7 @@
 
 # Guides
 
+- [package-prerequisites](guides/package-prerequisites.md)
 - [zarf-ansible-module](guides/zarf-ansible-module.md)
 
 
