@@ -1,0 +1,58 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "source-controller",
+        "namespace": "flux-system",
+        "labels": {
+          "app.kubernetes.io/part-of": "flux",
+          "app.kubernetes.io/version": "v2.9.5"
+        }
+      },
+      "spec": {
+        "replicas": 1
+      },
+      "status": {
+        "availableReplicas": 1,
+        "readyReplicas": 1
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "helm-controller",
+        "namespace": "flux-system",
+        "labels": {
+          "app.kubernetes.io/part-of": "flux",
+          "app.kubernetes.io/version": "v2.9.5"
+        }
+      },
+      "spec": {
+        "replicas": 1
+      },
+      "status": {
+        "readyReplicas": 1
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "coredns",
+        "namespace": "kube-system"
+      },
+      "spec": {
+        "replicas": 2
+      },
+      "status": {
+        "availableReplicas": 2,
+        "readyReplicas": 2
+      }
+    }
+  ]
+}

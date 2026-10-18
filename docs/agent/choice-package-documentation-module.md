@@ -22,6 +22,23 @@ But `--verify=always` -- the spelling that record calls the mistake the weak tes
 
 The threshold is worth restating as what it was standing in for, rather than raised: **a read-only module needs its rendered command line covered against a real zarf, or it needs to be a wrapper.** Counting flags was a proxy for that, and a bad one.
 
+## `ZarfInfoActionBase` runs a list of commands, for one module
+
+`zarf_cluster_info` asks the cluster four questions -- the Kubernetes version, the CRDs, the StorageClasses and the Deployments -- and no amount of flags makes them one kubectl command. The base class ran exactly one command and handed its stdout to `interpret`.
+
+The alternatives were worse than extending it:
+
+- **Four modules.** A prerequisite check would become four tasks that can each half-fail, and the role's job would turn into assembling them.
+- **One command.** `kubectl get crd,storageclass,deployments -A -o json` is one call and megabytes of answer: a CRD object carries the full OpenAPI schema of every version of its resource, and a cluster with a few operators on it answers with tens of megabytes, all of which would land in a registered variable and then in a fact. The version is a separate call regardless.
+- **Overriding `run()` in the subclass.** That is a copy of the binary resolution, the environment handling and the failure reporting, which is the whole of what the base class is for.
+
+So the base gained `zarf_argvs` and `interpret_outputs`, and they are the only path it runs. `zarf_argvs` defaults to the single command `zarf_argv` returns, and `interpret_outputs` defaults to handing that command's stdout to `interpret`, so the four single-command modules are unchanged and did not have to declare that they are. Overriding the pair is the whole declaration: there is no flag saying which shape a module is, and a subclass that overrode one of the two and not the other would fail its task on the first run rather than quietly run one command and report as though it had run four.
+
+Two consequences worth knowing:
+
+- `command_parts` in `zarf_cluster_info` returns the *first* command, and `command_parts_all` returns all four. `TestInfoPluginDocsMatchRenderedFlags` was taught to read both and to read every match rather than the first, because otherwise three of the four commands' flags would be invisible to the one test that looks at them -- which is the state that file exists to prevent.
+- A failed query names itself in the result's `query` key. A message naming only the command line leaves the reader to work out which of four kubectl calls that was.
+
 ## `app-fluxcd` is vendored by a mage target, not written by hand
 
 The reference package was first written against the Flux Operator chart, and is now the upstream flux2 release manifests, vendored from a pinned tag. `magefiles/pkg/pkgvendor` is a Go port of the three shell scripts in [colonel-byte/zarf-pkg-fluxcd](https://github.com/colonel-byte/zarf-pkg-fluxcd)'s `.github/hack`, which is where that pattern already runs.
