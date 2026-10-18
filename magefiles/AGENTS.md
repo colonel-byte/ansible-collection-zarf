@@ -22,7 +22,6 @@ All implementation logic belongs in modular Go packages under `magefiles/pkg/`:
 | `magefiles/pkg/devtools/`      | Developer tooling: AlmaLinux repodata parsing and the dnf pin rewriters (`dnfpins`)                                             |
 | `magefiles/pkg/pkgvendor/`     | Vendoring the pinned upstream manifests a reference package deploys, and the parts of it that follow the pin                    |
 | `magefiles/pkg/testrunner/`    | Unit and end-to-end test runners                                                                                                |
-| `magefiles/pkg/util/`          | Shared helper functions                                                                                                         |
 
 ## Target structure rules
 

@@ -163,3 +163,18 @@ When a decision looks reversible from the code alone -- a read-only module built
 ### The e2e suites skip rather than fail
 
 Every test in both suites checks its prerequisites and calls `t.Skip` with a reason when one is missing. A green run is not proof that anything ran; read the output. This is deliberate -- the alternative is a suite that fails on every contributor's laptop -- but it means a suite that silently stopped running looks exactly like a suite that passed.
+
+### `build/tmp` breaks every `./...` command while an e2e run is in flight
+
+The e2e targets point `TMPDIR` at `build/tmp` inside the repository, so the `go test` process that runs a suite puts its own build scratch there too -- a `go-build<n>/` tree of generated cgo. `go list ./...` walks the filesystem rather than the index, so `build/.gitignore` does not keep it out, and loading that package fails:
+
+```
+package github.com/colonel-byte/ansible-collection-zarf/build/tmp/go-build.../b170
+    .../src/runtime/cgo/cgo.go:39:8: use of internal package internal/runtime/sys not allowed
+```
+
+It names the Go toolchain's own source, so it reads as a broken checkout or a bad toolchain. It is neither: it is leftovers from a suite running in another terminal, or from one that was interrupted before it cleaned up.
+
+While that directory exists, **`go build ./...`, `go vet ./...` and `go list ./...` all fail**, and so does the `golangci-lint` hook -- `.golangci.yaml` excludes `^build/`, but that suppresses *issues* in a path, not a package that fails to load. `test:unit` is immune: it lists with `go list -e` so one unbuildable directory cannot take the command down, then drops `build/` in `unitPackages`. Nothing else is.
+
+So: scope the command (`go build ./internal/... ./cmd/...`), or wait for the suite, or `rm -rf build/tmp` if no suite is running. A completed run cleans up after itself; an interrupted one does not.

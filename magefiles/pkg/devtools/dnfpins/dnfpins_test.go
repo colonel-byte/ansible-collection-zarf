@@ -17,6 +17,7 @@ package dnfpins_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/colonel-byte/ansible-collection-zarf/magefiles/pkg/devtools/dnfpins"
@@ -249,6 +250,71 @@ func TestUpdatersMatchTheRepositoryFiles(t *testing.T) {
 		path := copyIntoTemp(t, dnfpins.GoreleaserConfigPath)
 		if err := dnfpins.UpdateGoreleaserDnfPins(path, pins); err != nil {
 			t.Error(err)
+		}
+	})
+}
+
+// TestFindLatestRPMPicksByVersionNotByOrder holds the one piece of judgement in the pin lookup.
+//
+// Repodata lists a package's builds in whatever order the repository wrote them, which is not
+// version order: AlmaLinux ships several builds of ansible-core at once and the newest is
+// routinely not the last. A lookup that took the first or the last match would pin a real version
+// that is simply not the newest one, and the pin would look correct in every file it lands in --
+// the containers would build, the image would work, and it would quietly stay a release behind.
+//
+// The comparison itself is dnfpins.RpmVersion.Compare, which TestRpmVersionCompare covers; what is held
+// here is that the search uses it over every candidate and ignores other packages entirely.
+func TestFindLatestRPMPicksByVersionNotByOrder(t *testing.T) {
+	primary := &dnfpins.PrimaryXML{
+		Packages: []dnfpins.RpmPackage{
+			{
+				Name:    "ansible-core",
+				Version: dnfpins.RpmVersion{Epoch: "0", Ver: "2.16.3", Rel: "1.el9"},
+			},
+			{
+				Name:    "bash-completion",
+				Version: dnfpins.RpmVersion{Epoch: "0", Ver: "2.11", Rel: "5.el9"},
+			},
+			// The newest, in the middle, so neither "first match" nor "last match" finds it.
+			{
+				Name:    "ansible-core",
+				Version: dnfpins.RpmVersion{Epoch: "0", Ver: "2.16.14", Rel: "1.el9"},
+			},
+			{
+				Name:    "ansible-core",
+				Version: dnfpins.RpmVersion{Epoch: "0", Ver: "2.16.9", Rel: "2.el9"},
+			},
+		},
+	}
+
+	t.Run("the newest build wins wherever it sits in the list", func(t *testing.T) {
+		got, err := dnfpins.FindLatestRPM(primary, "ansible-core")
+		if err != nil {
+			t.Fatalf("dnfpins.FindLatestRPM reported %v", err)
+		}
+		// 2.16.14 over 2.16.9 and 2.16.3: a string comparison would pick 2.16.9.
+		if want := "2.16.14"; got.Version.Ver != want {
+			t.Errorf("the newest ansible-core was %s, want %s", got.Version.Ver, want)
+		}
+	})
+
+	t.Run("a package with one build is still found", func(t *testing.T) {
+		got, err := dnfpins.FindLatestRPM(primary, "bash-completion")
+		if err != nil {
+			t.Fatalf("dnfpins.FindLatestRPM reported %v", err)
+		}
+		if want := "2.11"; got.Version.Ver != want {
+			t.Errorf("bash-completion was %s, want %s", got.Version.Ver, want)
+		}
+	})
+
+	t.Run("a package the repodata does not carry is an error naming it", func(t *testing.T) {
+		_, err := dnfpins.FindLatestRPM(primary, "a-package-nobody-ships")
+		if err == nil {
+			t.Fatal("a missing package was reported as found")
+		}
+		if !strings.Contains(err.Error(), "a-package-nobody-ships") {
+			t.Errorf("the error was %q, want one naming the package", err)
 		}
 	})
 }

@@ -49,7 +49,20 @@ components:
   # deploys, and a bundle that installs both in one component has no way to wait in between.
   #
   # They are most of the package by size. Argo CD's applicationset-crd.yaml alone is 1.4 MB of
-  # OpenAPI schema, which is what a CRD with a fully specified spec costs.
+  # OpenAPI schema -- almost all of it spec.generators, because the matrix and merge generators
+  # embed every other generator type recursively and carry the whole Application template with
+  # each copy. That is one CRD being enormous, not several bundled together: all three files here
+  # hold exactly one CustomResourceDefinition, the way manifests/crds/ ships them upstream.
+  #
+  # All three are vendored rather than trimming the big one, and the size is the reason it was
+  # considered at all. argocd-applicationset-controller ships in namespace-install.yaml below and
+  # starts a controller-runtime informer for ApplicationSet: with the CRD absent the manager fails
+  # to start rather than running without the feature, so the component would crashloop. A package
+  # that deploys a controller and withholds its CRD is broken in the way that is hardest to read
+  # from a cluster, which is worth 1.4 MB of repository.
+  #
+  # It is also why this component is declared first. Zarf deploys components in the order they
+  # appear, so the CRDs are established before anything that watches them comes up.
   - name: argocd-crds
     required: true
     description: The Application, ApplicationSet and AppProject CRDs
