@@ -19,6 +19,7 @@
 - [zarf modules](ansible/modules.md)
   - [init](ansible/module_init.md)
   - [package_deploy](ansible/module_package_deploy.md)
+  - [package_documentation](ansible/module_package_documentation.md)
   - [package_info](ansible/module_package_info.md)
   - [package_inspect](ansible/module_package_inspect.md)
   - [state_info](ansible/module_state_info.md)

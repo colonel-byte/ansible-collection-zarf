@@ -4,9 +4,11 @@ There are two suites, split by whether they need a cluster. Both drive a real `a
 
 ## `test/e2e/noncluster`
 
-Needs `ansible-playbook` and nothing else. It covers the three read-only modules and the `state` role.
+Needs `ansible-playbook`, and a `zarf` on `PATH` for the tests that build a real package. It covers the four read-only modules and the `state` and `package_inspect` roles.
 
-The one impure step in a read-only module is running zarf, so the suite stands a stub in its place: `testdata/zarf-state-stub.sh` prints the base64 of a recorded `zarf-state` Secret, and `zarf-package-list-stub.sh` prints a recorded package list. The playbook passes the stub as the module's `zarf_binary`.
+The one impure step in most read-only modules is running zarf, so the suite stands a stub in its place: `testdata/zarf-state-stub.sh` prints the base64 of a recorded `zarf-state` Secret, and `zarf-package-list-stub.sh` prints a recorded package list. The playbook passes the stub as the module's `zarf_binary`.
+
+The tests that need a real zarf build a package rather than committing one. `testdata/zarf-inspect-fixture` is the smallest package that builds -- a files-only component needs no registry, no cluster and no network -- and it carries a `documentation:` mapping with a `PackagePrerequisites` document and a Markdown file, which is the fixture for `zarf_package_inspect` and `zarf_package_documentation`. A `.tar.zst` is a binary blob nobody can review; the document in that directory is what the tests are actually about.
 
 ```sh
 go run ./magefiles/core test:endToEndNonCluster
