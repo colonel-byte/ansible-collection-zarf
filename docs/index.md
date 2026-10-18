@@ -45,7 +45,7 @@ It exists for a failure that reports itself as a success. A workload package del
   when: zarf_prerequisites_skipped | length > 0
 ```
 
-The cluster is read through `zarf tools kubectl`, so this needs no `kubernetes.core` -- the management node is typically air-gapped, and a second Galaxy collection to stage onto it is a cost every consumer would pay. [The guide](guides/package-prerequisites.md) is the format and what reads it; [`examples/packages`](https://github.com/colonel-byte/ansible-collection-zarf/tree/main/examples/packages) holds two reference packages that declare one.
+The cluster is read through `zarf tools kubectl`, so this needs no `kubernetes.core` -- the management node is typically air-gapped, and a second Galaxy collection to stage onto it is a cost every consumer would pay. [The guide](guides/package-prerequisites.md) is the format and what reads it; [`examples/packages`](https://github.com/colonel-byte/ansible-collection-zarf/tree/main/examples/packages) holds three reference packages that declare one: a GitOps engine from each of Flux and Argo CD, and a workload that requires one.
 
 ## Installing
 

@@ -82,7 +82,7 @@ A version alone catches the least interesting failure. A cluster can hold the ri
 
 ### Why `provides` is declared rather than discovered
 
-So that a bundle can be ordered without deploying any of it. A planner that reads every package's document can satisfy each `requires` against another package's `provides` and sort the bundle; one that can only read a live cluster has to deploy to find out. The two reference packages are a pair for exactly this reason -- `app-fluxcd` provides the `fluxcd-engine` capability and the CRDs that `operator-external-secrets` requires.
+So that a bundle can be ordered without deploying any of it. A planner that reads every package's document can satisfy each `requires` against another package's `provides` and sort the bundle; one that can only read a live cluster has to deploy to find out. The reference packages are shaped for exactly this reason -- `app-fluxcd` and `app-argocd` both provide the `gitops-engine` capability, and each also provides an engine-specific name for a package that genuinely needs one engine's own API. Note what `requires` cannot yet do with that: there is no `requires.capabilities`, so a consumer names the package it needs by name in `requires.packages`. The capability is declared for a planner reading a bundle, and nothing in this repository matches one.
 
 ## Where it lives: zarf's `documentation:` mapping
 

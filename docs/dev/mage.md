@@ -52,11 +52,13 @@ The reference packages under `examples/packages` are illustrative, and the parts
 
 | Target            | What it needs | What it does                                                                                                |
 | ----------------- | ------------- | ----------------------------------------------------------------------------------------------------------- |
-| `examples:vendor` | The network   | Downloads each package's pinned release asset and rewrites its `upstream/` tree, kustomizations and version |
+| `examples:vendor` | The network   | Fetches each package's manifests at its pinned tag and rewrites its `upstream/` tree, kustomizations and version |
 | `examples:images` | `zarf`        | Rewrites each component's `images:` list from what `zarf dev find-images` discovers                         |
 | `examples:lint`   | `zarf`        | Runs `zarf dev lint` over every example package                                                             |
 
-A package opts in by holding a `resources.json`, which declares the upstream repository, the release asset, the pinned tag, and which files go into which subdirectory and zarf component. `examples/packages/app-fluxcd/resources.json` is the one; `operator-external-secrets` ships its own manifests and vendors nothing.
+A package opts in by holding a `resources.json`, which declares the upstream repository, the pinned tag, where to read the manifests from, and which files go into which subdirectory and zarf component. `app-fluxcd` and `app-argocd` hold one; `operator-external-secrets` ships its own manifests and vendors nothing.
+
+The two differ in where the manifests live, which is why both are here. Flux attaches `manifests.tar.gz` to every release, so `app-fluxcd/resources.json` names an `asset`. Argo CD attaches only CLI binaries and SBOMs and documents applying `raw.githubusercontent.com/argoproj/argo-cd/<tag>/manifests/install.yaml` instead, so `app-argocd/resources.json` names a `tree` -- a directory in the tagged source tree, whose `match` entries are paths relative to it. Exactly one of the two is set, and a declaration naming both or neither is refused.
 
 Moving a pin is a manual edit, which is the third kind of owner [`magefiles/AGENTS.md`](../../magefiles/AGENTS.md) allows and the one these pins have: write the new tag into `resources.json`, then run the two targets below in that order and read the diff. Nothing here discovers the upstream's latest release on its own -- the pin is on a reference package nothing deploys, and moving it is a reviewed change rather than a thing that happens to a tree.
 

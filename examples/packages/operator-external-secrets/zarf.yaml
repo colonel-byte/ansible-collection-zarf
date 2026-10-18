@@ -28,7 +28,7 @@ metadata:
     # Readable from `zarf package inspect definition` with no extraction, for a consumer that only
     # needs to order a bundle. docs/prerequisites.yaml is the source of truth for both, and the
     # prerequisites role reads that rather than these.
-    colonel-byte.dev/requires-fluxcd: ">=2.9.0"
+    colonel-byte.dev/requires-gitops: ">=2.9.0"
     colonel-byte.dev/delivery-mode: gitops-helmrelease
 
 documentation:

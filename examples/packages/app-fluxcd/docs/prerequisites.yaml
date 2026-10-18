@@ -27,6 +27,13 @@ requires:
 
 provides:
   capabilities:
+    # The engine-neutral name first, and app-argocd provides the same one. A package that needs
+    # something to reconcile its manifests cares that an engine is there, not which; a package
+    # that genuinely needs Flux's own API asks for fluxcd-engine below. Two names because they
+    # are two different statements, and a capability is a name this format owns rather than
+    # anything Kubernetes knows about.
+    - name: gitops-engine
+      version: "2.9.3"
     - name: fluxcd-engine
       version: "2.9.3"
   crds:
