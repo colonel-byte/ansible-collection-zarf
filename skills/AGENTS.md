@@ -23,11 +23,12 @@ Nothing in a skill may reference a path outside its own directory. It is copied 
 
 The schema copy is generated and `TestCommittedSchemasAreCurrent` holds it against a fresh render, so it cannot go stale. The prose can, and did: the `requires.fluxcd` section was renamed and the page went on teaching the old shape, because regenerating a schema says nothing about the markdown beside it. Two tests in `magefiles/pkg/gen/schema` close that:
 
-| Test                                         | What it would catch                                                                          |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `TestSkillExampleMatchesTheTypes`            | The example document drifting from the Go types, or quietly losing a section it used to show |
-| `TestSkillSchemaPathResolvesFromTheDocument` | The example's `$schema` not resolving from the layout the page's own instructions prescribe  |
+| Test                                         | What it would catch                                                                                               |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `TestSkillYAMLBlocksParse`                   | A YAML block on any skill page that does not parse, including the `zarf.yaml` example, which has no Go types here |
+| `TestSkillExamplesMatchTheTypes`             | Any `PackagePrerequisites` example drifting from the Go types, or quietly losing a section it used to show        |
+| `TestSkillSchemaPathResolvesFromTheDocument` | An example's `$schema` not resolving from the layout the page's own instructions prescribe                        |
 
-The example is found by the `kind:` it declares rather than by being the first fenced block, so adding YAML to a page does not silently point the tests at a snippet.
+They cover every page under `skills/` and every example on one, not the one page that carries a document today. An example is found by the `kind:` it declares rather than by position, and only fences written at the margin are read -- a block indented into a list item is a fragment illustrating one key, and a pattern that matched those could not see their closing fence and swallowed the prose after it.
 
 Neither test reads the prose. When a change to the format reaches these pages, the paragraphs are still on you.
