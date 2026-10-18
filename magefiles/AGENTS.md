@@ -11,6 +11,7 @@ All implementation logic belongs in modular Go packages under `magefiles/pkg/`:
 | Path                           | Purpose                                                                                                                         |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
 | `magefiles/build.go`           | Mage entrypoint for the `Build` namespace (`build:modules`)                                                                     |
+| `magefiles/examples.go`        | Mage entrypoint for the `Examples` namespace (`examples:vendor`, `examples:images`, `examples:lint`)                            |
 | `magefiles/generate.go`        | Mage entrypoint for the `Generate` namespace (`generate:document`, `generate:schema`, `generate:zarfFlags`, `generate:dnfPins`) |
 | `magefiles/test.go`            | Mage entrypoint for the `Test` namespace (`test:unit`, `test:endToEnd*`, `test:cleanClusters`)                                  |
 | `magefiles/core/core.go`       | Bootstrapping main package for `go run ./magefiles/core`                                                                        |
@@ -19,6 +20,7 @@ All implementation logic belongs in modular Go packages under `magefiles/pkg/`:
 | `magefiles/pkg/gen/schema/`    | Reflecting the published JSON Schemas out of the Go types that define them                                                      |
 | `magefiles/pkg/gen/zarfflags/` | Recording the flag surface of the zarf commands the modules wrap                                                                |
 | `magefiles/pkg/devtools/`      | Developer tooling: AlmaLinux repodata parsing and the dnf pin rewriters (`dnfpins`)                                             |
+| `magefiles/pkg/pkgvendor/`     | Vendoring the pinned upstream manifests a reference package deploys, and the parts of it that follow the pin                    |
 | `magefiles/pkg/testrunner/`    | Unit and end-to-end test runners                                                                                                |
 | `magefiles/pkg/util/`          | Shared helper functions                                                                                                         |
 
@@ -43,3 +45,5 @@ So a new pin is not done when it is written. It is done when something can move 
 If neither fits, say so where the pin is. A documented manual bump is an acceptable third answer; an undocumented one is not, because a reader who finds a bare hash and no way to move it cannot tell a deliberate pin from an abandoned one.
 
 The pinned storage-provider package tag in `test/e2e/cluster/main_test.go` is a deliberate third case: it is pinned so the suite does not test whatever was published this morning, and the comment beside it says so.
+
+The upstream release tag in `examples/packages/app-fluxcd/resources.json` is the third case: a documented manual bump. Moving it is editing `tag` in that file and then running `examples:vendor` and `examples:images`, which is written down in [`docs/dev/mage.md`](../docs/dev/mage.md). There is deliberately no target that reads the upstream's latest release and writes it back -- the pin is on a reference package nothing deploys, and a target that moved it on its own would be the only thing in this repository fetching a version nobody asked for. The `renovate` annotation beside the tag is carried from [colonel-byte/zarf-pkg-fluxcd](https://github.com/colonel-byte/zarf-pkg-fluxcd), where Renovate is configured; nothing here reads it, and it is kept so that a package copied out of this tree into a repository that does have Renovate arrives already annotated.

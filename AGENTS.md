@@ -23,6 +23,7 @@ Nothing here runs on the cluster's nodes. The modules run the installed `zarf` o
 | `docs/workflows/`             | One page per file under `.github/workflows/`, named after it with a `.md` extension -- required by [`.github/AGENTS.md`](.github/AGENTS.md)                |
 | `docs/agent/choice-*.md`      | Records of non-obvious decisions and the tradeoffs behind them -- read before reversing one                                                                |
 | `schema/`                     | The generated JSON Schemas, written by `generate:schema` and committed because other repositories reference them                                           |
+| `examples/packages/`          | Reference Zarf packages declaring their cluster prerequisites. Read, linted and inspected; nothing builds one                                              |
 | `containers/ansible/`         | The management node image: `ansible-core`, the collection, both module files and a `zarf`. Its build asserts the dispatch contract                         |
 
 Several directories carry their own `AGENTS.md` with rules specific to that directory. Check the closest one before editing. Keep this table in sync when adding or removing one.
@@ -49,6 +50,7 @@ go run ./magefiles/core test:endToEndNonCluster  # needs ansible-playbook
 go run ./magefiles/core test:endToEndCluster     # needs k3d, zarf, Docker, network
 go run ./magefiles/core generate:document        # regenerate the book's generated pages
 go run ./magefiles/core generate:schema          # regenerate schema/ from the Go types in api/
+go run ./magefiles/core examples:lint            # zarf dev lint over every reference package
 ```
 
 See [`docs/dev/mage.md`](docs/dev/mage.md) for the full reference and [`docs/dev/e2e-tests.md`](docs/dev/e2e-tests.md) for what each suite covers.
@@ -79,11 +81,12 @@ Most of what is worth knowing about this repository is enforced by four tests in
 | `TestEveryActionPluginIsCovered`                           | A new action plugin that no test looks at, and a test list naming a plugin that no longer exists                |
 | `TestInitArgsAreKnownFlags`, `TestDeployArgsAreKnownFlags` | A flag the module renders that the recorded zarf does not accept                                                |
 
-One more, in `magefiles/pkg/gen/schema`, holds the `PackagePrerequisites` format together the same way:
+Two more, in `magefiles/pkg/gen/schema`, hold the `PackagePrerequisites` format together the same way:
 
-| Test                             | What it would catch                                                                                                       |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `TestCommittedSchemasAreCurrent` | A field added to a type in `api/` without `generate:schema` being run, leaving a schema that validates the wrong document |
+| Test                                | What it would catch                                                                                                       |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `TestCommittedSchemasAreCurrent`    | A field added to a type in `api/` without `generate:schema` being run, leaving a schema that validates the wrong document |
+| `TestExampleDocumentsMatchTheTypes` | A reference package's `docs/prerequisites.yaml` written against an older shape of the format                              |
 
 The last pair checks against a recorded list, not against zarf's own command tree, so it cannot catch a zarf release that renamed a flag. Refresh the lists with `generate:zarfFlags` when the zarf the modules run moves, and read the diff.
 
@@ -91,7 +94,7 @@ The last pair checks against a recorded list, not against zarf's own command tre
 
 Everything a generator writes is marked `linguist-generated` in [`.gitattributes`](.gitattributes), which collapses it in a GitHub diff and keeps it out of the repository's language statistics. A generated file that is not marked shows up as hand-written work in every review.
 
-So a change to what a generator produces is a change to `.gitattributes` as well: a new output path gets an entry, a moved or removed one loses its entry. Hand-written files inside a generated tree stay unmarked, and there are three -- `docs/ansible/collection.md`, `modules.md` and `roles.md` sit beside generated module and role pages. Mark the pattern the generator writes, not the directory it writes into.
+So a change to what a generator produces is a change to `.gitattributes` as well: a new output path gets an entry, a moved or removed one loses its entry. Hand-written files inside a generated tree stay unmarked, and there are five -- `docs/ansible/collection.md`, `modules.md` and `roles.md` sit beside generated module and role pages, and each reference package's `zarf.yaml` and `docs/prerequisites.yaml` sit beside its vendored `upstream/` tree. Mark the pattern the generator writes, not the directory it writes into.
 
 Check a specific file rather than reasoning about the patterns:
 
