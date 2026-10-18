@@ -82,14 +82,15 @@ Most of what is worth knowing about this repository is enforced by four tests in
 | `TestEveryActionPluginIsCovered`                           | A new action plugin that no test looks at, and a test list naming a plugin that no longer exists                |
 | `TestInitArgsAreKnownFlags`, `TestDeployArgsAreKnownFlags` | A flag the module renders that the recorded zarf does not accept                                                |
 
-Two more, in `magefiles/pkg/gen/schema`, hold the `PackagePrerequisites` format together the same way:
+Three more, in `magefiles/pkg/gen/schema`, hold the `PackagePrerequisites` format together the same way:
 
-| Test                                | What it would catch                                                                                                       |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `TestCommittedSchemasAreCurrent`    | A field added to a type in `api/` without `generate:schema` being run, leaving a schema that validates the wrong document |
-| `TestExampleDocumentsMatchTheTypes` | A reference package's `docs/prerequisites.yaml` written against an older shape of the format                              |
+| Test                                  | What it would catch                                                                                                                              |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `TestCommittedSchemasAreCurrent`      | A field added to a type in `api/` without `generate:schema` being run, leaving a schema that validates the wrong document                        |
+| `TestExampleDocumentsMatchTheTypes`   | A reference package's `docs/prerequisites.yaml` written against an older shape of the format                                                     |
+| `TestEveryRequirementIsNamedByTheRole` | A field added under `requires` that no task in the `prerequisites` role mentions -- a prerequisite a package declares and the role silently ignores |
 
-The last pair checks against a recorded list, not against zarf's own command tree, so it cannot catch a zarf release that renamed a flag. Refresh the lists with `generate:zarfFlags` when the zarf the modules run moves, and read the diff.
+`TestInitArgsAreKnownFlags` and `TestDeployArgsAreKnownFlags` check against a recorded list, not against zarf's own command tree, so they cannot catch a zarf release that renamed a flag. Refresh the lists with `generate:zarfFlags` when the zarf the modules run moves, and read the diff.
 
 ## Keeping `.gitattributes` in sync with the generators
 

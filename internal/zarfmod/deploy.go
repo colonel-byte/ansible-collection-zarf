@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // The flags of zarf package deploy the module renders, beyond the ones it shares with init. They
@@ -32,54 +31,24 @@ const (
 	flagShasum    = "shasum"
 )
 
-// deployParams is the zarf_package_deploy module's parameter surface.
+// deployParams is the zarf_package_deploy module's parameter surface: everything both wrappers
+// take, plus the package and the three flags only a deploy has.
 //
 // A deploy is what follows an init: the cluster exists, zarf's state is in it, and this puts a
-// package on it. The parameters are therefore nearly the init set minus everything that configures
-// the registry and git server, plus the package to deploy.
+// package on it. Which is why the shared set is almost the whole of it -- everything that
+// configures the registry and git server belongs to the init that deployed them.
 type deployParams struct {
-	// Binary is the zarf to run. The wrapper is a module file, not zarf.
-	Binary string `json:"zarf_binary"`
+	commonParams
+
 	// Package is what to deploy: a path to a tarball, an oci:// reference, or an https:// URL.
-	// It is the positional argument of the command.
+	// It is the positional argument of the command. A relative path is resolved against
+	// Directory, in commonParams, when one was named; see deployPackage.
 	Package string `json:"package"`
-	// Directory is the working directory to run zarf in. A relative package path is resolved
-	// against it, and a package already named absolutely needs none of this.
-	Directory string `json:"directory"`
-	// Kubeconfig is the cluster to deploy onto. Zarf has no --kubeconfig flag, so it is passed as
-	// KUBECONFIG in the child's environment.
-	Kubeconfig string `json:"kubeconfig"`
-	// ZarfConfig is an operator-supplied zarf config file, passed as ZARF_CONFIG.
-	ZarfConfig string `json:"zarf_config"`
-	// StatusFile overrides the heartbeat file; the action plugin sets ZARF_STATUS_FILE instead.
-	StatusFile string `json:"status_file"`
 
-	Components string `json:"components"`
-	Namespace  string `json:"namespace"`
-	Shasum     string `json:"shasum"`
+	Namespace string `json:"namespace"`
+	Shasum    string `json:"shasum"`
 
-	Connected             *bool `json:"connected"`
-	ForceConflicts        *bool `json:"force_conflicts"`
-	SkipValuesSchemaValid *bool `json:"skip_values_schema_validation"`
-	InsecureSkipTLSVerify *bool `json:"insecure_skip_tls_verify"`
-	PlainHTTP             *bool `json:"plain_http"`
-	TakeOwnership         *bool `json:"take_ownership"`
-
-	Retries        *int   `json:"retries"`
-	OCIConcurrency *int   `json:"oci_concurrency"`
-	Architecture   string `json:"architecture"`
-	Cache          string `json:"cache"`
-	Tmpdir         string `json:"tmpdir"`
-	Timeout        string `json:"timeout"`
-	PublicKey      string `json:"public_key"`
-	Verify         string `json:"verify"`
-
-	Values       []string          `json:"values"`
-	SetValues    map[string]string `json:"set_values"`
-	SetVariables map[string]string `json:"set_variables"`
-
-	LogLevel  string `json:"log_level"`
-	LogFormat string `json:"log_format"`
+	Connected *bool `json:"connected"`
 }
 
 // runPackageDeploy deploys one package onto an initialised cluster.
@@ -108,6 +77,14 @@ func runPackageDeploy(ctx context.Context, run Runner, args *Args, resp *Respons
 		return err
 	}
 
+	// Read before the deploy, and reported whether it could be read or not. Unlike init there is
+	// no floor to enforce -- `zarf package deploy` has taken its positional source for as long as
+	// it has existed -- but Detail.Version exists so that a run which failed has the version of
+	// the zarf that failed it attached to the result, and that is worth as much to a failed deploy
+	// as to a failed init. A version that cannot be read is not an error here either; see
+	// requireZarfVersion.
+	resp.Zarf.Version, _ = zarfVersion(ctx, run, p.binary()) //nolint:errcheck // reported, not refused
+
 	hb := NewHeartbeat(p.StatusFile)
 	defer hb.Clear()
 	resp.Zarf.StatusFile = hb.Path()
@@ -115,15 +92,14 @@ func runPackageDeploy(ctx context.Context, run Runner, args *Args, resp *Respons
 	prog := newProgress(hb, componentCount(p.Components))
 	argv := buildDeployArgs(&p)
 
-	binary := deployBinary(&p)
-	resp.Zarf.Command = append([]string{binary}, redact(argv)...)
+	resp.Zarf.Command = append([]string{p.binary()}, redact(argv)...)
 	resp.Zarf.Directory = dir
 
 	res, runErr := run.Run(ctx, Invocation{
-		Binary: binary,
+		Binary: p.binary(),
 		Args:   argv,
 		Dir:    dir,
-		Env:    deployEnv(&p, hb),
+		Env:    p.childEnv(hb),
 		OnLine: prog.line,
 	})
 	resp.Zarf.ExitCode = res.ExitCode
@@ -159,69 +135,14 @@ func deployWorkingDir(p *deployParams) (string, error) {
 	return p.Directory, nil
 }
 
-func deployBinary(p *deployParams) string {
-	if p.Binary != "" {
-		return p.Binary
-	}
-	if env := os.Getenv(EnvBinary); env != "" {
-		return env
-	}
-	return defaultBinary
-}
-
-func deployEnv(p *deployParams, hb *Heartbeat) []string {
-	var env []string
-	if p.Kubeconfig != "" {
-		env = append(env, "KUBECONFIG="+p.Kubeconfig)
-	}
-	if p.ZarfConfig != "" {
-		env = append(env, "ZARF_CONFIG="+p.ZarfConfig)
-	}
-	if hb.Path() != "" {
-		// The wrapper writes the heartbeats, not zarf. See childEnv.
-		env = append(env, EnvStatusFile+"=")
-	}
-	env = append(env, "NO_COLOR=1")
-	return env
-}
-
 // buildDeployArgs renders the parameters as the zarf command line an operator would have typed.
 func buildDeployArgs(p *deployParams) []string {
 	c := newCommand("package", "deploy", deployPackage(p))
+	p.applyCommonFlags(c)
 
-	c.bare(flagConfirm)
-	c.bare(flagNoColor)
-
-	format := p.LogFormat
-	if format == "" {
-		format = "json"
-	}
-	c.flag(flagLogFormat, format)
-	c.flag(flagLogLevel, p.LogLevel)
-
-	c.flag(flagComponents, p.Components)
 	c.flag(flagNamespace, p.Namespace)
 	c.flag(flagShasum, p.Shasum)
-
 	c.boolFlag(flagConnected, p.Connected)
-	c.boolFlag(flagForceConflicts, p.ForceConflicts)
-	c.boolFlag(flagSkipValuesSchemaValidation, p.SkipValuesSchemaValid)
-	c.boolFlag(flagInsecureSkipTLSVerify, p.InsecureSkipTLSVerify)
-	c.boolFlag(flagPlainHTTP, p.PlainHTTP)
-	c.boolFlag(flagTakeOwnership, p.TakeOwnership)
-
-	c.intFlag(flagRetries, p.Retries)
-	c.intFlag(flagOCIConcurrency, p.OCIConcurrency)
-	c.flag(flagArchitecture, p.Architecture)
-	c.flag(flagCache, p.Cache)
-	c.flag(flagTmpdir, p.Tmpdir)
-	c.flag(flagTimeout, p.Timeout)
-	c.flag(flagKey, p.PublicKey)
-	c.valueFlag(flagVerify, p.Verify)
-
-	c.repeated(flagValues, p.Values)
-	c.pairs(flagSetValues, p.SetValues)
-	c.pairs(flagSetVariables, p.SetVariables)
 
 	return c.args()
 }
@@ -233,7 +154,7 @@ func buildDeployArgs(p *deployParams) []string {
 // wrong directory is a failure that reads as a missing package. A remote reference is left alone:
 // oci:// and https:// are not paths.
 func deployPackage(p *deployParams) string {
-	if isRemotePackage(p.Package) {
+	if isRemoteSource(p.Package) {
 		return p.Package
 	}
 	if filepath.IsAbs(p.Package) {
@@ -249,10 +170,4 @@ func deployPackage(p *deployParams) string {
 		return p.Package
 	}
 	return abs
-}
-
-func isRemotePackage(pkg string) bool {
-	return strings.HasPrefix(pkg, "oci://") ||
-		strings.HasPrefix(pkg, "https://") ||
-		strings.HasPrefix(pkg, "http://")
 }

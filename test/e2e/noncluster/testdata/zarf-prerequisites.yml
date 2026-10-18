@@ -4,7 +4,9 @@
 # The cluster is testdata/zarf-cluster-stub.sh over the zarf-cluster-*.json fixtures, which is a
 # cluster running Kubernetes v1.31.2+k3s1 and Flux v2.9.5, with three Flux CRDs, a default
 # StorageClass called local-path, an available source-controller, a helm-controller that is ready
-# and not available, and the init and app-fluxcd packages deployed.
+# and not available, and the init and app-fluxcd packages deployed. It also holds a second,
+# newer Flux outside flux-system: an available kustomize-controller in gitops labelled v2.11.0,
+# which is what the last case below reads.
 #
 # The package is built from testdata/zarf-inspect-fixture by the Go test, and the stub hands
 # documentation extraction to the real zarf -- so the first case below walks the whole role,
@@ -145,3 +147,49 @@
           - "'cannot evaluate' in zarf_prerequisites_skipped | join(' ')"
         success_msg: ASSERTED a range the role cannot evaluate is skipped and named
         fail_msg: a compound version range was not reported as unevaluated
+
+    - name: A Flux outside flux-system is found, with one controller leaving its namespace unset
+      # The regression this case exists for. _namespaces in the role builds the namespaces to look
+      # in from the document's own controller list, and namespace is optional with a documented
+      # default of flux-system -- so a list mixing an explicit namespace with an omitted one used to
+      # raise inside the map, collapse the whole expression to Undefined, and fall back to
+      # ['flux-system'] alone. The explicitly named gitops was then never looked in, the constraint
+      # found no version to compare, and it was recorded as skipped: the role passed a cluster whose
+      # Flux version it had not checked.
+      #
+      # notification-controller is deliberately absent from the cluster, so flux-system offers this
+      # document no version at all. The only version reachable is v2.11.0 in gitops, which means a
+      # satisfied constraint here is proof the gitops namespace survived.
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.prerequisites
+      vars:
+        zarf_binary: "{{ zarf_binary }}"
+        zarf_prerequisites_enforce: false
+        zarf_prerequisites:
+          apiVersion: colonel-byte.dev/v1alpha1
+          kind: PackagePrerequisites
+          metadata:
+            package: a-package-wanting-flux-in-gitops
+            version: 1.0.0
+          requires:
+            fluxcd:
+              version: ">=2.11.0"
+              controllers:
+                - name: kustomize-controller
+                  namespace: gitops
+                - name: notification-controller
+
+    - name: The version came from gitops, and the absent controller is the only complaint
+      ansible.builtin.assert:
+        that:
+          # The constraint was evaluated rather than skipped, which is the whole point: before the
+          # fix this list was empty and the constraint sat in zarf_prerequisites_skipped.
+          - zarf_prerequisites_checked | select('search', 'FluxCD version') | list | length == 1
+          - zarf_prerequisites_skipped == []
+          # v2.11.0 satisfies >=2.11.0, so the version is not among the unmet. The one unmet thing
+          # is notification-controller, which no namespace holds.
+          - zarf_prerequisites_unmet | select('search', 'FluxCD version') | list | length == 0
+          - zarf_prerequisites_unmet | select('search', 'notification-controller') | list | length == 1
+          - zarf_prerequisites_unmet | length == 1
+        success_msg: ASSERTED a controller with no namespace does not discard the namespaces beside it
+        fail_msg: the role lost an explicitly named controller namespace, so the Flux version went unchecked

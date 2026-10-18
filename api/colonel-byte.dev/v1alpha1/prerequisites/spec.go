@@ -102,7 +102,16 @@ type Requires struct {
 // KubernetesRequirement constrains the cluster's own version.
 type KubernetesRequirement struct {
 	// Version is a SemVer range the API server's version must satisfy.
-	Version string `json:"version" jsonschema:"example=>=1.30.0,example=>=1.30.0 <1.34.0"`
+	//
+	// The examples are single comparators on purpose. A compound range like ">=1.30.0 <1.34.0"
+	// is a legal value of this field and nothing here rejects one, but the only consumer that
+	// exists -- the colonel_byte.zarf.prerequisites role -- reads one comparator and one version,
+	// and records anything else as unevaluated rather than satisfied. Advertising a form that
+	// reaches that consumer as a constraint it has to skip is advertising a check that does not
+	// happen; see tasks/version_check.yml for why Jinja is not a semver library. The same applies
+	// to FluxCDRequirement.Version and PackageRequirement.Version, which are the same comparison
+	// over different data.
+	Version string `json:"version" jsonschema:"example=>=1.30.0,example=>=1.31.0"`
 }
 
 // FluxCDRequirement requires a GitOps engine that is installed, running, and new enough.

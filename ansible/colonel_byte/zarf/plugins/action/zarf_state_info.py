@@ -120,10 +120,20 @@ STATE_KEY = "jsonpath={.data.state}"
 # costs here is a leaked credential rather than a failed task, so the loose end points the safe
 # way: a field zarf adds under a name like these is withheld before anybody has read this file.
 #
+# Which is why `secret` is a substring and not an exact name. An exact list is the precise
+# direction this comment argues against, and `registryInfo.secret` matching while a future
+# `pushSecret` leaks is that argument applied to only half the list. `credential` and `passphrase`
+# are here for the same reason and match nothing zarf writes today. Nothing deliberately kept
+# below contains any of them.
+#
+# `key` stays an exact name rather than joining them. As a substring it would withhold
+# agentInfo.tls.publicKey and anything else a future zarf names for the public half of a keypair,
+# and withholding the public PKI is the one thing this module must not do -- see below.
+CREDENTIAL_SUBSTRINGS = ("password", "token", "secret", "credential", "passphrase", "privatekey")
+CREDENTIAL_NAMES = ("key",)
+
 # agentInfo.tls.ca and .cert are deliberately not matched. They are public certificates, and
 # templating the CA into a trust bundle is a reason to call this module.
-CREDENTIAL_SUBSTRINGS = ("password", "token")
-CREDENTIAL_NAMES = ("secret", "key")
 
 
 def _is_credential(name):

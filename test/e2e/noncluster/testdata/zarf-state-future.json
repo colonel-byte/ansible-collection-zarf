@@ -1,0 +1,28 @@
+{
+  "distro": "k3s",
+  "storageClass": "local-path",
+  "agentInfo": {
+    "tls": {
+      "ca": "UFVCTElDLUNB",
+      "cert": "UFVCTElDLUNFUlQ=",
+      "publicKey": "UFVCTElDLUtFWQ==",
+      "privateKey": "RklYVFVSRS1BLUZVVFVSRS1QUklWQVRFLUtFWQ==",
+      "keyPassphrase": "FIXTURE-A-FUTURE-PASSPHRASE"
+    },
+    "mutationPolicy": "all"
+  },
+  "registryInfo": {
+    "pushUsername": "zarf-push",
+    "address": "127.0.0.1:31999",
+    "nodePort": 31999,
+    "registryMode": "proxy",
+    "pushSecret": "FIXTURE-A-FUTURE-PUSH-SECRET",
+    "pullSecretRef": "FIXTURE-A-FUTURE-PULL-SECRET-REF"
+  },
+  "gitServer": {
+    "pushUsername": "zarf-git-user",
+    "address": "http://zarf-gitea-http.zarf.svc.cluster.local:3000",
+    "oauthCredential": "FIXTURE-A-FUTURE-OAUTH-CREDENTIAL",
+    "refreshToken": "FIXTURE-A-FUTURE-REFRESH-TOKEN"
+  }
+}

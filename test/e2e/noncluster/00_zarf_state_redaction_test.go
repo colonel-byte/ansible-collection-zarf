@@ -32,6 +32,13 @@ const (
 	zarfStub               = "test/e2e/noncluster/testdata/zarf-state-stub.sh"
 )
 
+// The same thing over a state whose credentials are named as no zarf names one today, which is the
+// forward-compatibility half of the contract. See the playbook's own header.
+const (
+	futureStatePlaybook = "test/e2e/noncluster/testdata/zarf-state-future-redaction.yml"
+	futureStateFixture  = "test/e2e/noncluster/testdata/zarf-state-future.json"
+)
+
 // stateInfoPlugin is the plugin under test, read before the playbook runs. See zarfPlaybookEnv for
 // why reading it matters.
 const stateInfoPlugin = "ansible/colonel_byte/zarf/plugins/action/zarf_state_info.py"
@@ -60,23 +67,49 @@ func TestZarfStateInfoWithholdsCredentials(t *testing.T) {
 	env := zarfPlaybookEnv(t, []string{stateInfoPlugin, infoBasePlugin})
 	stub := env.executable(t, zarfStub)
 
-	fixture, err := os.ReadFile(filepath.Join(env.root, stateFixture))
-	require.NoError(t, err)
-	credentials := fixtureCredentials(t, fixture)
-	require.NotEmpty(t, credentials, "the state fixture holds no %s value", fixtureCredentialPrefix)
+	// Two states, the same contract over both. The first is the shape zarf v0.85.0 writes, which
+	// is what an operator's cluster holds. The second invents credential names zarf does not use,
+	// because the module matches by leaf name precisely so that it withholds a field added after
+	// this file was last read -- a claim about names nobody has written down, which cannot be held
+	// against a faithful fixture.
+	for _, tt := range []struct {
+		name     string
+		playbook string
+		fixture  string
+	}{
+		{
+			name:     "the state zarf writes today",
+			playbook: stateRedactionPlaybook,
+			fixture:  stateFixture,
+		},
+		{
+			name:     "credentials named as no zarf names one today",
+			playbook: futureStatePlaybook,
+			fixture:  futureStateFixture,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			fixture, err := os.ReadFile(filepath.Join(env.root, tt.fixture))
+			require.NoError(t, err)
+			credentials := fixtureCredentials(t, fixture)
+			require.NotEmpty(t, credentials,
+				"%s holds no %s value", tt.fixture, fixtureCredentialPrefix)
 
-	out := runZarfPlaybook(t, env, stateRedactionPlaybook, []string{
-		envZarfStub + "=" + stub,
-		envStateFixture + "=" + filepath.Join(env.root, stateFixture),
-	}, nil)
+			out := runZarfPlaybook(t, env, tt.playbook, []string{
+				envZarfStub + "=" + stub,
+				envStateFixture + "=" + filepath.Join(env.root, tt.fixture),
+			}, nil)
 
-	// The credentials must not be in the output of a run that did not ask for them. The playbook
-	// asserts that too, but it asserts over the dictionary it was given; this reads the transcript
-	// an operator or a CI log would keep. The run with include_credentials is in the same
-	// transcript, which is what makes this an assertion about the self-censoring result as well.
-	for _, credential := range credentials {
-		require.NotContains(t, out, credential,
-			"the credential %s reached the playbook's own output", credential)
+			// The credentials must not be in the output of a run that did not ask for them. The
+			// playbook asserts that too, but it asserts over the dictionary it was given; this
+			// reads the transcript an operator or a CI log would keep. The run with
+			// include_credentials is in the same transcript, which is what makes this an assertion
+			// about the self-censoring result as well.
+			for _, credential := range credentials {
+				require.NotContains(t, out, credential,
+					"the credential %s reached the playbook's own output", credential)
+			}
+		})
 	}
 }
 

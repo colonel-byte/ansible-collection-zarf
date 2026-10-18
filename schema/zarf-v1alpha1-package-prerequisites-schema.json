@@ -91,10 +91,10 @@
       "properties": {
         "version": {
           "type": "string",
-          "description": "Version is a SemVer range the API server's version must satisfy.",
+          "description": "Version is a SemVer range the API server's version must satisfy.\n\nThe examples are single comparators on purpose. A compound range like \"\u003e=1.30.0 \u003c1.34.0\"\nis a legal value of this field and nothing here rejects one, but the only consumer that\nexists -- the colonel_byte.zarf.prerequisites role -- reads one comparator and one version,\nand records anything else as unevaluated rather than satisfied. Advertising a form that\nreaches that consumer as a constraint it has to skip is advertising a check that does not\nhappen; see tasks/version_check.yml for why Jinja is not a semver library. The same applies\nto FluxCDRequirement.Version and PackageRequirement.Version, which are the same comparison\nover different data.",
           "examples": [
             "\u003e=1.30.0",
-            "\u003e=1.30.0 \u003c1.34.0"
+            "\u003e=1.31.0"
           ]
         }
       },

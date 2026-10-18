@@ -17,6 +17,8 @@ package schema
 import (
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	"sigs.k8s.io/yaml"
@@ -47,6 +49,7 @@ func TestMain(m *testing.M) {
 // The fix when this fails is to run the generator, not to edit the file:
 //
 //	go run ./magefiles/core generate:schema
+//
 // It covers every copy, not just the one under schema/: the prerequisites schema is committed a
 // second time inside skills/zarf-package-prerequisites so that the skill is self-contained, and a
 // second copy nothing checks is the same stale schema with an extra place to hide.
@@ -130,4 +133,82 @@ func TestExampleDocumentsMatchTheTypes(t *testing.T) {
 			}
 		})
 	}
+}
+
+// roleTaskFiles are the colonel_byte.zarf.prerequisites role's task files, which are the only
+// consumer of the requires half of the format that this repository ships.
+var roleTaskFiles = []string{
+	filepath.Join("ansible", "colonel_byte", "zarf", "roles", "prerequisites", "tasks", "main.yml"),
+	filepath.Join("ansible", "colonel_byte", "zarf", "roles", "prerequisites", "tasks", "version_check.yml"),
+}
+
+// TestEveryRequirementIsNamedByTheRole holds the format against the role that checks it.
+//
+// This is the one drift in the prerequisites format that nothing else catches. Add a section to
+// Requires, run `generate:schema`, and TestCommittedSchemasAreCurrent and
+// TestExampleDocumentsMatchTheTypes both pass: the schema describes the new field, the examples
+// decode, and the role goes on ignoring it. A package then declares a prerequisite, the role
+// reports success, and nothing checked it -- which is the silent success the whole format exists
+// to prevent, reached through the format rather than through a cluster.
+//
+// What it proves is narrower than its name suggests, and deliberately so: it holds that every
+// field name under `requires` appears somewhere in the role's tasks, not that the role checks it
+// correctly. A field named `version` added to a new section would pass for free, because `version`
+// is already there. The case it does catch is the one that actually happens -- a new section or a
+// new field under a new name, which no expression in the role mentions -- and when it fires, the
+// fix is to check the field or to record it in zarf_prerequisites_skipped. Naming it as unchecked
+// is a legitimate way to pass this test, because an unchecked field an operator is told about is
+// the honest outcome; silently ignoring one is not.
+//
+// provides is not covered. Nothing in this repository reads it: it is declared for an orchestrator
+// ordering a bundle, which is the half of the contract this collection does not implement.
+func TestEveryRequirementIsNamedByTheRole(t *testing.T) {
+	var tasks string
+	for _, path := range roleTaskFiles {
+		source, err := os.ReadFile(path) //nolint:gosec // a path from this test's own constants
+		if err != nil {
+			t.Fatalf("unable to read %s: %v", path, err)
+		}
+		tasks += string(source)
+	}
+
+	names := jsonFieldNames(reflect.TypeFor[prerequisites.Requires]())
+	if len(names) == 0 {
+		t.Fatal("no json field names found on prerequisites.Requires, so this test proves nothing")
+	}
+
+	for _, name := range names {
+		if !strings.Contains(tasks, name) {
+			t.Errorf("no task in the prerequisites role mentions %q, which requires.%s declares. "+
+				"Either check it, or append it to zarf_prerequisites_skipped so an operator is "+
+				"told it was not.", name, name)
+		}
+	}
+}
+
+// jsonFieldNames returns the json name of every field of t and of every struct it holds, with the
+// slices and pointers walked through.
+//
+// The whole tree rather than the top level, because a section added to an existing one is as
+// invisible to the role as a whole new section: requires.fluxcd.crds and requires.fluxcd are the
+// same kind of drift one level apart.
+func jsonFieldNames(t reflect.Type) []string {
+	for t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return nil
+	}
+
+	var names []string
+	for i := range t.NumField() {
+		field := t.Field(i)
+		name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+		if name == "" || name == "-" {
+			continue
+		}
+		names = append(names, name)
+		names = append(names, jsonFieldNames(field.Type)...)
+	}
+	return names
 }

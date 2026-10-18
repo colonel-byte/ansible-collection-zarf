@@ -1,0 +1,101 @@
+---
+# What the leaf-name matching in zarf_state_info does with credential names zarf does not write yet.
+#
+# testdata/zarf-state.json is the faithful shape of zarf v0.85.0, and the play beside it holds the
+# eight credentials that document actually carries. This one is not faithful on purpose: every
+# field below is invented, named the way a future zarf release plausibly would name one, and the
+# whole point is that the module withholds it without this repository having been told it exists.
+#
+# That is the claim the CREDENTIAL_SUBSTRINGS comment makes -- "a field zarf adds under a name like
+# these is withheld before anybody has read this file" -- and it is a claim about names nobody has
+# written down, so the only way to hold it is to invent some. It is a separate fixture rather than
+# five more keys in zarf-state.json so that the faithful document stays faithful: a reader comparing
+# it against a real zarf-state Secret should find no field that is not in one.
+#
+# The public half of the agent PKI is in here too, with a publicKey beside the privateKey. Matching
+# `key` loosely would withhold both, and withholding the CA an operator calls this module to
+# template into a trust bundle is the failure this module must not have.
+#
+# Nothing here is contacted.
+- name: zarf_state_info withholds credentials under names zarf does not write yet
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    # Named rather than counted, for the reason the sibling play gives: a count passes when the
+    # wrong ones were removed.
+    expected_redacted:
+      - agentInfo.tls.keyPassphrase
+      - agentInfo.tls.privateKey
+      - gitServer.oauthCredential
+      - gitServer.refreshToken
+      - registryInfo.pullSecretRef
+      - registryInfo.pushSecret
+
+  tasks:
+    - name: Read the invented state with the default parameters
+      colonel_byte.zarf.zarf_state_info:
+        zarf_binary: "{{ lookup('env', 'ZARF_ANSIBLE_E2E_STUB') }}"
+      register: future_result
+
+    - name: Every invented credential is withheld, and the module says which
+      ansible.builtin.assert:
+        that:
+          - future_result.redacted == expected_redacted
+          - "'pushSecret' not in future_result.state.registryInfo"
+          - "'pullSecretRef' not in future_result.state.registryInfo"
+          - "'oauthCredential' not in future_result.state.gitServer"
+          - "'refreshToken' not in future_result.state.gitServer"
+          - "'privateKey' not in future_result.state.agentInfo.tls"
+          - "'keyPassphrase' not in future_result.state.agentInfo.tls"
+        success_msg: ASSERTED a credential named as no zarf names one today is still withheld
+        fail_msg: a credential under an unfamiliar name survived the default redaction
+
+    - name: No FIXTURE- placeholder appears anywhere in the redacted state
+      ansible.builtin.assert:
+        that:
+          - "'FIXTURE-A-FUTURE-PUSH-SECRET' not in (future_result.state | to_json)"
+          - "'FIXTURE-A-FUTURE-PULL-SECRET-REF' not in (future_result.state | to_json)"
+          - "'FIXTURE-A-FUTURE-OAUTH-CREDENTIAL' not in (future_result.state | to_json)"
+          - "'FIXTURE-A-FUTURE-REFRESH-TOKEN' not in (future_result.state | to_json)"
+          - "'FIXTURE-A-FUTURE-PASSPHRASE' not in (future_result.state | to_json)"
+          - "'RklYVFVSRS1BLUZVVFVSRS1QUklWQVRFLUtFWQ==' not in (future_result.state | to_json)"
+        success_msg: ASSERTED no invented credential value survives anywhere in the document
+        fail_msg: a credential value is still somewhere in the returned state
+
+    - name: The public half of the PKI survives, and so does everything else
+      # The reason `key` is matched by exact name and not as a substring. A loose `key` withholds
+      # publicKey with privateKey, and the CA and certificate an operator templates into a trust
+      # bundle are the reason this module returns the agent's TLS at all.
+      ansible.builtin.assert:
+        that:
+          - future_result.state.agentInfo.tls.ca == 'UFVCTElDLUNB'
+          - future_result.state.agentInfo.tls.cert == 'UFVCTElDLUNFUlQ='
+          - future_result.state.agentInfo.tls.publicKey == 'UFVCTElDLUtFWQ=='
+          - future_result.state.registryInfo.address == '127.0.0.1:31999'
+          - future_result.state.registryInfo.nodePort == 31999
+          - future_result.state.registryInfo.registryMode == 'proxy'
+          - future_result.state.registryInfo.pushUsername == 'zarf-push'
+          - future_result.state.gitServer.pushUsername == 'zarf-git-user'
+          - future_result.state.gitServer.address == 'http://zarf-gitea-http.zarf.svc.cluster.local:3000'
+          - future_result.state.agentInfo.mutationPolicy == 'all'
+          - future_result.state.distro == 'k3s'
+          - future_result.state.storageClass == 'local-path'
+        success_msg: ASSERTED the public PKI and every non-credential field survive
+
+    - name: Opting in returns the invented credentials too
+      colonel_byte.zarf.zarf_state_info:
+        zarf_binary: "{{ lookup('env', 'ZARF_ANSIBLE_E2E_STUB') }}"
+        include_credentials: true
+      register: future_full
+
+    - name: include_credentials is not narrowed by the wider matching
+      ansible.builtin.assert:
+        that:
+          - future_full.redacted == []
+          - future_full.state.registryInfo.pushSecret == 'FIXTURE-A-FUTURE-PUSH-SECRET'
+          - future_full.state.gitServer.oauthCredential == 'FIXTURE-A-FUTURE-OAUTH-CREDENTIAL'
+          - future_full.state.agentInfo.tls.keyPassphrase == 'FIXTURE-A-FUTURE-PASSPHRASE'
+        success_msg: ASSERTED include_credentials still returns the whole state
+        fail_msg: include_credentials did not return the invented credentials

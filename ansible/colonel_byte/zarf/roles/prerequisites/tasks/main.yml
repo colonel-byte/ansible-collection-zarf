@@ -7,8 +7,8 @@
 # to be told both, not told one, fix it, and be told the other.
 #
 # Three facts come out of it, and the third matters as much as the other two.
-# zarf_prerequisites_checked is what was checked and held, zarf_prerequisites_unmet is what did not,
-# and zarf_prerequisites_skipped is what could not be checked at all -- a compound version range, or
+# zarf_prerequisites_checked is what was examined, zarf_prerequisites_unmet is what did not hold,
+# and zarf_prerequisites_skipped is what could not be examined at all -- a compound version range, or
 # an accessModes requirement that cannot be verified without creating a PersistentVolumeClaim. A
 # check that cannot be made is named rather than quietly passed, because a role that reports success
 # for a document it mostly ignored is worse than no role.
@@ -144,6 +144,12 @@
     # installed outside flux-system is still found. A document that requires a version and names no
     # controller falls back to the usual pair, and if neither is there the constraint is reported as
     # unchecked rather than satisfied -- tasks/version_check.yml does that for an empty version.
+    #
+    # _namespaces fills the default per entry, with map's own default argument, rather than
+    # rejecting the empties afterwards. A list where one controller omits namespace raises inside
+    # the map, which collapses the whole expression to Undefined and hands every explicitly named
+    # namespace to the fallback -- so a Flux in gitops reported no version, the constraint was
+    # recorded as unchecked, and the role passed a cluster it had not checked.
     - name: Record the FluxCD version constraint, and the version the cluster reports
       ansible.builtin.set_fact:
         _zarf_prereq_version_checks: >-
@@ -153,8 +159,9 @@
                  'actual': _reported}] }}
       vars:
         _namespaces: >-
-          {{ (_zarf_prereq_controllers | map(attribute='namespace') | reject('equalto', '') | list
-              | unique) | default(['flux-system'], true) }}
+          {{ (_zarf_prereq_controllers | map(attribute='namespace', default='')
+              | map('default', 'flux-system', true) | unique | list)
+             | default(['flux-system'], true) }}
         _names: >-
           {{ (_zarf_prereq_controllers | map(attribute='name') | list)
              | default(['source-controller'], true) }}
@@ -238,7 +245,7 @@
                 ~ _minimum ~ ' available replica(s)'] }}
         zarf_prerequisites_unmet: "{{ zarf_prerequisites_unmet + _messages }}"
       vars:
-        _namespace: "{{ item.namespace | default('flux-system') }}"
+        _namespace: "{{ item.namespace | default('flux-system', true) }}"
         _minimum: "{{ item.minAvailable | default(1) | int }}"
         _found: >-
           {{ _zarf_prereq_deployments | selectattr('namespace', 'equalto', _namespace)

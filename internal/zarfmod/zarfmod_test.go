@@ -197,8 +197,10 @@ func TestBuildInitArgs(t *testing.T) {
 		{
 			name: "an overridden log format is not replaced",
 			params: initParams{
-				LogFormat: "console",
-				LogLevel:  "debug",
+				commonParams: commonParams{
+					LogFormat: "console",
+					LogLevel:  "debug",
+				},
 			},
 			want: []string{
 				"init",
@@ -211,8 +213,10 @@ func TestBuildInitArgs(t *testing.T) {
 		{
 			name: "a false boolean renders, an unset one does not",
 			params: initParams{
-				TakeOwnership: &ownership,
-				PlainHTTP:     &plainHTTP,
+				commonParams: commonParams{
+					TakeOwnership: &ownership,
+					PlainHTTP:     &plainHTTP,
+				},
 			},
 			want: []string{
 				"init",
@@ -249,13 +253,15 @@ func TestBuildInitArgs(t *testing.T) {
 		{
 			name: "repeated and map flags render one copy per entry, sorted",
 			params: initParams{
-				Values: []string{"/etc/zarf/a.yaml", "/etc/zarf/b.yaml"},
-				SetValues: map[string]string{
-					"zebra":   "stripes",
-					"leopard": "spots",
-				},
-				SetVariables: map[string]string{
-					"DOMAIN": "bubbles.test",
+				commonParams: commonParams{
+					Values: []string{"/etc/zarf/a.yaml", "/etc/zarf/b.yaml"},
+					SetValues: map[string]string{
+						"zebra":   "stripes",
+						"leopard": "spots",
+					},
+					SetVariables: map[string]string{
+						"DOMAIN": "bubbles.test",
+					},
 				},
 			},
 			want: []string{
@@ -292,45 +298,47 @@ func TestInitArgsAreKnownFlags(t *testing.T) {
 	yes := true
 	number := 1
 	widest := initParams{
-		Components:            "zarf-registry",
-		StorageClass:          "local-path",
-		RegistryURL:           "registry.bubbles.test",
-		RegistryMode:          "internal",
-		RegistryPort:          &number,
-		RegistrySecret:        "secret",
-		RegistryPushUsername:  "push",
-		RegistryPushPassword:  "push",
-		RegistryPullUsername:  "pull",
-		RegistryPullPassword:  "pull",
-		GitURL:                "https://git.bubbles.test",
-		GitPushUsername:       "push",
-		GitPushPassword:       "push",
-		GitPullUsername:       "pull",
-		GitPullPassword:       "pull",
-		InjectorImage:         "registry.bubbles.test/injector:1",
-		InjectorPort:          &number,
-		AgentMutationPolicy:   "all",
-		AgentTLSCA:            "/etc/zarf/ca.pem",
-		AgentTLSCert:          "/etc/zarf/tls.pem",
-		AgentTLSKey:           "/etc/zarf/tls.key",
-		TakeOwnership:         &yes,
-		ForceConflicts:        &yes,
-		SkipValuesSchemaValid: &yes,
-		InsecureSkipTLSVerify: &yes,
-		PlainHTTP:             &yes,
-		Retries:               &number,
-		OCIConcurrency:        &number,
-		Architecture:          "amd64",
-		Cache:                 "/var/cache/zarf",
-		Tmpdir:                "/var/tmp/zarf",
-		Timeout:               "30m",
-		PublicKey:             "/etc/zarf/cosign.pub",
-		Verify:                "always",
-		LogLevel:              "debug",
-		LogFormat:             "json",
-		Values:                []string{"/etc/zarf/values.yaml"},
-		SetValues:             map[string]string{"key": "value"},
-		SetVariables:          map[string]string{"KEY": "value"},
+		StorageClass:         "local-path",
+		RegistryURL:          "registry.bubbles.test",
+		RegistryMode:         "internal",
+		RegistryPort:         &number,
+		RegistrySecret:       "secret",
+		RegistryPushUsername: "push",
+		RegistryPushPassword: "push",
+		RegistryPullUsername: "pull",
+		RegistryPullPassword: "pull",
+		GitURL:               "https://git.bubbles.test",
+		GitPushUsername:      "push",
+		GitPushPassword:      "push",
+		GitPullUsername:      "pull",
+		GitPullPassword:      "pull",
+		InjectorImage:        "registry.bubbles.test/injector:1",
+		InjectorPort:         &number,
+		AgentMutationPolicy:  "all",
+		AgentTLSCA:           "/etc/zarf/ca.pem",
+		AgentTLSCert:         "/etc/zarf/tls.pem",
+		AgentTLSKey:          "/etc/zarf/tls.key",
+		commonParams: commonParams{
+			Components:            "zarf-registry",
+			TakeOwnership:         &yes,
+			ForceConflicts:        &yes,
+			SkipValuesSchemaValid: &yes,
+			InsecureSkipTLSVerify: &yes,
+			PlainHTTP:             &yes,
+			Retries:               &number,
+			OCIConcurrency:        &number,
+			Architecture:          "amd64",
+			Cache:                 "/var/cache/zarf",
+			Tmpdir:                "/var/tmp/zarf",
+			Timeout:               "30m",
+			PublicKey:             "/etc/zarf/cosign.pub",
+			Verify:                "always",
+			LogLevel:              "debug",
+			LogFormat:             "json",
+			Values:                []string{"/etc/zarf/values.yaml"},
+			SetValues:             map[string]string{"key": "value"},
+			SetVariables:          map[string]string{"KEY": "value"},
+		},
 	}
 
 	for _, arg := range buildInitArgs(&widest, "/srv/staging/zarf-init-amd64-v0.86.0.tar.zst") {
@@ -745,7 +753,9 @@ func TestInitSourceAndWorkingDir(t *testing.T) {
 			name: "both parameters say different things now",
 			params: initParams{
 				InitPackage: pkg,
-				Directory:   elsewhere,
+				commonParams: commonParams{
+					Directory: elsewhere,
+				},
 			},
 			wantSource: pkg,
 			wantDir:    elsewhere,
@@ -758,7 +768,7 @@ func TestInitSourceAndWorkingDir(t *testing.T) {
 		},
 		{
 			name:       "a directory alone leaves zarf to search it",
-			params:     initParams{Directory: dir},
+			params:     initParams{commonParams: commonParams{Directory: dir}},
 			wantSource: "",
 			wantDir:    dir,
 		},
