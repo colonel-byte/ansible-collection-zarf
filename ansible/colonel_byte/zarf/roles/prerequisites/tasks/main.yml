@@ -100,7 +100,14 @@
     - name: Collect what the document asks for and what the cluster reported
       ansible.builtin.set_fact:
         _zarf_prereq_requires: "{{ zarf_prerequisites_document.requires | default({}) }}"
-        _zarf_prereq_gitops: "{{ zarf_prerequisites_document.requires.gitops | default({}) }}"
+        # Which engine keys the document carries, by name. The engine is the key rather than a
+        # field inside one, so there is no separate engine name for a version to contradict:
+        # Flux is on 2.x and Argo CD on 3.x, and a document meaning ">=2.9.0" for Flux that said
+        # argocd would have been satisfied by Argo CD 3.5 -- a constraint passing against an
+        # engine it was never about.
+        _zarf_prereq_engines: >-
+          {{ zarf_engine_namespaces.keys() | select('in', zarf_prerequisites_document.requires
+                                                          | default({})) | list }}
         _zarf_prereq_controllers: "{{ zarf_prerequisites_document.requires.controllers | default([]) }}"
         _zarf_prereq_storage: "{{ zarf_prerequisites_document.requires.storage | default({}) }}"
         _zarf_prereq_required_crds: "{{ zarf_prerequisites_document.requires.crds | default([]) }}"
@@ -118,36 +125,36 @@
         _zarf_prereq_version_checks: []
       run_once: true
 
+    # A package is reconciled by one GitOps engine. The schema refuses a document requiring both,
+    # and so does this -- a document reaches the role through zarf_prerequisites without ever
+    # meeting a validator, and picking one of the two silently is the kind of guess this role
+    # exists not to make.
+    - name: Check that the document requires at most one GitOps engine
+      ansible.builtin.assert:
+        that:
+          - _zarf_prereq_engines | length <= 1
+        fail_msg: >-
+          the prerequisites document requires {{ _zarf_prereq_engines | join(' and ') }} at once,
+          and a package is reconciled by one of them. Name the one this package needs.
+        quiet: "{{ zarf_quiet | bool }}"
+      run_once: true
+
     # The namespace a controller requirement that names none is checked in. It is engine-specific
-    # and nothing else about the checking is, which is the whole reason requires.gitops carries an
-    # engine at all: "these workloads must be available" is the same question whatever reconciles
-    # the cluster, and only the default address of the engine differs.
+    # and nothing else about the checking is: "these workloads must be available" is the same
+    # question whatever reconciles the cluster, and only the default address of the engine differs.
     #
-    # A document with controllers and no gitops section gets flux-system, which is what every
+    # A document with controllers and no engine section gets flux-system, which is what every
     # document written against the older shape of this format meant.
     - name: Work out the engine and the namespace its controllers default to
       ansible.builtin.set_fact:
-        _zarf_prereq_engine: "{{ _zarf_prereq_gitops.engine | default('fluxcd', true) }}"
-        # .get rather than a subscript: an engine not in the mapping is reported by the task
-        # below, and a subscript would raise here before that task ever ran.
+        _zarf_prereq_engine: "{{ (_zarf_prereq_engines | first) | default('fluxcd', true) }}"
+        _zarf_prereq_engine_version: >-
+          {{ (_zarf_prereq_requires[_zarf_prereq_engines | first].version | default(''))
+             if (_zarf_prereq_engines | length > 0) else '' }}
         _zarf_prereq_namespace: >-
-          {{ zarf_engine_namespaces.get(_zarf_prereq_gitops.engine | default('fluxcd', true),
+          {{ zarf_engine_namespaces.get((_zarf_prereq_engines | first) | default('fluxcd', true),
                                         'flux-system') }}
       run_once: true
-
-    # An engine this role has never heard of is named, not guessed at. The two things that differ
-    # per engine -- the default namespace and which workloads carry the version label -- cannot
-    # both be defaulted safely, and a role that picked flux-system for an engine called "jenkins"
-    # would report a cluster as satisfying a document it never checked.
-    - name: Note that the engine is one this role does not know
-      ansible.builtin.set_fact:
-        zarf_prerequisites_skipped: >-
-          {{ zarf_prerequisites_skipped
-             + ['requires.gitops.engine is ' ~ _zarf_prereq_engine
-                ~ ', which this role does not know: its controllers must name their namespaces, '
-                ~ 'and its version cannot be read'] }}
-      run_once: true
-      when: _zarf_prereq_engine not in zarf_engine_namespaces
 
     # The document travels separately from the package it describes -- it is extracted on its own --
     # so a document copied from the package beside it and not fully edited would otherwise be
@@ -198,7 +205,7 @@
         _zarf_prereq_version_checks: >-
           {{ _zarf_prereq_version_checks
              + [{'label': "the cluster's " ~ _zarf_prereq_engine ~ " version",
-                 'constraint': _zarf_prereq_gitops.version,
+                 'constraint': _zarf_prereq_engine_version,
                  'actual': _reported}] }}
       vars:
         _namespaces: >-
@@ -219,7 +226,7 @@
               | selectattr('version', '!=', '')
               | map(attribute='version') | unique | sort | last) | default('', true) }}
       run_once: true
-      when: (_zarf_prereq_gitops.version | default('')) | length > 0
+      when: _zarf_prereq_engine_version | length > 0
 
     # One entry per prerequisite package that states a version. The deployed version comes from the
     # list `zarf package list` reported, and is empty when the package is not deployed at all --
@@ -242,6 +249,32 @@
       when:
         - zarf_check_packages | bool
         - item.name in (_zarf_prereq_deployed | map(attribute='package') | list)
+
+    # One entry per controller that states a version of its own. This is how a version is required
+    # of something that is not a GitOps engine: the label is the same app.kubernetes.io/version
+    # the engine sections are read from, and a package needing cert-manager v1.14 or an ingress
+    # controller new enough for an API it uses has nowhere else to say so. A workload carrying no
+    # such label reports an empty version, which version_check.yml records as unchecked rather
+    # than treating as a failed comparison.
+    - name: Record the version constraints the controllers state
+      ansible.builtin.set_fact:
+        _zarf_prereq_version_checks: >-
+          {{ _zarf_prereq_version_checks
+             + [{'label': _kind ~ ' ' ~ item.name ~ ' in ' ~ _namespace,
+                 'constraint': item.version,
+                 'actual': _reported}] }}
+      vars:
+        _namespace: "{{ item.namespace | default(_zarf_prereq_namespace, true) }}"
+        _kind: "{{ item.kind | default('Deployment', true) }}"
+        _reported: >-
+          {{ (_zarf_prereq_workloads | selectattr('namespace', 'equalto', _namespace)
+              | selectattr('kind', 'equalto', _kind)
+              | selectattr('name', 'equalto', item.name)
+              | map(attribute='version') | first) | default('', true) }}
+      loop: "{{ _zarf_prereq_controllers | selectattr('version', 'defined') | list }}"
+      loop_control:
+        label: "{{ item.name }} {{ item.version }}"
+      run_once: true
 
     - name: Evaluate every version constraint the document states
       ansible.builtin.include_tasks: version_check.yml

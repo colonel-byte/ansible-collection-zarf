@@ -33,6 +33,8 @@
 // Kubernetes API group is: the name is a namespace for the kind, not a URL anybody fetches.
 package prerequisites
 
+import "github.com/invopop/jsonschema"
+
 // APIVersion and Kind are the two fixed fields of the document, and the pair a consumer checks
 // before trusting the rest of it. They are constants rather than documentation because the Ansible
 // side checks them by name: a file that parses as YAML but carries some other kind is not a
@@ -91,8 +93,10 @@ type Metadata struct {
 type Requires struct {
 	// Kubernetes constrains the cluster's own version.
 	Kubernetes *KubernetesRequirement `json:"kubernetes,omitempty"`
-	// GitOps requires a GitOps engine that is installed and new enough.
-	GitOps *GitOpsRequirement `json:"gitops,omitempty"`
+	// FluxCD requires Flux, installed and new enough. Mutually exclusive with ArgoCD.
+	FluxCD *EngineRequirement `json:"fluxcd,omitempty"`
+	// ArgoCD requires Argo CD, installed and new enough. Mutually exclusive with FluxCD.
+	ArgoCD *EngineRequirement `json:"argocd,omitempty"`
 	// Controllers are the workloads that must be present and available.
 	Controllers []ControllerRequirement `json:"controllers,omitempty"`
 	// CRDs are the custom resource definitions that must be established on the cluster.
@@ -101,6 +105,27 @@ type Requires struct {
 	Storage *StorageRequirement `json:"storage,omitempty"`
 	// Packages requires other Zarf packages to be deployed first.
 	Packages []PackageRequirement `json:"packages,omitempty"`
+}
+
+// JSONSchemaExtend refuses a document that requires both engines at once.
+//
+// Expressed in the schema rather than only in the role, so that the editor writing the document
+// says so while it is being written. The role refuses it too -- a document can be handed to the
+// role directly, through the zarf_prerequisites variable, without ever meeting a validator -- but
+// by then the author has gone.
+//
+// `not: {required: [fluxcd, argocd]}` reads as "it must not be the case that both are present",
+// which is the whole of the rule: either engine alone is fine, and neither is fine for a package
+// that needs no GitOps engine at all.
+//
+// It is written here rather than in magefiles/pkg/gen/schema because the constraint belongs to
+// the type. A rule the generator applied from the outside would hold for the schema and not for
+// anything else reflecting over these types.
+func (Requires) JSONSchemaExtend(schema *jsonschema.Schema) {
+	schema.Not = &jsonschema.Schema{
+		Required:    []string{EngineFluxCD, EngineArgoCD},
+		Description: "a package is reconciled by one GitOps engine, so requiring both is refused",
+	}
 }
 
 // KubernetesRequirement constrains the cluster's own version.
@@ -118,7 +143,8 @@ type KubernetesRequirement struct {
 	Version string `json:"version" jsonschema:"example=>=1.30.0,example=>=1.31.0"`
 }
 
-// Engine names a GitOps engine this format knows how to check a cluster for.
+// Engine names a GitOps engine this format knows how to check a cluster for, which is also the
+// key a document requires it under: `requires.fluxcd` or `requires.argocd`.
 //
 // They are constants because the checking differs per engine in exactly two ways -- which
 // namespace a controller defaults to, and which workloads carry the version label -- and a
@@ -130,25 +156,32 @@ const (
 	EngineArgoCD = "argocd"
 )
 
-// GitOpsRequirement requires a GitOps engine that is installed and new enough.
+// EngineRequirement requires a GitOps engine that is installed and new enough.
 //
-// It is one small section rather than a per-engine one, because almost nothing about checking an
-// engine is engine-specific. "These workloads must be available" and "these CRDs must be
-// established" are the same question whatever reconciles the cluster, which is why Controllers and
-// CRDs sit on Requires beside this rather than inside it. What is left here is the engine's
-// identity and its version, and the identity is needed only because the version is read off a
-// label whose meaning differs: for Flux it is the flux2 release the manifests were built from, and
-// a document naming ">=2.9.0" is not talking about source-controller v1.9.5.
+// The engine is the key this sits under rather than a field inside it, and that is the whole
+// design. The two engines do not number together -- Flux is on 2.x while Argo CD is on 3.x -- so
+// a version and a separate engine field could disagree, and the dangerous direction of that
+// disagreement is silent: a document meaning "Flux >= 2.9" that named argocd by mistake is
+// satisfied by Argo CD 3.5, because 3.5 >= 2.9. The constraint passes against an engine it was
+// never about, which is the silent success this whole format exists to prevent, reached through
+// the format itself. Naming the engine with the key leaves nothing for the version to contradict.
 //
-// The version alone is the least interesting of the three checks a document can make. A cluster can
-// hold the right version with its controllers scaled to zero, or hold the controllers without the
-// CRDs the package's own Application or HelmRelease needs -- which is the silent case this whole
-// format exists for: zarf deploys the manifests, nothing reconciles them, and the deployment is
-// reported as a success.
-type GitOpsRequirement struct {
-	// Engine is which GitOps engine the cluster must be running.
-	Engine string `json:"engine" jsonschema:"enum=fluxcd,enum=argocd"`
-	// Version is a SemVer range the installed engine's version must satisfy.
+// Requiring both engines at once is refused rather than checked. A package is reconciled by one
+// of them, and a document asking for two is a document that was edited rather than written.
+//
+// It is one small section rather than a per-engine copy of everything, because almost nothing
+// about checking an engine is engine-specific. "These workloads must be available" and "these
+// CRDs must be established" are the same question whatever reconciles the cluster, which is why
+// Requires.Controllers and Requires.CRDs sit beside this rather than inside it.
+//
+// The version alone is the least interesting of the three checks a document can make. A cluster
+// can hold the right version with its controllers scaled to zero, or hold the controllers without
+// the CRDs the package's own Application or HelmRelease needs -- which is the silent case this
+// whole format exists for: zarf deploys the manifests, nothing reconciles them, and the
+// deployment is reported as a success.
+type EngineRequirement struct {
+	// Version is a SemVer range the installed engine's version must satisfy, in that engine's own
+	// numbering: a flux2 release for fluxcd, an Argo CD release for argocd.
 	//
 	// It is read from the app.kubernetes.io/version label on the engine's own workloads, and
 	// neither Flux's nor Argo CD's upstream manifests carry that label -- a package that vendors
@@ -179,6 +212,17 @@ type ControllerRequirement struct {
 	Namespace string `json:"namespace,omitempty" jsonschema:"example=flux-system,example=argocd"`
 	// Kind is the workload's kind.
 	Kind string `json:"kind,omitempty" jsonschema:"enum=Deployment,enum=StatefulSet,default=Deployment"`
+	// Version is a SemVer range the workload's own version must satisfy, read from the same
+	// app.kubernetes.io/version label the engine sections are read from.
+	//
+	// It is here so that a version can be required of something that is not a GitOps engine. A
+	// package needing cert-manager v1.14, or an ingress controller new enough for an API it uses,
+	// has no engine section to put that in -- and requiring an engine it does not use, purely to
+	// get a version field, would be a prerequisite that refuses clusters for no reason.
+	//
+	// Unconstrained when empty, which is the common case: most controller requirements are about
+	// a workload being there and available at all.
+	Version string `json:"version,omitempty" jsonschema:"example=>=1.14.0"`
 	// MinAvailable is how many replicas must report available. One is enough to reconcile; a
 	// higher number is a statement about the package's tolerance for a controller restart during
 	// its own deployment.

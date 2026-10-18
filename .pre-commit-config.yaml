@@ -78,6 +78,35 @@ repos:
           - --select=F,E9
           - --target-version=py39
         exclude: vendor/.*
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.35.0
+    hooks:
+      # The reference packages' prerequisites documents, against the schema this repository
+      # generates from the Go types in api/.
+      #
+      # TestExampleDocumentsMatchTheTypes already decodes these into those types with unknown
+      # fields rejected, and that is not the same check. It holds a document against the *types*;
+      # this holds it against the *generated schema*, which is what editors and other repositories
+      # actually validate against. A jsonschema tag that rendered wrong -- an enum missing a value,
+      # a constraint that did not survive generation -- would leave the two disagreeing, and a Go
+      # test reflecting over the types could never see it.
+      #
+      # It is also the only thing here that exercises the schema the way a consumer does. The Go
+      # test says plainly that it avoids a JSON Schema validator rather than vendor a Go
+      # dependency for one; this is that validator, as a hook rather than a module.
+      - id: check-jsonschema
+        name: check-jsonschema-prerequisites
+        files: ^examples/packages/[^/]+/docs/prerequisites\.yaml$
+        args:
+          - --schemafile
+          - schema/zarf-v1alpha1-package-prerequisites-schema.json
+      # Each reference package's vendoring declaration, against its own generated schema.
+      - id: check-jsonschema
+        name: check-jsonschema-resources
+        files: ^examples/packages/[^/]+/resources\.json$
+        args:
+          - --schemafile
+          - schema/package-resources-schema.json
   - repo: local
     hooks:
       - id: docs-generator

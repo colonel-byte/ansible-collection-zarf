@@ -53,6 +53,13 @@
           "description": "Kind is the workload's kind.",
           "default": "Deployment"
         },
+        "version": {
+          "type": "string",
+          "description": "Version is a SemVer range the workload's own version must satisfy, read from the same\napp.kubernetes.io/version label the engine sections are read from.\n\nIt is here so that a version can be required of something that is not a GitOps engine. A\npackage needing cert-manager v1.14, or an ingress controller new enough for an API it uses,\nhas no engine section to put that in -- and requiring an engine it does not use, purely to\nget a version field, would be a prerequisite that refuses clusters for no reason.\n\nUnconstrained when empty, which is the common case: most controller requirements are about\na workload being there and available at all.",
+          "examples": [
+            "\u003e=1.14.0"
+          ]
+        },
         "minAvailable": {
           "type": "integer",
           "minimum": 1,
@@ -67,19 +74,11 @@
       ],
       "description": "ControllerRequirement is one workload that must be present and available."
     },
-    "GitOpsRequirement": {
+    "EngineRequirement": {
       "properties": {
-        "engine": {
-          "type": "string",
-          "enum": [
-            "fluxcd",
-            "argocd"
-          ],
-          "description": "Engine is which GitOps engine the cluster must be running."
-        },
         "version": {
           "type": "string",
-          "description": "Version is a SemVer range the installed engine's version must satisfy.\n\nIt is read from the app.kubernetes.io/version label on the engine's own workloads, and\nneither Flux's nor Argo CD's upstream manifests carry that label -- a package that vendors\nthem has to add it. A cluster whose engine carries no version label has the constraint\nreported as unchecked rather than satisfied.",
+          "description": "Version is a SemVer range the installed engine's version must satisfy, in that engine's own\nnumbering: a flux2 release for fluxcd, an Argo CD release for argocd.\n\nIt is read from the app.kubernetes.io/version label on the engine's own workloads, and\nneither Flux's nor Argo CD's upstream manifests carry that label -- a package that vendors\nthem has to add it. A cluster whose engine carries no version label has the constraint\nreported as unchecked rather than satisfied.",
           "examples": [
             "\u003e=2.9.0",
             "\u003e=3.5.0"
@@ -88,10 +87,7 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "engine"
-      ],
-      "description": "GitOpsRequirement requires a GitOps engine that is installed and new enough."
+      "description": "EngineRequirement requires a GitOps engine that is installed and new enough."
     },
     "KubernetesRequirement": {
       "properties": {
@@ -195,14 +191,25 @@
       "description": "Provides is what the cluster becomes once the package is deployed: the half of the contract the packages downstream of this one require."
     },
     "Requires": {
+      "not": {
+        "required": [
+          "fluxcd",
+          "argocd"
+        ],
+        "description": "a package is reconciled by one GitOps engine, so requiring both is refused"
+      },
       "properties": {
         "kubernetes": {
           "$ref": "#/$defs/KubernetesRequirement",
           "description": "Kubernetes constrains the cluster's own version."
         },
-        "gitops": {
-          "$ref": "#/$defs/GitOpsRequirement",
-          "description": "GitOps requires a GitOps engine that is installed and new enough."
+        "fluxcd": {
+          "$ref": "#/$defs/EngineRequirement",
+          "description": "FluxCD requires Flux, installed and new enough. Mutually exclusive with ArgoCD."
+        },
+        "argocd": {
+          "$ref": "#/$defs/EngineRequirement",
+          "description": "ArgoCD requires Argo CD, installed and new enough. Mutually exclusive with FluxCD."
         },
         "controllers": {
           "items": {

@@ -14,19 +14,20 @@ What makes it hard to prevent is that the requirement is known -- by whoever bui
 
 The contract is a `colonel-byte.dev/v1alpha1` `PackagePrerequisites` document. It is YAML, it is validated by a [generated JSON Schema](https://github.com/colonel-byte/ansible-collection-zarf/blob/main/schema/zarf-v1alpha1-package-prerequisites-schema.json), and the Go types it is generated from are in [`api/colonel-byte.dev/v1alpha1/prerequisites`](https://github.com/colonel-byte/ansible-collection-zarf/blob/main/api/colonel-byte.dev/v1alpha1/prerequisites/spec.go).
 
-| Section               | Required | What it states                                                                     |
-| --------------------- | -------- | ---------------------------------------------------------------------------------- |
-| `apiVersion`          | yes      | Fixed to `colonel-byte.dev/v1alpha1`.                                              |
-| `kind`                | yes      | Fixed to `PackagePrerequisites`.                                                   |
-| `metadata`            | yes      | The package's name and version, and a sentence for a human.                        |
-| `requires`            | yes      | What the cluster must already be.                                                  |
-| `requires.kubernetes` | no       | A SemVer constraint on the API server's version.                                   |
-| `requires.gitops`     | no       | Which GitOps engine the cluster runs (`fluxcd` or `argocd`), and a SemVer constraint on it. |
-| `requires.controllers` | no      | The workloads that must be present and available, by name, namespace and kind.     |
-| `requires.crds`       | no       | The CustomResourceDefinitions that must be established.                            |
-| `requires.storage`    | no       | A default StorageClass, named StorageClasses, and the access modes claims ask for. |
-| `requires.packages`   | no       | Other Zarf packages that must be deployed first, with SemVer constraints.          |
-| `provides`            | no       | The capabilities, CRDs and namespaces this package contributes to the cluster.     |
+| Section                | Required | What it states                                                                                                                             |
+| ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `apiVersion`           | yes      | Fixed to `colonel-byte.dev/v1alpha1`.                                                                                                      |
+| `kind`                 | yes      | Fixed to `PackagePrerequisites`.                                                                                                           |
+| `metadata`             | yes      | The package's name and version, and a sentence for a human.                                                                                |
+| `requires`             | yes      | What the cluster must already be.                                                                                                          |
+| `requires.kubernetes`  | no       | A SemVer constraint on the API server's version.                                                                                           |
+| `requires.fluxcd`      | no       | A SemVer constraint on the installed Flux. Mutually exclusive with `requires.argocd`.                                                      |
+| `requires.argocd`      | no       | A SemVer constraint on the installed Argo CD. Mutually exclusive with `requires.fluxcd`.                                                   |
+| `requires.controllers` | no       | The workloads that must be present and available, by name, namespace and kind, each with an optional SemVer constraint on its own version. |
+| `requires.crds`        | no       | The CustomResourceDefinitions that must be established.                                                                                    |
+| `requires.storage`     | no       | A default StorageClass, named StorageClasses, and the access modes claims ask for.                                                         |
+| `requires.packages`    | no       | Other Zarf packages that must be deployed first, with SemVer constraints.                                                                  |
+| `provides`             | no       | The capabilities, CRDs and namespaces this package contributes to the cluster.                                                             |
 
 `requires` is required and `provides` is not, which is the asymmetry the format is for: a package that states nothing it requires has no reason to ship the document, while a leaf workload that provides nothing downstream is the common case.
 
@@ -43,8 +44,7 @@ metadata:
 requires:
   kubernetes:
     version: ">=1.30.0"
-  gitops:
-    engine: fluxcd
+  fluxcd:
     version: ">=2.9.0"
   controllers:
     - name: source-controller
@@ -138,7 +138,7 @@ The mapping alone tells you the package declares a prerequisites document and wh
 
 - name: Report the Flux version it needs
   ansible.builtin.debug:
-    msg: "{{ docs.prerequisites.requires.gitops.version }}"
+    msg: "{{ docs.prerequisites.requires.fluxcd.version }}"
   when: docs.prerequisites is defined
 ```
 
@@ -174,13 +174,31 @@ Print that list even on a successful run. A run that reported only its successes
 
 ### Where the engine version comes from
 
-`requires.gitops.version` is checked against the `app.kubernetes.io/version` label on the engine's own workloads. For Flux that is the flux2 release the manifests were built from -- not the controllers' own versions, which are a different set of numbers entirely: a document naming `>=2.9.0` is not talking about `source-controller` v1.9.5.
+The version under `requires.fluxcd` or `requires.argocd` is checked against the `app.kubernetes.io/version` label on the engine's own workloads. For Flux that is the flux2 release the manifests were built from -- not the controllers' own versions, which are a different set of numbers entirely: a document naming `>=2.9.0` is not talking about `source-controller` v1.9.5.
 
 Neither engine's upstream manifests carry that label. `flux install` adds it from its own build, and Argo CD's `install.yaml` has none at all -- so a package that vendors either has to add it. [`app-fluxcd`](https://github.com/colonel-byte/ansible-collection-zarf/tree/main/examples/packages/app-fluxcd) and [`app-argocd`](https://github.com/colonel-byte/ansible-collection-zarf/tree/main/examples/packages/app-argocd) both do it in a generated kustomization, which is most of why those files are generated. A cluster whose engine carries no version label has the constraint reported as unchecked -- honestly, and uselessly.
 
+### A version without an engine
+
+`requires.controllers[].version` is a SemVer range on that workload's own `app.kubernetes.io/version` label, and it is how a package requires a version of something that is not a GitOps engine.
+
+```yaml
+requires:
+  controllers:
+    - name: cert-manager
+      namespace: cert-manager
+      version: ">=1.14.0"
+```
+
+No `fluxcd` or `argocd` key anywhere: the package needs that workload at that version and has no opinion about what reconciles the cluster. Without it, the only version a document could put on a workload was the engine's, so a package needing cert-manager v1.14 had to require an engine it does not use purely to get a version field -- a prerequisite that refuses clusters for no reason.
+
+It is the same label and the same comparison the engine sections use, so the same two caveats apply: one comparator and one version, and a workload carrying no version label has the constraint reported as unchecked rather than satisfied. Most charts following the Kubernetes recommended labels set it; a workload nobody stamped does not.
+
 ### Which engine, and why the format asks
 
-`requires.gitops.engine` is `fluxcd` or `argocd`. It exists because almost nothing about checking an engine is engine-specific and exactly two things are.
+The engine is named by the key -- `requires.fluxcd` or `requires.argocd` -- and the two are mutually exclusive, which the generated schema states as well as the role. The key names the engine rather than a field inside it because the two do not number together: Flux is on 2.x while Argo CD is on 3.x, so a version sitting beside a separate `engine` field could disagree with it, and the dangerous direction of that disagreement is silent. A document meaning "Flux >= 2.9" that named argocd by mistake is satisfied by Argo CD 3.5, because 3.5 >= 2.9 -- the constraint passes against an engine it was never about. Naming the engine with the key leaves nothing for the version to contradict.
+
+Only two things about checking an engine are engine-specific at all.
 
 The first is the namespace a controller defaults to: `flux-system` for Flux, `argocd` for Argo CD. A document whose controllers name their namespaces never needs the engine for this; one that leaves them off does.
 
@@ -188,11 +206,10 @@ The second is the kind. Flux's controllers are all `Deployment`s. Argo CD runs `
 
 ```yaml
 requires:
-  gitops:
-    engine: argocd
+  argocd:
     version: ">=3.5.0"
   controllers:
-    # No namespace on either: engine: argocd makes both default to argocd.
+    # No namespace on either: the argocd key makes both default to the argocd namespace.
     - name: argocd-application-controller
       kind: StatefulSet
     - name: argocd-server
@@ -201,17 +218,17 @@ requires:
     - appprojects.argoproj.io
 ```
 
-Everything else -- "these workloads must be available", "these CRDs must be established" -- is the same question whatever reconciles the cluster, which is why `requires.controllers` and `requires.crds` sit beside `requires.gitops` rather than inside it. An engine the role has never heard of is reported in `zarf_prerequisites_skipped` rather than guessed at.
+Everything else -- "these workloads must be available", "these CRDs must be established" -- is the same question whatever reconciles the cluster, which is why `requires.controllers` and `requires.crds` sit beside the engine section rather than inside it.
 
 ## The reference packages
 
 [`examples/packages`](https://github.com/colonel-byte/ansible-collection-zarf/tree/main/examples/packages) holds three packages that declare documents: two providers of the same capability, and a consumer of it.
 
-| Package                     | Role     | What it shows                                                                                        |
-| --------------------------- | -------- | ---------------------------------------------------------------------------------------------------- |
-| `app-fluxcd`                | Provider | A `provides:` section, and the generated kustomization that makes its version readable off a cluster |
+| Package                     | Role     | What it shows                                                                                                                                                      |
+| --------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `app-fluxcd`                | Provider | A `provides:` section, and the generated kustomization that makes its version readable off a cluster                                                               |
 | `app-argocd`                | Provider | The same capability from the other engine: a `StatefulSet` controller, its own namespace, and a vendoring source that is a tagged tree rather than a release asset |
-| `operator-external-secrets` | Consumer | A `requires:` section for a HelmRelease that needs a reconciler to exist                             |
+| `operator-external-secrets` | Consumer | A `requires:` section for a HelmRelease that needs a reconciler to exist                                                                                           |
 
 None of them is built or deployed by anything here -- `zarf package create` on either reaches the network. They are to be read, linted and inspected:
 

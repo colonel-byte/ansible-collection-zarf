@@ -90,8 +90,11 @@ Three more, in `magefiles/pkg/gen/schema`, hold the `PackagePrerequisites` forma
 | `TestCommittedSchemasAreCurrent`       | A field added to a type in `api/` without `generate:schema` being run, leaving a schema that validates the wrong document                           |
 | `TestExampleDocumentsMatchTheTypes`    | A reference package's `docs/prerequisites.yaml` written against an older shape of the format                                                        |
 | `TestEveryRequirementIsNamedByTheRole` | A field added under `requires` that no task in the `prerequisites` role mentions -- a prerequisite a package declares and the role silently ignores |
+| `TestRenderedSchemaRefusesBothEngines` | The mutual exclusivity of `requires.fluxcd` and `requires.argocd` going missing from the generated schema                                           |
 
 `TestInitArgsAreKnownFlags` and `TestDeployArgsAreKnownFlags` check against a recorded list, not against zarf's own command tree, so they cannot catch a zarf release that renamed a flag. Refresh the lists with `generate:zarfFlags` when the zarf the modules run moves, and read the diff.
+
+Those are Go tests over the Go types. The generated schema itself is held by a pre-commit hook: `check-jsonschema` validates every reference package's `docs/prerequisites.yaml` and `resources.json` against the schema generated from `api/`. That is a different check from the Go ones, and the difference is the point -- they hold a document against the *types*, and the hook holds it against the *schema a consumer actually validates with*. A `jsonschema` tag that rendered wrong would leave the two disagreeing, and nothing reflecting over the types could see it.
 
 ## Keeping `.gitattributes` in sync with the generators
 

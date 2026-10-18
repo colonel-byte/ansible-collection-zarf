@@ -18,8 +18,7 @@ metadata:
 requires:
   kubernetes:
     version: ">=1.30.0"
-  gitops:
-    engine: fluxcd
+  fluxcd:
     version: ">=2.9.0"
   controllers:
     - name: source-controller

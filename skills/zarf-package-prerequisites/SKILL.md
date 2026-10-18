@@ -20,19 +20,20 @@ The format's full reference -- every section and why each is shaped the way it i
 
 ## The document
 
-| Section                | Required | What it states                                                                              |
-| ---------------------- | -------- | ------------------------------------------------------------------------------------------- |
-| `apiVersion`           | yes      | Fixed to `colonel-byte.dev/v1alpha1`.                                                       |
-| `kind`                 | yes      | Fixed to `PackagePrerequisites`.                                                            |
-| `metadata`             | yes      | The package's name and version, and a sentence for a human.                                 |
-| `requires`             | yes      | What the cluster must already be.                                                           |
-| `requires.kubernetes`  | no       | A SemVer constraint on the API server's version.                                            |
-| `requires.gitops`      | no       | Which GitOps engine the cluster runs (`fluxcd` or `argocd`), and a SemVer constraint on it. |
-| `requires.controllers` | no       | The workloads that must be present and available, by name, namespace and kind.              |
-| `requires.crds`        | no       | The CustomResourceDefinitions that must be established.                                     |
-| `requires.storage`     | no       | A default StorageClass, named StorageClasses, and the access modes claims ask for.          |
-| `requires.packages`    | no       | Other Zarf packages that must be deployed first, with SemVer constraints.                   |
-| `provides`             | no       | The capabilities, CRDs and namespaces this package contributes to the cluster.              |
+| Section                | Required | What it states                                                                                                                             |
+| ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `apiVersion`           | yes      | Fixed to `colonel-byte.dev/v1alpha1`.                                                                                                      |
+| `kind`                 | yes      | Fixed to `PackagePrerequisites`.                                                                                                           |
+| `metadata`             | yes      | The package's name and version, and a sentence for a human.                                                                                |
+| `requires`             | yes      | What the cluster must already be.                                                                                                          |
+| `requires.kubernetes`  | no       | A SemVer constraint on the API server's version.                                                                                           |
+| `requires.fluxcd`      | no       | A SemVer constraint on the installed Flux. Mutually exclusive with `requires.argocd`.                                                      |
+| `requires.argocd`      | no       | A SemVer constraint on the installed Argo CD. Mutually exclusive with `requires.fluxcd`.                                                   |
+| `requires.controllers` | no       | The workloads that must be present and available, by name, namespace and kind, each with an optional SemVer constraint on its own version. |
+| `requires.crds`        | no       | The CustomResourceDefinitions that must be established.                                                                                    |
+| `requires.storage`     | no       | A default StorageClass, named StorageClasses, and the access modes claims ask for.                                                         |
+| `requires.packages`    | no       | Other Zarf packages that must be deployed first, with SemVer constraints.                                                                  |
+| `provides`             | no       | The capabilities, CRDs and namespaces this package contributes to the cluster.                                                             |
 
 `requires` is required and `provides` is not, which is the asymmetry the format is for: a package that requires nothing has no reason to ship the document, while a leaf workload that provides nothing downstream is the common case.
 
@@ -49,8 +50,7 @@ metadata:
 requires:
   kubernetes:
     version: ">=1.30.0"
-  gitops:
-    engine: fluxcd
+  fluxcd:
     version: ">=2.9.0"
   controllers:
     - name: source-controller
@@ -78,7 +78,7 @@ provides:
     - external-secrets
 ```
 
-`gitops`, `controllers` and `crds` are three sections rather than one because a version alone catches the least interesting failure: a cluster can hold the right engine release with its controllers scaled to zero, or hold the controllers and not the CRDs the package's own `HelmRelease` or `Application` needs. They are separate from `gitops` because only the engine's identity and version are engine-specific -- "these workloads must be available" and "these CRDs must be established" are the same question whatever reconciles the cluster.
+The engine section, `controllers` and `crds` are three things rather than one because a version alone catches the least interesting failure: a cluster can hold the right engine release with its controllers scaled to zero, or hold the controllers and not the CRDs the package's own `HelmRelease` or `Application` needs. `controllers` and `crds` sit at the top because they are not engine-specific -- "these workloads must be available" and "these CRDs must be established" are the same question whatever reconciles the cluster.
 
 ## Deriving what to require, from the package you have
 
@@ -94,15 +94,16 @@ kustomize build <dir>                                   # per kustomization
 
 Then, over the rendered YAML:
 
-| What you find in it                                                 | What it means you require                                                        |
-| ------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| An `apiVersion` that is not a core Kubernetes group                 | `requires.crds` -- that CRD must be established first                            |
-| `HelmRelease`, `Kustomization`, `GitRepository`, `OCIRepository`    | `requires.gitops.engine: fluxcd`, and the controllers that reconcile those kinds |
-| `Application`, `ApplicationSet`, `AppProject`                       | `requires.gitops.engine: argocd`, and `argocd-application-controller`            |
-| A `PersistentVolumeClaim` with no `storageClassName`                | `requires.storage.defaultClass: true`                                            |
-| A `PersistentVolumeClaim` naming a class                            | that class in `requires.storage.classes`                                         |
-| A claim whose `accessModes` is not `ReadWriteOnce`                  | `requires.storage.accessModes` -- recorded, never checked; see the traps         |
-| An API your chart uses that was added in a known Kubernetes release | `requires.kubernetes.version`                                                    |
+| What you find in it                                                 | What it means you require                                                |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| An `apiVersion` that is not a core Kubernetes group                 | `requires.crds` -- that CRD must be established first                    |
+| `HelmRelease`, `Kustomization`, `GitRepository`, `OCIRepository`    | `requires.fluxcd`, and the controllers that reconcile those kinds        |
+| `Application`, `ApplicationSet`, `AppProject`                       | `requires.argocd`, and `argocd-application-controller`                   |
+| A `PersistentVolumeClaim` with no `storageClassName`                | `requires.storage.defaultClass: true`                                    |
+| A `PersistentVolumeClaim` naming a class                            | that class in `requires.storage.classes`                                 |
+| A claim whose `accessModes` is not `ReadWriteOnce`                  | `requires.storage.accessModes` -- recorded, never checked; see the traps |
+| An API your chart uses that was added in a known Kubernetes release | `requires.kubernetes.version`                                            |
+| A workload your manifests need at a version, engine or not          | `requires.controllers[].version` -- no engine key required               |
 
 The CRD line is the one that pays. It is a `grep` over rendered output, and it catches the exact failure this format exists for -- the package whose `HelmRelease` the API server accepts and nothing reconciles:
 
@@ -157,10 +158,12 @@ Deploying a bundle in order means checking inside the loop, not ahead of it: the
 
 - **`apiVersion` and `kind` must be exact.** `colonel-byte.dev/v1alpha1` and `PackagePrerequisites`. A file under the `prerequisites` key that says anything else is returned as plain text and never surfaces as a document -- deliberately, because a prose file returned as a document would hand the role a mapping with no `requires`.
 - **`metadata.package` must match the package's `metadata.name`.** The document travels on its own, so one copied from a neighbouring package and not fully edited would otherwise be checked against a cluster and pass while describing something else.
-- **Name the engine when the controllers do not name their namespaces.** `requires.gitops.engine` is `fluxcd` or `argocd`, and it decides the namespace a controller requirement that names none is checked in -- `flux-system` or `argocd`. An engine the role does not know is reported as unchecked rather than guessed at.
+- **Name the engine when the controllers do not name their namespaces.** The engine is the key -- `requires.fluxcd` or `requires.argocd` -- and it decides the namespace a controller requirement that names none is checked in, `flux-system` or `argocd`. The two are mutually exclusive: a package is reconciled by one engine, and the schema and the role both refuse a document naming both.
 - **Argo CD's `argocd-application-controller` is a `StatefulSet`.** Set `kind: StatefulSet` on it. The default is `Deployment`, which is right for every Flux controller and for the rest of Argo CD, and a requirement that leaves it wrong reports a healthy controller as absent.
 - **One comparator and one version.** `>=2.9.0` is evaluated; `>=1.30.0 <1.34.0` is not, and lands in `zarf_prerequisites_skipped`. Jinja is not a semver library, and a half-parsed range would check its first half and pass.
 - **`requires.storage.accessModes` cannot be checked** -- what a provisioner will actually bind is not discoverable without creating a `PersistentVolumeClaim`. It is reported as skipped, never as satisfied.
+- **A version on a controller needs no engine.** `requires.controllers[].version` constrains that workload's own `app.kubernetes.io/version`, so a package needing cert-manager v1.14 does not have to require Flux or Argo CD just to get a version field.
+- **A version belongs to the engine whose key it sits under.** Flux is on 2.x and Argo CD on 3.x, so the numbers are not comparable. This is why the engine is the key and not a field beside the version: a document meaning `>=2.9.0` for Flux that said `argocd` instead would have been satisfied by Argo CD 3.5, passing against an engine it was never about.
 - **The engine version is the engine's release, not a controller's.** For Flux, `>=2.9.0` is the flux2 release and not `source-controller` v1.9.5. It is read from the `app.kubernetes.io/version` label on the engine's own workloads, and neither upstream sets it: `flux install` adds it from its own build, and Argo CD's `install.yaml` carries none at all. A package that vendors either has to stamp the label itself -- in a kustomize `labels:` block with `includeSelectors: false`, since a label that reached `spec.selector.matchLabels` would make the next version bump unupgradable -- or the constraint is reported as unchecked.
 - **`minAvailable` is availability, not readiness.** A replica that is ready and not yet available has passed its probes and not satisfied `minReadySeconds`, which means its controller is mid-rollout.
 - **`requires.packages[].name` is what `zarf package list` reports**, which for the init package is `init`, not `cluster-init`.
