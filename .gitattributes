@@ -10,8 +10,10 @@ docs/index.md linguist-generated
 docs/security.md linguist-generated
 docs/SUMMARY.md linguist-generated
 
-# mage generate:schema
+# mage generate:schema -- the second path is the copy that keeps the prerequisites skill
+# self-contained. SKILL.md beside it is hand-written.
 schema/*.json linguist-generated
+skills/zarf-package-prerequisites/*.json linguist-generated
 
 # mage examples:vendor -- the vendored upstream manifests and the kustomizations written over them.
 # The manifests are somebody else's work and the kustomizations are this repository's generator

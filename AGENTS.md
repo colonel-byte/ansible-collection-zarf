@@ -25,7 +25,7 @@ Nothing here runs on the cluster's nodes. The modules run the installed `zarf` o
 | `containers/ansible/`         | The management node image: `ansible-core`, the collection, both module files and a `zarf`. Its build asserts the dispatch contract                         |
 | `schema/`                     | The generated JSON Schemas, written by `generate:schema` and committed because other repositories reference them                                           |
 | `examples/packages/`          | Reference Zarf packages declaring their cluster prerequisites. Read, linted and inspected; nothing builds one                                              |
-| `skills/`                     | Skills for the two authoring tasks this repository is about: writing a Zarf package, and declaring its prerequisites                                       |
+| `skills/`                     | Skills for the two authoring tasks this repository is about: writing a Zarf package, and declaring its prerequisites. Each is self-contained -- nothing in one may reference a path outside it, because a skill is read in somebody else's package tree. That is why the prerequisites schema is committed a second time there, written by `generate:schema` |
 
 Several directories carry their own `AGENTS.md` with rules specific to that directory. Check the closest one before editing. Keep this table in sync when adding or removing one.
 
@@ -95,7 +95,7 @@ The last pair checks against a recorded list, not against zarf's own command tre
 
 Everything a generator writes is marked `linguist-generated` in [`.gitattributes`](.gitattributes), which collapses it in a GitHub diff and keeps it out of the repository's language statistics. A generated file that is not marked shows up as hand-written work in every review.
 
-So a change to what a generator produces is a change to `.gitattributes` as well: a new output path gets an entry, a moved or removed one loses its entry. Hand-written files inside a generated tree stay unmarked, and there are five -- `docs/ansible/collection.md`, `modules.md` and `roles.md` sit beside generated module and role pages, and each reference package's `zarf.yaml` and `docs/prerequisites.yaml` sit beside its vendored `upstream/` tree. Mark the pattern the generator writes, not the directory it writes into.
+So a change to what a generator produces is a change to `.gitattributes` as well: a new output path gets an entry, a moved or removed one loses its entry. Hand-written files inside a generated tree stay unmarked, and there are six -- `docs/ansible/collection.md`, `modules.md` and `roles.md` sit beside generated module and role pages, each reference package's `zarf.yaml` and `docs/prerequisites.yaml` sit beside its vendored `upstream/` tree, and `skills/zarf-package-prerequisites/SKILL.md` sits beside its generated copy of the schema. Mark the pattern the generator writes, not the directory it writes into.
 
 Check a specific file rather than reasoning about the patterns:
 
