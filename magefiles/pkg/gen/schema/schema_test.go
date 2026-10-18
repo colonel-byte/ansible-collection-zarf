@@ -15,9 +15,11 @@
 package schema
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -211,4 +213,124 @@ func jsonFieldNames(t reflect.Type) []string {
 		names = append(names, jsonFieldNames(field.Type)...)
 	}
 	return names
+}
+
+// skillDocument is the skill page whose embedded example this test decodes, and the fence it is
+// embedded in. The skill is read inside somebody else's package tree, so the example in it is the
+// thing most people will copy -- more than the reference packages, which they have to go and find.
+const skillDocument = "skills/zarf-package-prerequisites/SKILL.md"
+
+// fencedYAML pulls every ```yaml block out of a markdown page.
+var fencedYAML = regexp.MustCompile("(?s)```yaml\\n(.*?)\\n```")
+
+// skillExample returns the fenced block on the skill page that is a whole PackagePrerequisites
+// document, and whether there was one.
+//
+// Found by what it declares rather than by being first on the page. The page carries other YAML --
+// a documentation mapping, a task that includes the role, whatever a later section adds -- and a
+// test that took the first block would start checking a snippet the moment somebody reordered the
+// page, then pass for the wrong reason.
+func skillExample(source []byte) ([]byte, bool) {
+	for _, match := range fencedYAML.FindAllSubmatch(source, -1) {
+		if bytes.Contains(match[1], []byte("kind: "+prerequisites.Kind)) {
+			return match[1], true
+		}
+	}
+	return nil, false
+}
+
+// TestSkillExampleMatchesTheTypes decodes the PackagePrerequisites example embedded in the skill.
+//
+// The skill ships a committed copy of the JSON Schema and TestCommittedSchemasAreCurrent holds
+// that copy against the Go types -- so the schema beside the page cannot go stale. The page itself
+// could, and did: the example and the prose survived a change to the format that renamed a whole
+// section, because regenerating the schema said nothing about the markdown next to it.
+//
+// That failure is worse here than in docs/. A guide is read by a person who can notice that it
+// disagrees with the schema in front of them; a skill is instructions handed to an agent working
+// in a package tree that has no other copy of the format, and the example is what gets copied.
+//
+// UnmarshalStrict is the load-bearing word, the same as in TestExampleDocumentsMatchTheTypes: a
+// non-strict decode ignores a key it does not know, which is exactly the renamed section this is
+// here to catch.
+func TestSkillExampleMatchesTheTypes(t *testing.T) {
+	source, err := os.ReadFile(skillDocument)
+	if err != nil {
+		t.Fatalf("unable to read %s: %v", skillDocument, err)
+	}
+
+	example, ok := skillExample(source)
+	if !ok {
+		t.Fatalf("%s holds no PackagePrerequisites example, so this test proves nothing",
+			skillDocument)
+	}
+
+	var document prerequisites.Document
+	if err := yaml.UnmarshalStrict(example, &document); err != nil {
+		t.Fatalf("the example in %s does not decode into the prerequisites types: %v\n%s",
+			skillDocument, err, example)
+	}
+
+	if document.APIVersion != prerequisites.APIVersion {
+		t.Errorf("the example states apiVersion %q, want %q",
+			document.APIVersion, prerequisites.APIVersion)
+	}
+	if document.Kind != prerequisites.Kind {
+		t.Errorf("the example states kind %q, want %q", document.Kind, prerequisites.Kind)
+	}
+
+	// The example is also the one place a reader sees every section at once, so it earns its place
+	// only by using them. A section quietly dropped from it is a section nobody copying this will
+	// know exists.
+	switch {
+	case document.Requires.Kubernetes == nil:
+		t.Error("the example states no requires.kubernetes")
+	case document.Requires.GitOps == nil:
+		t.Error("the example states no requires.gitops")
+	case len(document.Requires.Controllers) == 0:
+		t.Error("the example states no requires.controllers")
+	case len(document.Requires.CRDs) == 0:
+		t.Error("the example states no requires.crds")
+	case len(document.Requires.Packages) == 0:
+		t.Error("the example states no requires.packages")
+	case document.Provides == nil:
+		t.Error("the example states no provides")
+	}
+}
+
+// TestSkillSchemaPathResolvesFromTheDocument holds the $schema line in the skill's example against
+// the layout the skill's own instructions prescribe.
+//
+// The two are written in different places on the page and drifted apart: the example said
+// ../../schema/, while step 2 says to copy the schema to schema/ beside the zarf.yaml -- which
+// from docs/prerequisites.yaml is ../schema/. Following the page produced a document whose
+// $schema resolved nowhere, and the symptom is an editor that silently validates nothing, which
+// is the one thing step 2 exists to provide.
+func TestSkillSchemaPathResolvesFromTheDocument(t *testing.T) {
+	source, err := os.ReadFile(skillDocument)
+	if err != nil {
+		t.Fatalf("unable to read %s: %v", skillDocument, err)
+	}
+
+	example, ok := skillExample(source)
+	if !ok {
+		t.Fatalf("%s holds no PackagePrerequisites example", skillDocument)
+	}
+
+	const prefix = "# yaml-language-server: $schema="
+	first, _, _ := strings.Cut(string(example), "\n")
+	rel, ok := strings.CutPrefix(first, prefix)
+	if !ok {
+		t.Fatalf("the example does not open with %q, so an editor validates nothing:\n%s",
+			prefix, first)
+	}
+
+	// The document lives at docs/prerequisites.yaml in the package the skill tells you to build,
+	// and the schema at schema/<name>.json beside its zarf.yaml.
+	resolved := filepath.Join("docs", filepath.Dir(rel), filepath.Base(rel))
+	want := filepath.Join("schema", filepath.Base(PrerequisitesFile))
+	if resolved != want {
+		t.Errorf("the example's $schema is %q, which resolves from docs/prerequisites.yaml to %q; "+
+			"the layout in step 2 puts it at %q", rel, resolved, want)
+	}
 }

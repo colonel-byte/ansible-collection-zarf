@@ -8,24 +8,24 @@ Nothing here runs on the cluster's nodes. The modules run the installed `zarf` o
 
 ## Layout
 
-| Path                          | What lives there                                                                                                                                           |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `api/colonel-byte.dev/`       | The `colonel-byte.dev/v1alpha1` `PackagePrerequisites` Go types, which the published JSON Schema is reflected from                                         |
-| `cmd/init/`, `cmd/deploy/`    | A `main` package per wrapper binary. Both are thirty-line entry points; everything they do is in `internal/zarfmod`                                        |
-| `internal/zarfmod/`           | The module logic: `argv[0]` dispatch, the WANT_JSON intake, the command-line rendering, the progress reader, the stdout guard, the heartbeat, the response |
-| `internal/testenv/`           | Scaffolding the end-to-end suites share: the repo-root chdir, and waiting on a cluster                                                                     |
-| `ansible/colonel_byte/zarf/`  | The collection: action plugins, the shared Python, roles. See [`ansible/colonel_byte/zarf/AGENTS.md`](ansible/colonel_byte/zarf/AGENTS.md)                 |
-| `ansible/examples/playbooks/` | Runnable example playbooks                                                                                                                                 |
-| `test/e2e/noncluster/`        | The suite that needs no cluster: the read-only modules and the state redaction, against a stub zarf                                                        |
-| `test/e2e/cluster/`           | The suite that needs k3d, zarf and Docker: both wrappers walked across two real clusters                                                                   |
-| `magefiles/`                  | The task runner's source: build, test and generate targets. See [`magefiles/AGENTS.md`](magefiles/AGENTS.md)                                               |
-| `docs/`                       | The mdBook source. Several subpaths are generated and must not be hand-edited -- see [`docs/AGENTS.md`](docs/AGENTS.md)                                    |
-| `docs/workflows/`             | One page per file under `.github/workflows/`, named after it with a `.md` extension -- required by [`.github/AGENTS.md`](.github/AGENTS.md)                |
-| `docs/agent/choice-*.md`      | Records of non-obvious decisions and the tradeoffs behind them -- read before reversing one                                                                |
-| `containers/ansible/`         | The management node image: `ansible-core`, the collection, both module files and a `zarf`. Its build asserts the dispatch contract                         |
-| `schema/`                     | The generated JSON Schemas, written by `generate:schema` and committed because other repositories reference them                                           |
-| `examples/packages/`          | Reference Zarf packages declaring their cluster prerequisites. Read, linted and inspected; nothing builds one                                              |
-| `skills/`                     | Skills for the two authoring tasks this repository is about: writing a Zarf package, and declaring its prerequisites. Each is self-contained -- nothing in one may reference a path outside it, because a skill is read in somebody else's package tree. That is why the prerequisites schema is committed a second time there, written by `generate:schema` |
+| Path                          | What lives there                                                                                                                                                                                |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api/colonel-byte.dev/`       | The `colonel-byte.dev/v1alpha1` `PackagePrerequisites` Go types, which the published JSON Schema is reflected from                                                                              |
+| `cmd/init/`, `cmd/deploy/`    | A `main` package per wrapper binary. Both are thirty-line entry points; everything they do is in `internal/zarfmod`                                                                             |
+| `internal/zarfmod/`           | The module logic: `argv[0]` dispatch, the WANT_JSON intake, the command-line rendering, the progress reader, the stdout guard, the heartbeat, the response                                      |
+| `internal/testenv/`           | Scaffolding the end-to-end suites share: the repo-root chdir, and waiting on a cluster                                                                                                          |
+| `ansible/colonel_byte/zarf/`  | The collection: action plugins, the shared Python, roles. See [`ansible/colonel_byte/zarf/AGENTS.md`](ansible/colonel_byte/zarf/AGENTS.md)                                                      |
+| `ansible/examples/playbooks/` | Runnable example playbooks                                                                                                                                                                      |
+| `test/e2e/noncluster/`        | The suite that needs no cluster: the read-only modules and the state redaction, against a stub zarf                                                                                             |
+| `test/e2e/cluster/`           | The suite that needs k3d, zarf and Docker: both wrappers walked across two real clusters                                                                                                        |
+| `magefiles/`                  | The task runner's source: build, test and generate targets. See [`magefiles/AGENTS.md`](magefiles/AGENTS.md)                                                                                    |
+| `docs/`                       | The mdBook source. Several subpaths are generated and must not be hand-edited -- see [`docs/AGENTS.md`](docs/AGENTS.md)                                                                         |
+| `docs/workflows/`             | One page per file under `.github/workflows/`, named after it with a `.md` extension -- required by [`.github/AGENTS.md`](.github/AGENTS.md)                                                     |
+| `docs/agent/choice-*.md`      | Records of non-obvious decisions and the tradeoffs behind them -- read before reversing one                                                                                                     |
+| `containers/ansible/`         | The management node image: `ansible-core`, the collection, both module files and a `zarf`. Its build asserts the dispatch contract                                                              |
+| `schema/`                     | The generated JSON Schemas, written by `generate:schema` and committed because other repositories reference them                                                                                |
+| `examples/packages/`          | Reference Zarf packages declaring their cluster prerequisites. Read, linted and inspected; nothing builds one                                                                                   |
+| `skills/`                     | Skills for the two authoring tasks this repository is about: writing a Zarf package, and declaring its prerequisites. Connected-side authoring only. See [`skills/AGENTS.md`](skills/AGENTS.md) |
 
 Several directories carry their own `AGENTS.md` with rules specific to that directory. Check the closest one before editing. Keep this table in sync when adding or removing one.
 
@@ -34,6 +34,7 @@ Several directories carry their own `AGENTS.md` with rules specific to that dire
 | [`ansible/AGENTS.md`](ansible/AGENTS.md)                                     | Markdown and table formatting rules that feed generated docs                                                                             |
 | [`ansible/colonel_byte/zarf/AGENTS.md`](ansible/colonel_byte/zarf/AGENTS.md) | The collection's contract: the two kinds of module, the `cli_flag` key, quoting every description, the test lists a new plugin must join |
 | [`docs/AGENTS.md`](docs/AGENTS.md)                                           | Markdown formatting, generated pages, redirects for a moved page                                                                         |
+| [`skills/AGENTS.md`](skills/AGENTS.md)                                       | The authoring-only scope of the two skills, and the tests that hold a page to the format                                                 |
 | [`magefiles/AGENTS.md`](magefiles/AGENTS.md)                                 | Mage target layout and structure rules                                                                                                   |
 | [`test/e2e/AGENTS.md`](test/e2e/AGENTS.md)                                   | Fixtures belong in files, not Go string constants                                                                                        |
 | [`.github/AGENTS.md`](.github/AGENTS.md)                                     | Scorecard-safe workflow changes, the workflow docs under `docs/workflows/`, the issue forms, PR description format                       |
@@ -84,10 +85,10 @@ Most of what is worth knowing about this repository is enforced by four tests in
 
 Three more, in `magefiles/pkg/gen/schema`, hold the `PackagePrerequisites` format together the same way:
 
-| Test                                  | What it would catch                                                                                                                              |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `TestCommittedSchemasAreCurrent`      | A field added to a type in `api/` without `generate:schema` being run, leaving a schema that validates the wrong document                        |
-| `TestExampleDocumentsMatchTheTypes`   | A reference package's `docs/prerequisites.yaml` written against an older shape of the format                                                     |
+| Test                                   | What it would catch                                                                                                                                 |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TestCommittedSchemasAreCurrent`       | A field added to a type in `api/` without `generate:schema` being run, leaving a schema that validates the wrong document                           |
+| `TestExampleDocumentsMatchTheTypes`    | A reference package's `docs/prerequisites.yaml` written against an older shape of the format                                                        |
 | `TestEveryRequirementIsNamedByTheRole` | A field added under `requires` that no task in the `prerequisites` role mentions -- a prerequisite a package declares and the role silently ignores |
 
 `TestInitArgsAreKnownFlags` and `TestDeployArgsAreKnownFlags` check against a recorded list, not against zarf's own command tree, so they cannot catch a zarf release that renamed a flag. Refresh the lists with `generate:zarfFlags` when the zarf the modules run moves, and read the diff.
@@ -180,3 +181,34 @@ While that directory exists, **`go build ./...`, `go vet ./...` and `go list ./.
 So: scope the command (`go build ./internal/... ./cmd/...`), or wait for the suite to finish, or remove the `go-build*` tree if no suite is running. A run that exits normally takes its own `go-build` tree with it, which is why this is only ever hit mid-run or after an interrupt.
 
 Do not `rm -rf build/tmp` wholesale. `build/tmp/zarf-e2e` is the e2e package cache, kept between runs on purpose -- it is around 800MB of pinned init and provider packages, and removing it means every suite re-downloads all three.
+
+# Markdown line formatting
+
+## Do not hard-wrap lines in Markdown documents
+
+Markdown files should NOT have hard-wrapped or truncated lines. Instead, write full paragraphs and list items on single, continuous lines without manual line breaks, letting editors and renderers handle line wrapping dynamically.
+
+- Write entire paragraphs or list items on a single line without manual line breaks / hard wraps.
+- Let editors and rendering tools handle line wrapping dynamically.
+
+## Pad table cells so the columns line up
+
+Tables are written in their aligned form, so that the source reads as a table and a reviewer can see the columns without rendering the file. Pad every cell with spaces to the width of the widest cell in its column, keep one space of padding inside each pipe, and run the dashes of the delimiter row out to that same width. Every line of the table then has the same length.
+
+Write this:
+
+```markdown
+| Path                                   | What it holds     |
+| -------------------------------------- | ----------------- |
+| `.spec.config.registries[N].auth.user` | Registry username |
+```
+
+Not this:
+
+```markdown
+| Path                                   | What it holds     |
+| -------------------------------------- | ----------------- |
+| `.spec.config.registries[N].auth.user` | Registry username |
+```
+
+Adding a row that is wider than the column repads the whole table, which is expected - the alignment is part of the content, not a one-time cleanup.

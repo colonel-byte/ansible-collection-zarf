@@ -1,41 +1,43 @@
 ---
 name: zarf-package-prerequisites
 description: >
-  Declares what a Zarf package needs of a cluster before it deploys, as a
-  colonel-byte.dev/v1alpha1 PackagePrerequisites document carried inside the package, and
-  checks a cluster against it with the colonel_byte.zarf prerequisites role. Use when a
-  package must require a Kubernetes version, a Flux install, CRDs, a StorageClass or
-  another deployed package; when writing or fixing a docs/prerequisites.yaml; or when a
-  deployment "succeeded" and nothing was reconciled. For the zarf.yaml itself, use
-  zarf-package.
+  Writes the document a Zarf package carries to state what it needs of a cluster before it
+  deploys -- a colonel-byte.dev/v1alpha1 PackagePrerequisites document, authored alongside
+  the package on a connected machine. Use when writing or fixing a docs/prerequisites.yaml,
+  or when a package must require a Kubernetes version, a GitOps engine (Flux or Argo CD),
+  CRDs, a StorageClass or another deployed package. Not for debugging a deployment that
+  already happened: this is how a package states its requirements, not how a cluster is
+  diagnosed. For the zarf.yaml itself, use zarf-package.
 ---
 
 # Package prerequisites
 
 A Zarf package deploys onto a cluster that cannot run it and reports success. Zarf applies the `HelmRelease`, the API server accepts it, nothing reconciles it, and the only symptom is a resource that never becomes ready in a cluster nobody is watching. A `PackagePrerequisites` document is the package stating its requirements where a machine can check them.
 
-The format's full reference -- every section and why each is shaped the way it is -- is [`docs/guides/package-prerequisites.md`](https://github.com/colonel-byte/ansible-collection-zarf/blob/main/docs/guides/package-prerequisites.md), and the two [reference packages](https://github.com/colonel-byte/ansible-collection-zarf/tree/main/examples/packages) are a provider and a consumer of one capability, to be read as working copies. Everything needed to write a document is below.
+**Scope: authoring, beside the package.** This page is about writing that document while you have the package's own charts and manifests in front of you, which is the only time its contents can be derived rather than guessed. Diagnosing a deployment that has already gone wrong is out of scope -- a document is what stops the next one, not a tool for reading the last one. The role below is here so that an author knows what consumes the document and writes a better one, not as a debugging guide.
+
+The format's full reference -- every section and why each is shaped the way it is -- is [`docs/guides/package-prerequisites.md`](https://github.com/colonel-byte/ansible-collection-zarf/blob/main/docs/guides/package-prerequisites.md), and the three [reference packages](https://github.com/colonel-byte/ansible-collection-zarf/tree/main/examples/packages) are two providers of one capability and a consumer of it, to be read as working copies. Everything needed to write a document is below.
 
 ## The document
 
-| Section               | Required | What it states                                                                     |
-| --------------------- | -------- | ---------------------------------------------------------------------------------- |
-| `apiVersion`          | yes      | Fixed to `colonel-byte.dev/v1alpha1`.                                              |
-| `kind`                | yes      | Fixed to `PackagePrerequisites`.                                                   |
-| `metadata`            | yes      | The package's name and version, and a sentence for a human.                        |
-| `requires`            | yes      | What the cluster must already be.                                                  |
-| `requires.kubernetes` | no       | A SemVer constraint on the API server's version.                                   |
-| `requires.gitops`     | no       | Which GitOps engine the cluster runs (`fluxcd` or `argocd`), and a SemVer constraint on it. |
-| `requires.controllers` | no      | The workloads that must be present and available, by name, namespace and kind.     |
-| `requires.crds`       | no       | The CustomResourceDefinitions that must be established.                            |
-| `requires.storage`    | no       | A default StorageClass, named StorageClasses, and the access modes claims ask for. |
-| `requires.packages`   | no       | Other Zarf packages that must be deployed first, with SemVer constraints.          |
-| `provides`            | no       | The capabilities, CRDs and namespaces this package contributes to the cluster.     |
+| Section                | Required | What it states                                                                              |
+| ---------------------- | -------- | ------------------------------------------------------------------------------------------- |
+| `apiVersion`           | yes      | Fixed to `colonel-byte.dev/v1alpha1`.                                                       |
+| `kind`                 | yes      | Fixed to `PackagePrerequisites`.                                                            |
+| `metadata`             | yes      | The package's name and version, and a sentence for a human.                                 |
+| `requires`             | yes      | What the cluster must already be.                                                           |
+| `requires.kubernetes`  | no       | A SemVer constraint on the API server's version.                                            |
+| `requires.gitops`      | no       | Which GitOps engine the cluster runs (`fluxcd` or `argocd`), and a SemVer constraint on it. |
+| `requires.controllers` | no       | The workloads that must be present and available, by name, namespace and kind.              |
+| `requires.crds`        | no       | The CustomResourceDefinitions that must be established.                                     |
+| `requires.storage`     | no       | A default StorageClass, named StorageClasses, and the access modes claims ask for.          |
+| `requires.packages`    | no       | Other Zarf packages that must be deployed first, with SemVer constraints.                   |
+| `provides`             | no       | The capabilities, CRDs and namespaces this package contributes to the cluster.              |
 
 `requires` is required and `provides` is not, which is the asymmetry the format is for: a package that requires nothing has no reason to ship the document, while a leaf workload that provides nothing downstream is the common case.
 
 ```yaml
-# yaml-language-server: $schema=../../schema/zarf-v1alpha1-package-prerequisites-schema.json
+# yaml-language-server: $schema=../schema/zarf-v1alpha1-package-prerequisites-schema.json
 ---
 apiVersion: colonel-byte.dev/v1alpha1
 kind: PackagePrerequisites
@@ -76,11 +78,43 @@ provides:
     - external-secrets
 ```
 
-The Flux section is three things because a version alone catches the least interesting failure: a cluster can hold the right Flux release with its controllers scaled to zero, or hold the controllers and not the CRDs the package's own `HelmRelease` needs.
+`gitops`, `controllers` and `crds` are three sections rather than one because a version alone catches the least interesting failure: a cluster can hold the right engine release with its controllers scaled to zero, or hold the controllers and not the CRDs the package's own `HelmRelease` or `Application` needs. They are separate from `gitops` because only the engine's identity and version are engine-specific -- "these workloads must be available" and "these CRDs must be established" are the same question whatever reconciles the cluster.
+
+## Deriving what to require, from the package you have
+
+Do not start from another package's document. Start from the manifests and charts this package deploys -- the derivation is mechanical, and it is the difference between a document that is defensible and one that is copied.
+
+Render first, then read what came out. A chart's templates say nothing until values are applied:
+
+```sh
+zarf dev find-images <dir>                              # also the images: list, so run it anyway
+helm template <release> <chart> -f values/<file>.yaml   # per chart
+kustomize build <dir>                                   # per kustomization
+```
+
+Then, over the rendered YAML:
+
+| What you find in it                                                 | What it means you require                                                        |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| An `apiVersion` that is not a core Kubernetes group                 | `requires.crds` -- that CRD must be established first                            |
+| `HelmRelease`, `Kustomization`, `GitRepository`, `OCIRepository`    | `requires.gitops.engine: fluxcd`, and the controllers that reconcile those kinds |
+| `Application`, `ApplicationSet`, `AppProject`                       | `requires.gitops.engine: argocd`, and `argocd-application-controller`            |
+| A `PersistentVolumeClaim` with no `storageClassName`                | `requires.storage.defaultClass: true`                                            |
+| A `PersistentVolumeClaim` naming a class                            | that class in `requires.storage.classes`                                         |
+| A claim whose `accessModes` is not `ReadWriteOnce`                  | `requires.storage.accessModes` -- recorded, never checked; see the traps         |
+| An API your chart uses that was added in a known Kubernetes release | `requires.kubernetes.version`                                                    |
+
+The CRD line is the one that pays. It is a `grep` over rendered output, and it catches the exact failure this format exists for -- the package whose `HelmRelease` the API server accepts and nothing reconciles:
+
+```sh
+helm template <release> <chart> -f values/<file>.yaml | grep -E '^apiVersion:' | sort -u
+```
+
+Two things not to derive this way. `requires.packages` is a statement about how your bundle is ordered, not about your manifests, so it comes from knowing which package deploys the thing you need. And `requires.kubernetes.version` should be a version you can name a reason for -- an API your chart actually uses -- rather than whatever the cluster you tested on happened to run.
 
 ## Adding a document to a package
 
-1. **Write `docs/prerequisites.yaml`** in the package's source tree, starting from the example above.
+1. **Write `docs/prerequisites.yaml`** in the package's source tree, from the derivation above and the shape of the example.
 2. **Keep the `$schema` line, pointing at a path that resolves from the document.** `zarf-v1alpha1-package-prerequisites-schema.json` sits beside this page -- copy it into the package, under `schema/` beside the `zarf.yaml`, and name it relative to `docs/prerequisites.yaml` as above. It is what makes an editor complete and validate the file as it is written, and a package carrying its own schema can be validated in the air-gapped facility it is opened in.
 3. **Add it to the package's `documentation:` mapping**, which is what packages it into a layer that `zarf package inspect documentation` extracts without deploying anything:
 
@@ -111,7 +145,7 @@ The role extracts the document with `zarf_package_documentation`, reads the clus
 
 | Fact                         | What it holds                    |
 | ---------------------------- | -------------------------------- |
-| `zarf_prerequisites_checked` | What was checked and held        |
+| `zarf_prerequisites_checked` | What was examined                |
 | `zarf_prerequisites_unmet`   | What did not hold                |
 | `zarf_prerequisites_skipped` | What could not be checked at all |
 
@@ -127,7 +161,7 @@ Deploying a bundle in order means checking inside the loop, not ahead of it: the
 - **Argo CD's `argocd-application-controller` is a `StatefulSet`.** Set `kind: StatefulSet` on it. The default is `Deployment`, which is right for every Flux controller and for the rest of Argo CD, and a requirement that leaves it wrong reports a healthy controller as absent.
 - **One comparator and one version.** `>=2.9.0` is evaluated; `>=1.30.0 <1.34.0` is not, and lands in `zarf_prerequisites_skipped`. Jinja is not a semver library, and a half-parsed range would check its first half and pass.
 - **`requires.storage.accessModes` cannot be checked** -- what a provisioner will actually bind is not discoverable without creating a `PersistentVolumeClaim`. It is reported as skipped, never as satisfied.
-- **The Flux version is the flux2 release, not a controller's.** It is read from the `app.kubernetes.io/version` label on the controller Deployments. A package whose manifests are vendored from upstream has to stamp that label itself -- upstream's carry no version anywhere -- or the constraint is reported as unchecked.
+- **The engine version is the engine's release, not a controller's.** For Flux, `>=2.9.0` is the flux2 release and not `source-controller` v1.9.5. It is read from the `app.kubernetes.io/version` label on the engine's own workloads, and neither upstream sets it: `flux install` adds it from its own build, and Argo CD's `install.yaml` carries none at all. A package that vendors either has to stamp the label itself -- in a kustomize `labels:` block with `includeSelectors: false`, since a label that reached `spec.selector.matchLabels` would make the next version bump unupgradable -- or the constraint is reported as unchecked.
 - **`minAvailable` is availability, not readiness.** A replica that is ready and not yet available has passed its probes and not satisfied `minReadySeconds`, which means its controller is mid-rollout.
 - **`requires.packages[].name` is what `zarf package list` reports**, which for the init package is `init`, not `cluster-init`.
 - **State `provides` on anything another package requires.** It is what lets a bundle be ordered without deploying any of it; `requires` alone can only be satisfied by a cluster that already exists.

@@ -1,16 +1,20 @@
 ---
 name: zarf-package
 description: >
-  Writes or changes a Zarf package definition -- a zarf.yaml and the manifests, charts,
-  images and files its components deploy. Use when asked to create, scaffold, package,
-  restructure or lint a Zarf package, when editing a zarf.yaml, or when a chart or
-  manifest has to be delivered to an air-gapped cluster. For stating what a package
-  needs of a cluster before it deploys, use zarf-package-prerequisites instead.
+  Authors a Zarf package on a connected machine -- a zarf.yaml and the manifests, charts,
+  images and files its components deploy, through to `zarf package create`. Use when asked
+  to create, scaffold, package, restructure or lint a Zarf package, when editing a
+  zarf.yaml, or when a chart or manifest has to be built into a package for an air-gapped
+  cluster. Not for debugging a deployment: this covers writing and building a package, not
+  what a cluster does with one. For stating what a package needs of a cluster before it
+  deploys, use zarf-package-prerequisites instead.
 ---
 
 # Writing a Zarf package
 
 A Zarf package is a directory holding a `zarf.yaml` and the files its components name. `zarf package create` builds that directory into a single `.tar.zst` carrying every manifest, chart and container image; `zarf package deploy` applies it to a cluster with nothing fetched from the network.
+
+**Scope: authoring, on a machine with a network.** Everything here happens where the package is written and built -- `zarf dev find-images` and `zarf package create` both reach out for every image, which is the whole reason a package exists. What a cluster then does with the tarball is out of scope: a deployment that failed, a component that never became ready, a workload nothing reconciled are not questions this page answers. For the last of those, a package can state its requirements so a machine checks them before deploying -- see the **zarf-package-prerequisites** skill.
 
 The authority on what may appear in a `zarf.yaml` is zarf's own schema and `zarf dev lint`, not this page. Put the schema line at the top of every package you write and lint before you claim it works.
 
@@ -26,6 +30,78 @@ The authority on what may appear in a `zarf.yaml` is zarf's own schema and `zarf
 4. **Name every image.** An image zarf does not know about is not in the package, and the deployment fails on an air-gapped cluster and nowhere else. `zarf dev find-images <dir>` discovers them from the charts and manifests -- run it and paste the result into each component's `images:` list rather than trusting discovery at create time.
 5. **Lint**: `zarf dev lint <dir>`. It checks the schema and the practices, and it needs no cluster.
 6. **Create**: `zarf package create <dir> --confirm -o <dir>`. This reaches the network for every image, so it is the step that fails on a machine that cannot.
+
+## A package to start from
+
+A chart and the images it pulls, split so a cluster can take the CRDs before anything that watches them. Copy the shape, not the contents.
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/zarf-dev/zarf/main/zarf.schema.json
+---
+kind: ZarfPackageConfig
+metadata:
+  name: operator-external-secrets
+  # The upstream release this package is. A package reading 1.0.0 while deploying
+  # external-secrets 0.12.1 carries the one number nobody can act on.
+  version: 0.12.1
+  description: The External Secrets Operator and its webhook
+  architecture: amd64
+
+documentation:
+  readme: README.md
+  prerequisites: docs/prerequisites.yaml
+
+components:
+  # Declared first because it is deployed first. See below.
+  - name: external-secrets-crds
+    required: true
+    description: The ExternalSecret and SecretStore CRDs
+    manifests:
+      - name: external-secrets-crds
+        namespace: external-secrets
+        files:
+          - manifests/crds.yaml
+
+  - name: external-secrets
+    required: true
+    description: The operator, its webhook and its cert controller
+    charts:
+      - name: external-secrets
+        url: https://charts.external-secrets.io
+        version: 0.12.1
+        namespace: external-secrets
+        valuesFiles:
+          - values/external-secrets.yaml
+    # Written from `zarf dev find-images`, not by hand. Every image the package carries is
+    # in a list like this one, and a commit that changes it is a commit somebody can review.
+    images:
+      - ghcr.io/external-secrets/external-secrets:v0.12.1
+      - ghcr.io/external-secrets/external-secrets:v0.12.1-ubi
+
+  # Not required: a cluster that already has its own metrics stack does not want this one.
+  - name: external-secrets-metrics
+    required: false
+    description: A ServiceMonitor for the operator
+    manifests:
+      - name: external-secrets-metrics
+        namespace: external-secrets
+        files:
+          - manifests/servicemonitor.yaml
+```
+
+## Components deploy in the order you declare them
+
+There is no dependency graph and no `dependsOn`. Zarf walks `components` top to bottom, so the order in the file is the order on the cluster, and it is a decision you make while writing rather than one you discover later.
+
+It matters whenever one component establishes something another needs to exist first:
+
+- **CRDs before the controllers that watch them.** A controller whose CRD is absent does not degrade -- its manager fails to start, so the Pod crashloops. Argo CD's `argocd-application-controller` is the usual example.
+- **A namespace, a ServiceAccount or a Secret before whatever consumes it.**
+- **A storage provider before anything claiming a PersistentVolume from it.**
+
+Order is invisible in every check you can run while authoring: `zarf dev lint` does not know about it, `zarf package create` does not either, and the package builds perfectly. It surfaces on first deploy, on somebody else's cluster.
+
+A component the cluster must not skip is `required: true`. An optional component that something else depends on is a trap -- if B needs A and A is optional, deploying B alone fails in a way that reads as B being broken.
 
 ## What a component may deploy
 
