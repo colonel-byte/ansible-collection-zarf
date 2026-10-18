@@ -217,3 +217,68 @@ func (p *printingRunner) Run(_ context.Context, in Invocation) (Result, error) {
 	}
 	return Result{}, nil
 }
+
+func TestModuleName(t *testing.T) {
+	tests := []struct {
+		name  string
+		argv0 string
+		env   string
+		want  string
+		ok    bool
+	}{
+		{
+			name:  "module symlink",
+			argv0: "/usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/plugins/modules/zarf_init",
+			want:  "init",
+			ok:    true,
+		},
+		{
+			name:  "staged copy carries the AnsiballZ prefix",
+			argv0: "/root/.ansible/tmp/ansible-tmp-1/AnsiballZ_zarf_init",
+			want:  "init",
+			ok:    true,
+		},
+		{
+			name:  "the environment wins",
+			argv0: "/usr/local/bin/zarf-ansible",
+			env:   "init",
+			want:  "init",
+			ok:    true,
+		},
+		{
+			name:  "a build artifact carrying the prefix is not a module",
+			argv0: "/build/zarf_linux_amd64",
+			ok:    false,
+		},
+		{
+			name:  "the deploy module symlink",
+			argv0: "/usr/bin/zarf_package_deploy",
+			want:  "package_deploy",
+			ok:    true,
+		},
+		{
+			name:  "an action this wrapper does not answer as is not a module",
+			argv0: "/usr/bin/zarf_package_remove",
+			ok:    false,
+		},
+		{
+			name:  "the plain binary is not a module",
+			argv0: "/usr/bin/zarf",
+			ok:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(EnvModule, tt.env)
+
+			got, ok := ModuleName(tt.argv0)
+			if ok != tt.ok {
+				t.Fatalf("ModuleName(%q) reported %v, want %v", tt.argv0, ok, tt.ok)
+			}
+			if got != tt.want {
+				t.Errorf("ModuleName(%q) = %q, want %q", tt.argv0, got, tt.want)
+			}
+		})
+	}
+}

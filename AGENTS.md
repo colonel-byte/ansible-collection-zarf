@@ -76,6 +76,13 @@ The `tool` directives in `go.mod` are vendored too, so `generate:document` runs 
 
 Most of what is worth knowing about this repository is enforced by four tests in `internal/zarfmod`, and it is worth knowing which one catches what:
 
+A test file in `internal/zarfmod` is named for the source file it covers -- `init_test.go` beside
+`init.go`, `progress_test.go` beside `progress.go` -- with three exceptions, each named for what it
+holds rather than what it is beside: `helpers_test.go` is the scaffolding the package shares, and
+`plugindocs_test.go` and `infoplugins_test.go` are the two contract tests that reach into
+`ansible/`. Put a new test beside its subject; a file that collects whatever was written most
+recently is how the four tests below stop being findable.
+
 | Test                                                       | What it would catch                                                                                             |
 | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `TestActionPluginDocsMatchModuleParams`                    | A parameter added to a wrapper module's Go struct and not to its Python `DOCUMENTATION`, or the reverse         |
