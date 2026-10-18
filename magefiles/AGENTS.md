@@ -8,18 +8,19 @@ The top level of `magefiles/` is strictly for Mage namespace declarations and ta
 
 All implementation logic belongs in modular Go packages under `magefiles/pkg/`:
 
-| Path                           | Purpose                                                                                                      |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| `magefiles/build.go`           | Mage entrypoint for the `Build` namespace (`build:modules`)                                                  |
-| `magefiles/generate.go`        | Mage entrypoint for the `Generate` namespace (`generate:document`, `generate:zarfFlags`, `generate:dnfPins`) |
-| `magefiles/test.go`            | Mage entrypoint for the `Test` namespace (`test:unit`, `test:endToEnd*`, `test:cleanClusters`)               |
-| `magefiles/core/core.go`       | Bootstrapping main package for `go run ./magefiles/core`                                                     |
-| `magefiles/pkg/build/`         | Compiling the two Ansible module files                                                                       |
-| `magefiles/pkg/gen/docs/`      | The book's generators: the collection reference, the Go reference, the two copied-in pages, and `SUMMARY.md` |
-| `magefiles/pkg/gen/zarfflags/` | Recording the flag surface of the zarf commands the modules wrap                                             |
-| `magefiles/pkg/devtools/`      | Developer tooling: AlmaLinux repodata parsing and the dnf pin rewriters (`dnfpins`)                          |
-| `magefiles/pkg/testrunner/`    | Unit and end-to-end test runners                                                                             |
-| `magefiles/pkg/util/`          | Shared helper functions                                                                                      |
+| Path                           | Purpose                                                                                                                         |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `magefiles/build.go`           | Mage entrypoint for the `Build` namespace (`build:modules`)                                                                     |
+| `magefiles/generate.go`        | Mage entrypoint for the `Generate` namespace (`generate:document`, `generate:schema`, `generate:zarfFlags`, `generate:dnfPins`) |
+| `magefiles/test.go`            | Mage entrypoint for the `Test` namespace (`test:unit`, `test:endToEnd*`, `test:cleanClusters`)                                  |
+| `magefiles/core/core.go`       | Bootstrapping main package for `go run ./magefiles/core`                                                                        |
+| `magefiles/pkg/build/`         | Compiling the two Ansible module files                                                                                          |
+| `magefiles/pkg/gen/docs/`      | The book's generators: the collection reference, the Go reference, the two copied-in pages, and `SUMMARY.md`                    |
+| `magefiles/pkg/gen/schema/`    | Reflecting the published JSON Schemas out of the Go types that define them                                                      |
+| `magefiles/pkg/gen/zarfflags/` | Recording the flag surface of the zarf commands the modules wrap                                                                |
+| `magefiles/pkg/devtools/`      | Developer tooling: AlmaLinux repodata parsing and the dnf pin rewriters (`dnfpins`)                                             |
+| `magefiles/pkg/testrunner/`    | Unit and end-to-end test runners                                                                                                |
+| `magefiles/pkg/util/`          | Shared helper functions                                                                                                         |
 
 ## Target structure rules
 

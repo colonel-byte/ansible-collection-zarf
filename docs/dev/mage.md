@@ -32,10 +32,13 @@ See [e2e-tests](e2e-tests.md) for what each suite covers.
 | Target               | What it writes                                                                                                      |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `generate:document`  | `docs/ansible/module_*.md` and `role_*.md`, `docs/golang/`, `docs/index.md`, `docs/security.md`, `docs/SUMMARY.md`. |
+| `generate:schema`    | `schema/zarf-v1alpha1-package-prerequisites-schema.json`, reflected from the Go types in `api/`.                    |
 | `generate:zarfFlags` | `internal/zarfmod/testdata/zarf-init-flags.txt` and `zarf-package-deploy-flags.txt`, read from the installed zarf.  |
 | `generate:dnfPins`   | The `ansible-core` and `bash-completion` pins in `containers/ansible/Dockerfile` and `.goreleaser.yaml`.            |
 
 `generate:document` rewrites generated pages in place. The hand-written overviews beside them -- `docs/ansible/collection.md`, `modules.md`, `roles.md` -- are left alone, which is why only the `module_*` and `role_*` patterns are cleared before a run.
+
+`generate:schema` writes the published `colonel-byte.dev/v1alpha1` `PackagePrerequisites` schema, from the types in `api/colonel-byte.dev/v1alpha1/prerequisites`. The descriptions in it are the doc comments on those types, so a reworded comment is a schema change. `TestCommittedSchemasAreCurrent` fails when the committed schema stops matching its type -- a stale schema does not fail at build time, it validates the wrong document.
 
 `generate:zarfFlags` is the refresh for the recorded flag lists `TestInitArgsAreKnownFlags` and `TestDeployArgsAreKnownFlags` check against. Run it when the zarf the modules run moves, and review the diff: a flag that disappeared is a module parameter that no longer works. Set `ZARF_ANSIBLE_FLAGS_BINARY` to name a zarf that is not on `PATH`. It deliberately does not read the flags at test time -- the unit tests run with no zarf on the machine, in CI and on a contributor's laptop, and a test that needs a binary to say anything is a test that gets skipped.
 
