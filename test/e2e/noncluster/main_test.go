@@ -31,5 +31,31 @@ func TestMain(m *testing.M) {
 	if _, _, err := testenv.Bootstrap(); err != nil {
 		log.Fatal(err)
 	}
-	os.Exit(m.Run())
+
+	// The same narrowing test/e2e/cluster does, and for the same reason. The mage runner points
+	// TMPDIR at build/tmp inside the repository, and this suite builds a real package with a real
+	// zarf for the documentation and prerequisites cases -- so every run left a zarf staging
+	// directory sitting directly in build/tmp with nothing to ever remove it. One per zarf
+	// invocation per run, a few hundred kilobytes each: forty-nine of them had accumulated over
+	// five days of ordinary development, which is slow enough that nobody notices and unbounded
+	// all the same. They also sit beside zarf-e2e, the package cache that is kept between runs on
+	// purpose, so the directory stops being one a developer can judge at a glance.
+	//
+	// Pointing TMPDIR at one directory and removing it afterwards gives every child a temporary
+	// directory that goes away with the run. Children inherit it through os.Environ().
+	runTmp, err := os.MkdirTemp("", "zarf-e2e-noncluster-")
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := os.Setenv("TMPDIR", runTmp); err != nil {
+		log.Fatal(err)
+	}
+
+	code := m.Run()
+
+	// After the run rather than deferred: os.Exit does not run deferred functions.
+	if err := os.RemoveAll(runTmp); err != nil {
+		log.Printf("unable to remove the suite temporary directory %s: %v", runTmp, err)
+	}
+	os.Exit(code)
 }

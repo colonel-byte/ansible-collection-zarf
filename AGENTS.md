@@ -177,4 +177,6 @@ It names the Go toolchain's own source, so it reads as a broken checkout or a ba
 
 While that directory exists, **`go build ./...`, `go vet ./...` and `go list ./...` all fail**, and so does the `golangci-lint` hook -- `.golangci.yaml` excludes `^build/`, but that suppresses *issues* in a path, not a package that fails to load. `test:unit` is immune: it lists with `go list -e` so one unbuildable directory cannot take the command down, then drops `build/` in `unitPackages`. Nothing else is.
 
-So: scope the command (`go build ./internal/... ./cmd/...`), or wait for the suite, or `rm -rf build/tmp` if no suite is running. A completed run cleans up after itself; an interrupted one does not.
+So: scope the command (`go build ./internal/... ./cmd/...`), or wait for the suite to finish, or remove the `go-build*` tree if no suite is running. A run that exits normally takes its own `go-build` tree with it, which is why this is only ever hit mid-run or after an interrupt.
+
+Do not `rm -rf build/tmp` wholesale. `build/tmp/zarf-e2e` is the e2e package cache, kept between runs on purpose -- it is around 800MB of pinned init and provider packages, and removing it means every suite re-downloads all three.
