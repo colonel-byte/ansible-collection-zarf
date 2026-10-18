@@ -39,6 +39,30 @@ Two consequences worth knowing:
 - `command_parts` in `zarf_cluster_info` returns the *first* command, and `command_parts_all` returns all four. `TestInfoPluginDocsMatchRenderedFlags` was taught to read both and to read every match rather than the first, because otherwise three of the four commands' flags would be invisible to the one test that looks at them -- which is the state that file exists to prevent.
 - A failed query names itself in the result's `query` key. A message naming only the command line leaves the reader to work out which of four kubectl calls that was.
 
+## The role checks one comparator, and names what it cannot evaluate
+
+`requires.kubernetes.version` is a SemVer range in the format. The role evaluates one comparator and one version, which covers `>=1.30.0`, and reports anything else -- a compound range like `>=1.30.0 <1.34.0` -- in `zarf_prerequisites_skipped`.
+
+Evaluating a real range needs a semver library. `Masterminds/semver` is already a dependency of this repository and is no use here: the check runs in Jinja, inside a role, on a management node. The options were a half-parse that silently checks the first comparator and calls it satisfied, or naming the constraint as unevaluated. The second is the only honest one, and it is why `zarf_prerequisites_skipped` exists as a returned fact rather than as a log line -- a caller can assert on it, and the example playbook prints it on successful runs.
+
+`requires.storage.accessModes` is in the same list for a different reason: what a provisioner will bind cannot be known without creating a PersistentVolumeClaim, which is not a thing a read-only check does.
+
+A role that reported success for a document it mostly ignored would be worse than no role, so the rule is: anything not checked is named.
+
+## Where this diverges from the proposal
+
+[`choice-zarf-ansible-module`](choice-zarf-ansible-module.md) says it is the one place the proof deliberately diverges from ZEP-0072. This is the second, for the prerequisites proposal, and the divergences are small:
+
+| The proposal                                                              | What is here                                                                                                                                                       |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Validate from the `colonel-byte.dev/requires-fluxcd` annotation           | Validate from the document. The annotation is kept as a cheap hint readable from `inspect definition` alone, and the document is the source of truth               |
+| Read the Flux version from a controller's `app.kubernetes.io/version`     | The same label, but the packaged manifests have to *set* it -- upstream's do not, so the generated kustomization adds it. Without that the constraint is unchecked |
+| `kubernetes.core.k8s_info` for the cluster reads                          | `zarf tools kubectl`, so the collection's only requirement stays the zarf binary it already needs. See `zarf_state_info`, which already did this                   |
+| `zarf_package_inspect` returns `package_documentation` and that is enough | It does, and it is not enough: a mapping of names to paths inside a tarball is not readable from a playbook, which is why `zarf_package_documentation` exists      |
+| A `cluster-init` prerequisite package name                                | `init`, which is what `zarf package list` reports the init package as. A name in that list is only useful if it is the name a consumer can look up                 |
+
+The first row is the one that matters. An annotation is a duplicate of a fact in the document, and a check that reads the duplicate is a check that passes when the two disagree. Keeping both is deliberate -- they answer different questions, and the asymmetry is stated where they are written -- but the document wins.
+
 ## `app-fluxcd` is vendored by a mage target, not written by hand
 
 The reference package was first written against the Flux Operator chart, and is now the upstream flux2 release manifests, vendored from a pinned tag. `magefiles/pkg/pkgvendor` is a Go port of the three shell scripts in [colonel-byte/zarf-pkg-fluxcd](https://github.com/colonel-byte/zarf-pkg-fluxcd)'s `.github/hack`, which is where that pattern already runs.

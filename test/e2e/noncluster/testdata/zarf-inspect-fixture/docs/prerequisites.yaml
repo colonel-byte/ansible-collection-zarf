@@ -1,10 +1,11 @@
 ---
-# The prerequisites document the fixture package carries, and the YAML half of its `documentation:`
-# mapping.
+# The prerequisites document the fixture package carries, for the zarf_package_documentation and
+# prerequisites-role tests.
 #
-# It is deliberately the smallest document that names every section of the format: a Kubernetes
-# version, a Flux version, a controller with a minAvailable, a CRD, a storage requirement, an
-# accessModes entry, and a prerequisite package.
+# It is deliberately the smallest document that exercises every section the role checks: a
+# Kubernetes version, a Flux version, a controller with a minAvailable, a CRD, a storage
+# requirement, an accessModes entry the role has to report as unchecked rather than passed, and a
+# prerequisite package. testdata/zarf-cluster-*.json are the cluster it is checked against.
 #
 # Nothing here is contacted.
 apiVersion: colonel-byte.dev/v1alpha1

@@ -40,7 +40,7 @@ The five read-only modules report `changed: false`, which is not an approximatio
 
 ## The two that exist for the prerequisites format
 
-`zarf_package_documentation` and `zarf_cluster_info` are the two halves of a check that runs before a deployment. A package states what it needs of a cluster in a [`PackagePrerequisites`](../guides/package-prerequisites.md) document carried in its own `documentation:` mapping; the first extracts that document, and the second reports the cluster facts it is checked against. [`zarf_package_inspect`](module_package_inspect.md) reports the mapping itself.
+`zarf_package_documentation` and `zarf_cluster_info` are the two halves of a check that runs before a deployment. A package states what it needs of a cluster in a [`PackagePrerequisites`](../guides/package-prerequisites.md) document carried in its own `documentation:` mapping; the first extracts that document, the second reports the cluster facts it is checked against, and the [`prerequisites`](role_prerequisites.md) role is what holds the two together and fails the play. Reach for the role rather than the modules unless you are checking something the format does not describe.
 
 `zarf_cluster_info` reads the cluster through `zarf tools kubectl`, which is a whole vendored kubectl, rather than through `kubernetes.core`. That keeps this collection's only requirement the zarf binary it already requires: the management node a playbook runs from is typically air-gapped, and a second Galaxy collection to stage onto it is a cost every consumer of this one would pay. `zarf_state_info` reads the `zarf-state` Secret the same way, and for the same reason.
 

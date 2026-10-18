@@ -106,12 +106,13 @@ The annotations beside it are a deliberate duplicate of two facts from the docum
 
 ## Reading it
 
-Two things in this collection read a package's documentation, and they do different amounts of work.
+Three things in this collection read a package's documentation, and they do different amounts of work.
 
 | What                                                                       | Reads                                                                          |
 | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | [`zarf_package_inspect`](../ansible/module_package_inspect.md)             | The `documentation:` mapping itself, as `package_documentation`: keys to paths |
 | [`zarf_package_documentation`](../ansible/module_package_documentation.md) | The files, extracted and parsed, including the prerequisites document          |
+| [`prerequisites`](../ansible/role_prerequisites.md)                        | The document, plus the cluster, and fails the play                             |
 
 The mapping alone tells you the package declares a prerequisites document and where it was in the source tree. It does not get you the contents -- the file is inside the tarball, and `zarf package inspect documentation` is what takes it out.
 
@@ -138,7 +139,41 @@ The mapping alone tells you the package declares a prerequisites document and wh
   when: docs.prerequisites is defined
 ```
 
-`prerequisites` is returned only when the extracted file declares the right `apiVersion` and `kind`. A package is free to use that documentation key for a prose file, and returning that as a prerequisites document would hand a caller a mapping with no `requires` for the most boring possible reason.
+`prerequisites` is returned only when the extracted file declares the right `apiVersion` and `kind`. A package is free to use that documentation key for a prose file, and returning that as a prerequisites document would hand the role a mapping with no `requires` for the most boring possible reason.
+
+## Enforcing it
+
+The [`prerequisites`](../ansible/role_prerequisites.md) role is what a deployment actually calls. It extracts the document, reads the cluster with [`zarf_cluster_info`](../ansible/module_cluster_info.md), and fails the play before `zarf_package_deploy` runs.
+
+```yaml
+- name: Check the cluster against what this package requires
+  ansible.builtin.include_role:
+    name: colonel_byte.zarf.prerequisites
+  vars:
+    zarf_package: "{{ package }}"
+    zarf_public_key: /etc/zarf/colonel-byte-zarf-packages.pub
+    zarf_kubeconfig: /etc/rancher/rke2/rke2.yaml
+```
+
+The cluster is read through `zarf tools kubectl`, which is a whole vendored kubectl, so the role needs no `kubernetes.core` -- the management node is typically air-gapped, and a second Galaxy collection to stage onto it is a cost every consumer would pay.
+
+Check each package as its turn comes rather than checking the whole bundle up front. The first package in a bundle is often what satisfies the second one's prerequisites, so a check of everything at the start refuses a deployment that is about to be correct. [`ansible/examples/playbooks/zarf-prerequisites.yml`](https://github.com/colonel-byte/ansible-collection-zarf/blob/main/ansible/examples/playbooks/zarf-prerequisites.yml) loops a bundle that way.
+
+### What it cannot check, and says so
+
+Two things come back in `zarf_prerequisites_skipped` rather than being counted as satisfied.
+
+**A compound version range.** The role reads one comparator and one version, which covers `>=2.9.0`. Evaluating `>=1.30.0 <1.34.0` needs a semver library and Jinja is not one, and a half-parsed range would silently check only its first half. The format allows the range; the role names it as unevaluated.
+
+**`requires.storage.accessModes`.** What a provisioner will actually bind is not discoverable without creating a `PersistentVolumeClaim`, which is not a thing a read-only check does.
+
+Print that list even on a successful run. A run that reported only its successes would read as though everything in the document had been verified.
+
+### Where the Flux version comes from
+
+`requires.fluxcd.version` is checked against the `app.kubernetes.io/version` label on the controller Deployments. That is the flux2 release the manifests were built from -- not the controllers' own versions, which are a different set of numbers entirely: a document naming `>=2.9.0` is not talking about `source-controller` v1.9.5.
+
+Upstream's release manifests do not carry that label; `flux install` adds it, and so must a package that vendors the manifests. [`examples/packages/app-fluxcd`](https://github.com/colonel-byte/ansible-collection-zarf/tree/main/examples/packages/app-fluxcd) does it in a generated kustomization, which is most of why that file is generated. A cluster whose Flux carries no version label has the constraint reported as unchecked -- honestly, and uselessly.
 
 ## The reference packages
 

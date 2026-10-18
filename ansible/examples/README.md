@@ -13,6 +13,7 @@ Every module parameter is in the [collection reference](../../docs/ansible/colle
 | `playbooks/zarf-bundle-order.yml`   | Zarf init and package deploy in bundle order, checking installed package versions and deploying only on drift.       |
 | `playbooks/zarf-provider-first.yml` | Connected storage provider deploy before zarf init, checking installed package versions and deploying only on drift. |
 | `playbooks/zarf-state.yml`          | Fetch and parse Zarf cluster state using both the `state` role and `zarf_state_info` module primitive.               |
+| `playbooks/zarf-prerequisites.yml`  | Check each package's `PackagePrerequisites` document against the cluster before deploying it, in bundle order.       |
 
 Run one against a management node:
 
