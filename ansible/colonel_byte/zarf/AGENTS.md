@@ -95,3 +95,24 @@ This exists because `plugindocs_test.go` is a table of modules, so a module abse
 `set_fact` defaults to `cacheable: false`, so the parsed `zarf_state` stays in the play's memory and never reaches a configured fact cache plugin. Setting it true would write the cluster's registry credentials into a jsonfile cache on the control node, outliving the play that read them.
 
 For the same reason, `zarf_no_log` defaults to true on **both** of the `state` role's tasks, not only the module call: a `set_fact` that reads a censored result prints the value in its own result, so `no_log` on the module alone looks correct in review and leaks on the next line.
+
+## The `prerequisites` role is split by phase, not kept in one file
+
+`tasks/main.yml` validates its inputs, extracts the document and then includes three files in
+order. The split is by what a phase is for, and the order is load-bearing:
+
+| File                  | What it does                                                                            |
+| --------------------- | --------------------------------------------------------------------------------------- |
+| `collect.yml`         | Reads the cluster, resolves which GitOps engine the document names, sets the facts      |
+| `check_versions.yml`  | Gathers every version constraint into one list and hands each to `version_check.yml`    |
+| `check_resources.yml` | The checks that are not about a version: a package, a controller, a CRD, a StorageClass |
+| `version_check.yml`   | One constraint, evaluated and recorded. Included per entry by `check_versions.yml`      |
+
+Everything after `collect.yml` reads the facts it set rather than the registered results, so that a
+check says what it is checking instead of where the answer came from. Every check file appends to
+the same three lists -- checked, unmet, skipped -- because the single assert at the end of
+`main.yml` is what names everything wrong at once, and a check that asserted for itself would stop
+the run before the rest had anything to say.
+
+A new check goes in whichever file matches what it checks, and `TestEveryRequirementIsNamedByTheRole`
+globs the directory rather than reading a list, so a fourth file is covered on arrival.

@@ -1,0 +1,118 @@
+---
+# Every version constraint the document states, collected into one list and evaluated once.
+#
+# Four kinds of constraint -- the Kubernetes version, the GitOps engine's, a prerequisite
+# package's, and a controller's own -- are the same comparison over different data, so they are
+# gathered here and handed to version_check.yml rather than written out four times.
+
+- name: Record the Kubernetes version constraint
+  ansible.builtin.set_fact:
+    _zarf_prereq_version_checks: >-
+      {{ _zarf_prereq_version_checks
+         + [{'label': "the cluster's Kubernetes version",
+             'constraint': _zarf_prereq_requires.kubernetes.version,
+             'actual': _zarf_prereq_cluster.kubernetes_semver}] }}
+  run_once: true
+  when: (_zarf_prereq_requires.kubernetes.version | default('')) | length > 0
+
+# The engine version its own workloads report. Both engines label their components with the
+# release the manifests were built from, which is what requires.gitops.version constrains --
+# the components' own versions are a different set of numbers entirely, and a document naming
+# ">=2.9.0" is not talking about source-controller v1.9.5.
+#
+# Neither upstream sets that label: `flux install` adds it, Argo CD's install.yaml has none at
+# all, and a package vendoring either has to add it. A cluster whose engine carries no version
+# label has the constraint reported as unchecked rather than satisfied -- version_check.yml
+# does that for an empty version.
+#
+# The namespaces and names come from the document's own controller list, so that an engine
+# installed outside its usual namespace is still found. A document that requires a version and
+# names no controller falls back to the engine's default namespace and takes whatever version
+# it finds there.
+#
+# _namespaces fills the default per entry, with map's own default argument, rather than
+# rejecting the empties afterwards. A list where one controller omits namespace raises inside
+# the map, which collapses the whole expression to Undefined and hands every explicitly named
+# namespace to the fallback -- so a Flux in gitops reported no version, the constraint was
+# recorded as unchecked, and the role passed a cluster it had not checked.
+- name: Record the GitOps engine version constraint, and the version the cluster reports
+  ansible.builtin.set_fact:
+    _zarf_prereq_version_checks: >-
+      {{ _zarf_prereq_version_checks
+         + [{'label': "the cluster's " ~ _zarf_prereq_engine ~ " version",
+             'constraint': _zarf_prereq_engine_version,
+             'actual': _reported}] }}
+  vars:
+    _namespaces: >-
+      {{ (_zarf_prereq_controllers | map(attribute='namespace', default='')
+          | map('default', _zarf_prereq_namespace, true) | unique | list)
+         | default([_zarf_prereq_namespace], true) }}
+    # A document that requires a version and names no controller is asking about whatever the
+    # engine installed in its own namespace, so the names fall back to everything found there
+    # rather than to one component this role picked.
+    _names: >-
+      {{ (_zarf_prereq_controllers | map(attribute='name') | list)
+         | default(_zarf_prereq_workloads | selectattr('namespace', 'in', _namespaces)
+                   | map(attribute='name') | list, true) }}
+    _reported: >-
+      {{ (_zarf_prereq_workloads
+          | selectattr('namespace', 'in', _namespaces)
+          | selectattr('name', 'in', _names)
+          | selectattr('version', '!=', '')
+          | map(attribute='version') | unique | sort | last) | default('', true) }}
+  run_once: true
+  when: _zarf_prereq_engine_version | length > 0
+
+# One entry per prerequisite package that states a version. The deployed version comes from the
+# list `zarf package list` reported, and is empty when the package is not deployed at all --
+# which the presence check below reports, so that an absent package is one message and not two.
+- name: Record the prerequisite package version constraints
+  ansible.builtin.set_fact:
+    _zarf_prereq_version_checks: >-
+      {{ _zarf_prereq_version_checks
+         + [{'label': 'the deployed zarf package ' ~ item.name,
+             'constraint': item.version,
+             'actual': _deployed_version}] }}
+  vars:
+    _deployed_version: >-
+      {{ (_zarf_prereq_deployed | selectattr('package', 'equalto', item.name)
+          | map(attribute='version') | first) | default('', true) }}
+  loop: "{{ _zarf_prereq_required_packages | selectattr('version', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+  run_once: true
+  when:
+    - zarf_check_packages | bool
+    - item.name in (_zarf_prereq_deployed | map(attribute='package') | list)
+
+# One entry per controller that states a version of its own. This is how a version is required
+# of something that is not a GitOps engine: the label is the same app.kubernetes.io/version
+# the engine sections are read from, and a package needing cert-manager v1.14 or an ingress
+# controller new enough for an API it uses has nowhere else to say so. A workload carrying no
+# such label reports an empty version, which version_check.yml records as unchecked rather
+# than treating as a failed comparison.
+- name: Record the version constraints the controllers state
+  ansible.builtin.set_fact:
+    _zarf_prereq_version_checks: >-
+      {{ _zarf_prereq_version_checks
+         + [{'label': _kind ~ ' ' ~ item.name ~ ' in ' ~ _namespace,
+             'constraint': item.version,
+             'actual': _reported}] }}
+  vars:
+    _namespace: "{{ item.namespace | default(_zarf_prereq_namespace, true) }}"
+    _kind: "{{ item.kind | default('Deployment', true) }}"
+    _reported: >-
+      {{ (_zarf_prereq_workloads | selectattr('namespace', 'equalto', _namespace)
+          | selectattr('kind', 'equalto', _kind)
+          | selectattr('name', 'equalto', item.name)
+          | map(attribute='version') | first) | default('', true) }}
+  loop: "{{ _zarf_prereq_controllers | selectattr('version', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.name }} {{ item.version }}"
+  run_once: true
+
+- name: Evaluate every version constraint the document states
+  ansible.builtin.include_tasks: version_check.yml
+  loop: "{{ _zarf_prereq_version_checks }}"
+  loop_control:
+    label: "{{ item.label }} {{ item.constraint }}"

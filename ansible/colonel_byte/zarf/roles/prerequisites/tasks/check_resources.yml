@@ -1,0 +1,117 @@
+---
+# The checks that are not about a version: whether a thing is there, and enough of it.
+#
+# A deployed package, an available controller, an established CRD, a StorageClass. Each appends
+# to the same three lists the version checks do, so that the single assert at the end of
+# main.yml names everything wrong at once.
+
+- name: Check that each prerequisite package is deployed
+  ansible.builtin.set_fact:
+    zarf_prerequisites_checked: >-
+      {{ zarf_prerequisites_checked + ['the zarf package ' ~ item.name ~ ' is deployed'] }}
+    zarf_prerequisites_unmet: >-
+      {{ zarf_prerequisites_unmet
+         + ([] if item.name in (_zarf_prereq_deployed | map(attribute='package') | list)
+            else [_absent]) }}
+  vars:
+    # The message is built outside the expression above rather than written across two lines
+    # inside it. A string literal that spans lines in a folded scalar keeps the newline and the
+    # indentation that follows it, because YAML does not fold a more-indented line -- so the
+    # message reaches the operator with a line break and ten spaces in the middle of it.
+    _absent: "the zarf package {{ item.name }} is required and is not deployed to this cluster"
+  loop: "{{ _zarf_prereq_required_packages }}"
+  loop_control:
+    label: "{{ item.name }}"
+  run_once: true
+  when: zarf_check_packages | bool
+
+- name: Note that the prerequisite packages were not checked
+  ansible.builtin.set_fact:
+    zarf_prerequisites_skipped: >-
+      {{ zarf_prerequisites_skipped
+         + ['requires.packages names ' ~ (_zarf_prereq_required_packages
+            | map(attribute='name') | join(', ')) ~ ', and zarf_check_packages is false'] }}
+  run_once: true
+  when:
+    - not zarf_check_packages | bool
+    - _zarf_prereq_required_packages | length > 0
+
+# A controller must be there and must have an available replica. Availability rather than
+# readiness is what minAvailable means, and it is the distinction that matters here: a replica
+# that is ready but not available has passed its probes and not satisfied minReadySeconds, and a
+# controller in that state is in the middle of a rollout.
+#
+# The kind is matched as well as the name and namespace, and defaults to Deployment because
+# that is what almost every controller is. Argo CD's argocd-application-controller is the
+# exception that makes it a field at all: it is a StatefulSet, and a check that assumed
+# Deployment would report the component doing all of the reconciling as absent from a healthy
+# cluster -- a false failure, in the one format whose whole purpose is avoiding a false success.
+- name: Check each required controller
+  ansible.builtin.set_fact:
+    zarf_prerequisites_checked: >-
+      {{ zarf_prerequisites_checked
+         + ['the ' ~ _kind ~ ' ' ~ item.name ~ ' in ' ~ _namespace ~ ' has '
+            ~ _minimum ~ ' available replica(s)'] }}
+    zarf_prerequisites_unmet: "{{ zarf_prerequisites_unmet + _messages }}"
+  vars:
+    _namespace: "{{ item.namespace | default(_zarf_prereq_namespace, true) }}"
+    _kind: "{{ item.kind | default('Deployment', true) }}"
+    _minimum: "{{ item.minAvailable | default(1) | int }}"
+    _found: >-
+      {{ _zarf_prereq_workloads | selectattr('namespace', 'equalto', _namespace)
+         | selectattr('kind', 'equalto', _kind)
+         | selectattr('name', 'equalto', item.name) | list }}
+    _absent: "the {{ _kind }} {{ item.name }} is not deployed in {{ _namespace }}"
+    _short: "the {{ _kind }} {{ item.name }} in {{ _namespace }} has {{ (_found | first).available | default(0) }} available replica(s), and the package requires {{ _minimum }}"
+    _messages: >-
+      {{ [_absent] if (_found | length == 0)
+         else ([] if ((_found | first).available | int) >= (_minimum | int) else [_short]) }}
+  loop: "{{ _zarf_prereq_controllers }}"
+  loop_control:
+    label: "{{ item.name }}"
+  run_once: true
+
+- name: Check the required CRDs are established
+  ansible.builtin.set_fact:
+    zarf_prerequisites_checked: >-
+      {{ zarf_prerequisites_checked
+         + (_zarf_prereq_required_crds | map('regex_replace', '^(.*)$',
+            'the CRD \1 is established') | list) }}
+    zarf_prerequisites_unmet: >-
+      {{ zarf_prerequisites_unmet
+         + (_zarf_prereq_required_crds | reject('in', _zarf_prereq_crds) | list
+            | map('regex_replace', '^(.*)$',
+                  'the CRD \1 is required and is not established on this cluster') | list) }}
+  run_once: true
+  when: _zarf_prereq_required_crds | length > 0
+
+- name: Check the storage requirements
+  ansible.builtin.set_fact:
+    zarf_prerequisites_checked: >-
+      {{ zarf_prerequisites_checked
+         + (['the cluster has a default StorageClass'] if _wants_default | bool else [])
+         + (_wanted_classes | map('regex_replace', '^(.*)$',
+            'the StorageClass \1 exists') | list) }}
+    zarf_prerequisites_unmet: >-
+      {{ zarf_prerequisites_unmet
+         + (['the package needs a default StorageClass and the cluster has none']
+            if (_wants_default | bool) and (_zarf_prereq_cluster.default_storage_class | length == 0)
+            else [])
+         + (_wanted_classes | reject('in', _zarf_prereq_classes) | list
+            | map('regex_replace', '^(.*)$',
+                  'the StorageClass \1 is required and does not exist on this cluster')
+            | list) }}
+    # What a provisioner will actually bind is not discoverable without creating a
+    # PersistentVolumeClaim, which is not something a read-only check does. Naming it is the
+    # honest outcome; passing it silently is what this list exists to prevent.
+    zarf_prerequisites_skipped: >-
+      {{ zarf_prerequisites_skipped
+         + (['requires.storage.accessModes names ' ~ (_wanted_modes | join(', '))
+             ~ ', which cannot be checked without creating a PersistentVolumeClaim']
+            if _wanted_modes | length > 0 else []) }}
+  vars:
+    _wants_default: "{{ _zarf_prereq_storage.defaultClass | default(false) }}"
+    _wanted_classes: "{{ _zarf_prereq_storage.classes | default([]) }}"
+    _wanted_modes: "{{ _zarf_prereq_storage.accessModes | default([]) }}"
+  run_once: true
+  when: _zarf_prereq_storage | length > 0
