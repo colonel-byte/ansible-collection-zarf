@@ -81,6 +81,17 @@ func Images(pkg string) error {
 	updated := string(source)
 	for _, project := range resources.Projects {
 		images, ok := found[project.Component]
+		if project.Imageless {
+			// Declared to deploy no containers, so there is no images: list to write. An image
+			// turning up here means the manifests gained a workload and the declaration is now
+			// wrong, which is worth failing over rather than silently dropping.
+			if ok && len(images) > 0 {
+				return fmt.Errorf("the component %s is declared imageless in %s, and zarf dev "+
+					"find-images reported %d image(s) for it: %s",
+					project.Component, ResourcesFile, len(images), strings.Join(images, ", "))
+			}
+			continue
+		}
 		if !ok {
 			return fmt.Errorf("zarf dev find-images reported no images for the component %s, which "+
 				"%s names. Check that the component exists in %s and that its manifests are vendored",

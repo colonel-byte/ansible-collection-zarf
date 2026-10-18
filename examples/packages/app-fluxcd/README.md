@@ -29,7 +29,7 @@ go run ./magefiles/core examples:lint
 
 Upstream's release manifests carry no namespace and no `app.kubernetes.io/version` label. The namespace has to come from somewhere, and the version label is what lets a deployed cluster answer which Flux release it is running -- `flux install` adds it from its own build, so a package that vendors the manifests has to add it too.
 
-That is not tidiness. `requires.fluxcd.version` in a [`PackagePrerequisites`](../../../docs/guides/package-prerequisites.md) document is checked by reading that label off the controller Deployments, and the controllers' own versions are a different set of numbers entirely: a document naming `>=2.9.0` is not talking about `source-controller` v1.9.5. Without the label the constraint is reported as unchecked -- honestly, and uselessly.
+That is not tidiness. `requires.gitops.version` in a [`PackagePrerequisites`](../../../docs/guides/package-prerequisites.md) document is checked by reading that label off the engine's own workloads, and the controllers' own versions are a different set of numbers entirely: a document naming `>=2.9.0` is not talking about `source-controller` v1.9.5. Without the label the constraint is reported as unchecked -- honestly, and uselessly.
 
 The generated kustomization also re-homes the images onto `ghcr.io`. Upstream names them as `fluxcd/source-controller:v1.9.5`, which resolves to Docker Hub, where an anonymous pull is rate-limited per IP -- and `zarf package create` pulls every image in the package at once.
 

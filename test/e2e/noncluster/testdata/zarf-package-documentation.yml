@@ -45,7 +45,8 @@
           - every.prerequisites.apiVersion == 'colonel-byte.dev/v1alpha1'
           - every.prerequisites.kind == 'PackagePrerequisites'
           - every.prerequisites == every.parsed.prerequisites
-          - every.prerequisites.requires.fluxcd.version == '>=2.9.0'
+          - every.prerequisites.requires.gitops.engine == 'fluxcd'
+          - every.prerequisites.requires.gitops.version == '>=2.9.0'
         success_msg: ASSERTED a document declaring the right kind is returned as prerequisites
         fail_msg: the prerequisites document was not returned under its own key
 

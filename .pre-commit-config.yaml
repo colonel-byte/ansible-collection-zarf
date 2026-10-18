@@ -9,7 +9,13 @@ repos:
     rev: v6.0.0
     hooks:
       - id: check-added-large-files
-        exclude: vendor/.*
+        # vendor/ and the reference packages' upstream/ trees are both committed copies of
+        # somebody else's source, written by a generator from a pinned version rather than by a
+        # person. The guard is here to catch a blob committed by accident, and nothing in either
+        # tree arrives by accident -- Argo CD's applicationset-crd.yaml is 1.4 MB of OpenAPI
+        # schema because that is what the CRD weighs upstream, and dropping it would ship the
+        # ApplicationSet controller in namespace-install.yaml with no CRD to reconcile.
+        exclude: ^(vendor/|examples/packages/[^/]+/upstream/)
         args:
           - "--maxkb=1024"
       - id: check-merge-conflict

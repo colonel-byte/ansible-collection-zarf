@@ -21,7 +21,9 @@ The contract is a `colonel-byte.dev/v1alpha1` `PackagePrerequisites` document. I
 | `metadata`            | yes      | The package's name and version, and a sentence for a human.                        |
 | `requires`            | yes      | What the cluster must already be.                                                  |
 | `requires.kubernetes` | no       | A SemVer constraint on the API server's version.                                   |
-| `requires.fluxcd`     | no       | A Flux version, the controller Deployments that must be available, and the CRDs.   |
+| `requires.gitops`     | no       | Which GitOps engine the cluster runs (`fluxcd` or `argocd`), and a SemVer constraint on it. |
+| `requires.controllers` | no      | The workloads that must be present and available, by name, namespace and kind.     |
+| `requires.crds`       | no       | The CustomResourceDefinitions that must be established.                            |
 | `requires.storage`    | no       | A default StorageClass, named StorageClasses, and the access modes claims ask for. |
 | `requires.packages`   | no       | Other Zarf packages that must be deployed first, with SemVer constraints.          |
 | `provides`            | no       | The capabilities, CRDs and namespaces this package contributes to the cluster.     |
@@ -41,18 +43,19 @@ metadata:
 requires:
   kubernetes:
     version: ">=1.30.0"
-  fluxcd:
+  gitops:
+    engine: fluxcd
     version: ">=2.9.0"
-    controllers:
-      - name: source-controller
-        namespace: flux-system
-        minAvailable: 1
-      - name: helm-controller
-        namespace: flux-system
-        minAvailable: 1
-    crds:
-      - helmreleases.helm.toolkit.fluxcd.io
-      - ocirepositories.source.toolkit.fluxcd.io
+  controllers:
+    - name: source-controller
+      namespace: flux-system
+      minAvailable: 1
+    - name: helm-controller
+      namespace: flux-system
+      minAvailable: 1
+  crds:
+    - helmreleases.helm.toolkit.fluxcd.io
+    - ocirepositories.source.toolkit.fluxcd.io
   packages:
     - name: app-fluxcd
       version: ">=2.9.0"
@@ -91,7 +94,7 @@ metadata:
   name: operator-external-secrets
   version: 2.12.0
   annotations:
-    colonel-byte.dev/requires-fluxcd: ">=2.9.0"
+    colonel-byte.dev/requires-gitops: ">=2.9.0"
     colonel-byte.dev/delivery-mode: gitops-helmrelease
 
 documentation:
@@ -135,7 +138,7 @@ The mapping alone tells you the package declares a prerequisites document and wh
 
 - name: Report the Flux version it needs
   ansible.builtin.debug:
-    msg: "{{ docs.prerequisites.requires.fluxcd.version }}"
+    msg: "{{ docs.prerequisites.requires.gitops.version }}"
   when: docs.prerequisites is defined
 ```
 
@@ -169,22 +172,48 @@ Two things come back in `zarf_prerequisites_skipped` rather than being counted a
 
 Print that list even on a successful run. A run that reported only its successes would read as though everything in the document had been verified.
 
-### Where the Flux version comes from
+### Where the engine version comes from
 
-`requires.fluxcd.version` is checked against the `app.kubernetes.io/version` label on the controller Deployments. That is the flux2 release the manifests were built from -- not the controllers' own versions, which are a different set of numbers entirely: a document naming `>=2.9.0` is not talking about `source-controller` v1.9.5.
+`requires.gitops.version` is checked against the `app.kubernetes.io/version` label on the engine's own workloads. For Flux that is the flux2 release the manifests were built from -- not the controllers' own versions, which are a different set of numbers entirely: a document naming `>=2.9.0` is not talking about `source-controller` v1.9.5.
 
-Upstream's release manifests do not carry that label; `flux install` adds it, and so must a package that vendors the manifests. [`examples/packages/app-fluxcd`](https://github.com/colonel-byte/ansible-collection-zarf/tree/main/examples/packages/app-fluxcd) does it in a generated kustomization, which is most of why that file is generated. A cluster whose Flux carries no version label has the constraint reported as unchecked -- honestly, and uselessly.
+Neither engine's upstream manifests carry that label. `flux install` adds it from its own build, and Argo CD's `install.yaml` has none at all -- so a package that vendors either has to add it. [`app-fluxcd`](https://github.com/colonel-byte/ansible-collection-zarf/tree/main/examples/packages/app-fluxcd) and [`app-argocd`](https://github.com/colonel-byte/ansible-collection-zarf/tree/main/examples/packages/app-argocd) both do it in a generated kustomization, which is most of why those files are generated. A cluster whose engine carries no version label has the constraint reported as unchecked -- honestly, and uselessly.
+
+### Which engine, and why the format asks
+
+`requires.gitops.engine` is `fluxcd` or `argocd`. It exists because almost nothing about checking an engine is engine-specific and exactly two things are.
+
+The first is the namespace a controller defaults to: `flux-system` for Flux, `argocd` for Argo CD. A document whose controllers name their namespaces never needs the engine for this; one that leaves them off does.
+
+The second is the kind. Flux's controllers are all `Deployment`s. Argo CD runs `argocd-application-controller` as a **`StatefulSet`** and the rest of itself as `Deployment`s, which is why `requires.controllers[].kind` exists at all -- a check that assumed `Deployment` would report the component doing all of Argo CD's reconciling as absent from a perfectly healthy cluster. It defaults to `Deployment`, so only the Argo CD controller has to say it.
+
+```yaml
+requires:
+  gitops:
+    engine: argocd
+    version: ">=3.5.0"
+  controllers:
+    # No namespace on either: engine: argocd makes both default to argocd.
+    - name: argocd-application-controller
+      kind: StatefulSet
+    - name: argocd-server
+  crds:
+    - applications.argoproj.io
+    - appprojects.argoproj.io
+```
+
+Everything else -- "these workloads must be available", "these CRDs must be established" -- is the same question whatever reconciles the cluster, which is why `requires.controllers` and `requires.crds` sit beside `requires.gitops` rather than inside it. An engine the role has never heard of is reported in `zarf_prerequisites_skipped` rather than guessed at.
 
 ## The reference packages
 
-[`examples/packages`](https://github.com/colonel-byte/ansible-collection-zarf/tree/main/examples/packages) holds two packages that declare documents, as a provider and a consumer of the same capability.
+[`examples/packages`](https://github.com/colonel-byte/ansible-collection-zarf/tree/main/examples/packages) holds three packages that declare documents: two providers of the same capability, and a consumer of it.
 
 | Package                     | Role     | What it shows                                                                                        |
 | --------------------------- | -------- | ---------------------------------------------------------------------------------------------------- |
 | `app-fluxcd`                | Provider | A `provides:` section, and the generated kustomization that makes its version readable off a cluster |
+| `app-argocd`                | Provider | The same capability from the other engine: a `StatefulSet` controller, its own namespace, and a vendoring source that is a tagged tree rather than a release asset |
 | `operator-external-secrets` | Consumer | A `requires:` section for a HelmRelease that needs a reconciler to exist                             |
 
-Neither is built or deployed by anything here -- `zarf package create` on either reaches the network. They are to be read, linted and inspected:
+None of them is built or deployed by anything here -- `zarf package create` on either reaches the network. They are to be read, linted and inspected:
 
 ```sh
 go run ./magefiles/core examples:lint

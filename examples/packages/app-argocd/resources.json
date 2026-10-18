@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../schema/package-resources-schema.json",
+  "tag": "v3.5.5",
+  "renovate": "datasource=github-releases depName=argoproj/argo-cd",
+  "repo": "https://github.com/argoproj/argo-cd",
+  "tree": "manifests",
+  "namespace": "argocd",
+  "partOf": "argocd",
+  "projects": [
+    {
+      "path": "crds",
+      "component": "argocd-crds",
+      "match": [
+        "crds/application-crd.yaml",
+        "crds/appproject-crd.yaml",
+        "crds/applicationset-crd.yaml"
+      ],
+      "imageless": true
+    },
+    {
+      "path": "core",
+      "component": "argocd-core",
+      "match": [
+        "namespace-install.yaml"
+      ]
+    }
+  ]
+}

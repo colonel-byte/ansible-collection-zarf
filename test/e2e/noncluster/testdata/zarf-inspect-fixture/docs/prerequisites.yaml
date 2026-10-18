@@ -18,14 +18,15 @@ metadata:
 requires:
   kubernetes:
     version: ">=1.30.0"
-  fluxcd:
+  gitops:
+    engine: fluxcd
     version: ">=2.9.0"
-    controllers:
-      - name: source-controller
-        namespace: flux-system
-        minAvailable: 1
-    crds:
-      - helmreleases.helm.toolkit.fluxcd.io
+  controllers:
+    - name: source-controller
+      namespace: flux-system
+      minAvailable: 1
+  crds:
+    - helmreleases.helm.toolkit.fluxcd.io
   storage:
     defaultClass: true
     classes:

@@ -96,7 +96,7 @@ Three more, in `magefiles/pkg/gen/schema`, hold the `PackagePrerequisites` forma
 
 Everything a generator writes is marked `linguist-generated` in [`.gitattributes`](.gitattributes), which collapses it in a GitHub diff and keeps it out of the repository's language statistics. A generated file that is not marked shows up as hand-written work in every review.
 
-So a change to what a generator produces is a change to `.gitattributes` as well: a new output path gets an entry, a moved or removed one loses its entry. Hand-written files inside a generated tree stay unmarked, and there are six -- `docs/ansible/collection.md`, `modules.md` and `roles.md` sit beside generated module and role pages, each reference package's `zarf.yaml` and `docs/prerequisites.yaml` sit beside its vendored `upstream/` tree, and `skills/zarf-package-prerequisites/SKILL.md` sits beside its generated copy of the schema. Mark the pattern the generator writes, not the directory it writes into.
+So a change to what a generator produces is a change to `.gitattributes` as well: a new output path gets an entry, a moved or removed one loses its entry. Hand-written files inside a generated tree stay unmarked: `docs/ansible/collection.md`, `modules.md` and `roles.md` sit beside generated module and role pages, each reference package's `zarf.yaml` and `docs/prerequisites.yaml` sit beside its vendored `upstream/` tree, and `skills/zarf-package-prerequisites/SKILL.md` sits beside its generated copy of the schema. Mark the pattern the generator writes, not the directory it writes into.
 
 Check a specific file rather than reasoning about the patterns:
 

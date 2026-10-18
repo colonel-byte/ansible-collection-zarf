@@ -72,3 +72,12 @@ argument_specs:
         default: localhost
         description:
           - "The node on which to run zarf."
+      zarf_engine_namespaces:
+        type: dict
+        default:
+          fluxcd: flux-system
+          argocd: argocd
+        description:
+          - "Where each GitOps engine installs itself, as a mapping of C(requires.gitops.engine) to a namespace. It is the namespace a C(requires.controllers) entry that names none is checked in."
+          - "A mapping rather than two literals because the defaults are conventions: Flux can be installed outside C(flux-system) and Argo CD outside C(argocd), and a fleet that does so would otherwise repeat the namespace on every controller of every document."
+          - "An engine not named here is reported in C(zarf_prerequisites_skipped) rather than guessed at, so a document naming an engine this role does not know never reports a check it did not make."

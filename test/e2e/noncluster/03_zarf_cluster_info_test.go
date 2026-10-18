@@ -33,7 +33,7 @@ const envClusterDir = "ZARF_ANSIBLE_E2E_CLUSTER_DIR"
 // documentationPlugin.
 var clusterInfoPlugin = "ansible/colonel_byte/zarf/plugins/action/zarf_cluster_info.py"
 
-// TestZarfClusterInfoDigestsFourQueries holds what zarf_cluster_info reports, and that it keeps the
+// TestZarfClusterInfoDigestsFiveQueries holds what zarf_cluster_info reports, and that it keeps the
 // four answers apart.
 //
 // The stub it runs against reads its arguments, unlike the other stubs in this suite, and that is
@@ -41,7 +41,7 @@ var clusterInfoPlugin = "ansible/colonel_byte/zarf/plugins/action/zarf_cluster_i
 // parse a document, not that it asked four questions and kept the answers straight. The stub fails
 // loudly on a command it does not recognise for the same reason -- an empty answer is a cluster
 // that looks empty, and an empty cluster satisfies nothing.
-func TestZarfClusterInfoDigestsFourQueries(t *testing.T) {
+func TestZarfClusterInfoDigestsFiveQueries(t *testing.T) {
 	env := zarfPlaybookEnv(t, []string{clusterInfoPlugin, infoBasePlugin})
 	stub := env.executable(t, clusterStub)
 

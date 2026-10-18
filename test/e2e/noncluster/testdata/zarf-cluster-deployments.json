@@ -62,6 +62,25 @@
       "apiVersion": "apps/v1",
       "kind": "Deployment",
       "metadata": {
+        "name": "argocd-server",
+        "namespace": "argocd",
+        "labels": {
+          "app.kubernetes.io/part-of": "argocd",
+          "app.kubernetes.io/version": "v3.5.5"
+        }
+      },
+      "spec": {
+        "replicas": 1
+      },
+      "status": {
+        "availableReplicas": 1,
+        "readyReplicas": 1
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
         "name": "coredns",
         "namespace": "kube-system"
       },

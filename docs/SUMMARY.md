@@ -72,6 +72,7 @@
 - [ai-usage](agent/ai-usage.md)
 - [choice-dependabot-title-length](agent/choice-dependabot-title-length.md)
 - [choice-fuzz-targets](agent/choice-fuzz-targets.md)
+- [choice-gitops-engine-discriminator](agent/choice-gitops-engine-discriminator.md)
 - [choice-package-documentation-module](agent/choice-package-documentation-module.md)
 - [choice-version-tracks-zarf](agent/choice-version-tracks-zarf.md)
 - [choice-zarf-ansible-module](agent/choice-zarf-ansible-module.md)

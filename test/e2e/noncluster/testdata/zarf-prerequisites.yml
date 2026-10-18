@@ -63,13 +63,12 @@
           requires:
             kubernetes:
               version: ">=1.99.0"
-            fluxcd:
-              controllers:
-                - name: helm-controller
-                  namespace: flux-system
-                  minAvailable: 1
-              crds:
-                - externalsecrets.external-secrets.io
+            controllers:
+              - name: helm-controller
+                namespace: flux-system
+                minAvailable: 1
+            crds:
+              - externalsecrets.external-secrets.io
             packages:
               - name: operator-external-secrets
 
@@ -101,9 +100,8 @@
                 package: a-package-this-cluster-is-not-ready-for
                 version: 1.0.0
               requires:
-                fluxcd:
-                  crds:
-                    - externalsecrets.external-secrets.io
+                crds:
+                  - externalsecrets.external-secrets.io
 
         - name: The role should not have got this far
           ansible.builtin.fail:
@@ -172,24 +170,134 @@
             package: a-package-wanting-flux-in-gitops
             version: 1.0.0
           requires:
-            fluxcd:
+            gitops:
+              engine: fluxcd
               version: ">=2.11.0"
-              controllers:
-                - name: kustomize-controller
-                  namespace: gitops
-                - name: notification-controller
+            controllers:
+              - name: kustomize-controller
+                namespace: gitops
+              - name: notification-controller
 
     - name: The version came from gitops, and the absent controller is the only complaint
       ansible.builtin.assert:
         that:
           # The constraint was evaluated rather than skipped, which is the whole point: before the
           # fix this list was empty and the constraint sat in zarf_prerequisites_skipped.
-          - zarf_prerequisites_checked | select('search', 'FluxCD version') | list | length == 1
+          - zarf_prerequisites_checked | select('search', 'fluxcd version') | list | length == 1
           - zarf_prerequisites_skipped == []
           # v2.11.0 satisfies >=2.11.0, so the version is not among the unmet. The one unmet thing
           # is notification-controller, which no namespace holds.
-          - zarf_prerequisites_unmet | select('search', 'FluxCD version') | list | length == 0
+          - zarf_prerequisites_unmet | select('search', 'fluxcd version') | list | length == 0
           - zarf_prerequisites_unmet | select('search', 'notification-controller') | list | length == 1
           - zarf_prerequisites_unmet | length == 1
         success_msg: ASSERTED a controller with no namespace does not discard the namespaces beside it
         fail_msg: the role lost an explicitly named controller namespace, so the Flux version went unchecked
+
+    - name: An ArgoCD document, whose most important controller is a StatefulSet
+      # The case the engine discriminator and the kind field exist for. argocd-application-controller
+      # is a StatefulSet and argocd-server is a Deployment, both in the argocd namespace, and the
+      # version label on them reads v3.5.5.
+      #
+      # Neither controller names a namespace. That is the engine default doing its job: with
+      # engine: argocd the role looks in argocd rather than in flux-system, and the same document
+      # under engine: fluxcd would find nothing at all.
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.prerequisites
+      vars:
+        zarf_binary: "{{ zarf_binary }}"
+        zarf_check_packages: false
+        zarf_prerequisites_enforce: false
+        zarf_prerequisites:
+          apiVersion: colonel-byte.dev/v1alpha1
+          kind: PackagePrerequisites
+          metadata:
+            package: a-package-wanting-argocd
+            version: 1.0.0
+          requires:
+            gitops:
+              engine: argocd
+              version: ">=3.5.0"
+            controllers:
+              - name: argocd-application-controller
+                kind: StatefulSet
+              - name: argocd-server
+            crds:
+              - applications.argoproj.io
+              - appprojects.argoproj.io
+
+    - name: Every ArgoCD prerequisite held, the StatefulSet included
+      ansible.builtin.assert:
+        that:
+          - zarf_prerequisites_unmet == []
+          - zarf_prerequisites_skipped == []
+          # The engine version, the two controllers, and the two CRDs.
+          - zarf_prerequisites_checked | length == 5
+          - zarf_prerequisites_checked | select('search', 'argocd version') | list | length == 1
+          # Named as a StatefulSet in the message, not as a Deployment: the kind is matched, so a
+          # role that only ever looked at Deployments reports this one absent instead.
+          - zarf_prerequisites_checked | select('search', 'StatefulSet argocd-application-controller in argocd') | list | length == 1
+          - zarf_prerequisites_checked | select('search', 'Deployment argocd-server in argocd') | list | length == 1
+        success_msg: ASSERTED an ArgoCD document is checked, StatefulSet controller and all
+        fail_msg: the role did not check the ArgoCD document against the fixture cluster
+
+    - name: The same ArgoCD controllers, looked for under the wrong engine
+      # The engine default is load-bearing, and this is what proves it. The identical controller
+      # list under engine: fluxcd is looked for in flux-system, where no argocd component is, so
+      # both come back absent. A role that ignored the engine would pass this.
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.prerequisites
+      vars:
+        zarf_binary: "{{ zarf_binary }}"
+        zarf_check_packages: false
+        zarf_prerequisites_enforce: false
+        zarf_prerequisites:
+          apiVersion: colonel-byte.dev/v1alpha1
+          kind: PackagePrerequisites
+          metadata:
+            package: a-package-looking-in-the-wrong-namespace
+            version: 1.0.0
+          requires:
+            gitops:
+              engine: fluxcd
+            controllers:
+              - name: argocd-application-controller
+                kind: StatefulSet
+              - name: argocd-server
+
+    - name: Both are reported absent from flux-system
+      ansible.builtin.assert:
+        that:
+          - zarf_prerequisites_unmet | length == 2
+          - zarf_prerequisites_unmet | select('search', 'not deployed in flux-system') | list | length == 2
+        success_msg: ASSERTED the engine decides which namespace a controller defaults to
+        fail_msg: the engine default namespace is not being applied
+
+    - name: An engine this role has never heard of is named rather than guessed at
+      # The one thing a role whose purpose is avoiding silent success must not do is pick a
+      # namespace for an engine it does not know and report what it finds there as a check.
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.prerequisites
+      vars:
+        zarf_binary: "{{ zarf_binary }}"
+        zarf_check_packages: false
+        zarf_prerequisites_enforce: false
+        zarf_prerequisites:
+          apiVersion: colonel-byte.dev/v1alpha1
+          kind: PackagePrerequisites
+          metadata:
+            package: a-package-wanting-something-else
+            version: 1.0.0
+          requires:
+            gitops:
+              engine: jenkins
+
+    - name: The unknown engine lands in skipped, and nothing is claimed about it
+      ansible.builtin.assert:
+        that:
+          - zarf_prerequisites_unmet == []
+          - zarf_prerequisites_checked == []
+          - zarf_prerequisites_skipped | length == 1
+          - "'jenkins' in zarf_prerequisites_skipped | join(' ')"
+          - "'does not know' in zarf_prerequisites_skipped | join(' ')"
+        success_msg: ASSERTED an unknown GitOps engine is reported rather than guessed at
+        fail_msg: an engine the role does not know was not reported as unchecked

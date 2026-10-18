@@ -16,9 +16,9 @@
 # A stand-in for zarf, for the zarf_cluster_info and prerequisites-role tests.
 #
 # Unlike the other stubs in this directory, this one reads its arguments. It has to: zarf_cluster_info
-# asks the cluster four questions, and the whole point of the module is that each answer lands in a
+# asks the cluster five questions, and the whole point of the module is that each answer lands in a
 # different result key -- a stub that printed one document whatever it was asked would prove that
-# the module can parse one document, not that it asked four questions and kept the answers apart.
+# the module can parse one document, not that it asked five questions and kept the answers apart.
 # A dispatch that does not recognise a command fails loudly for the same reason: a silent empty
 # answer is a cluster that looks empty, and an empty cluster satisfies nothing, which would make
 # this test pass for the wrong reason the day the module's commands change.
@@ -44,6 +44,9 @@ case " $* " in
     ;;
   *" deployments.apps "*)
     cat "${ZARF_ANSIBLE_E2E_CLUSTER_DIR}/zarf-cluster-deployments.json"
+    ;;
+  *" statefulsets.apps "*)
+    cat "${ZARF_ANSIBLE_E2E_CLUSTER_DIR}/zarf-cluster-statefulsets.json"
     ;;
   *" list "*)
     cat "${ZARF_ANSIBLE_E2E_CLUSTER_DIR}/zarf-cluster-packages.json"

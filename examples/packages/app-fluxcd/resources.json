@@ -5,6 +5,7 @@
   "repo": "https://github.com/fluxcd/flux2",
   "asset": "manifests.tar.gz",
   "namespace": "flux-system",
+  "partOf": "flux",
   "registry": "ghcr.io",
   "projects": [
     {

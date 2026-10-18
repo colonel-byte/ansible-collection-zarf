@@ -54,7 +54,7 @@ Runs on the node the task is delegated to (typically localhost).
 
 - name: Report the Flux version the package requires
   ansible.builtin.debug:
-    msg: "{{ pkg_docs.prerequisites.metadata.package }} requires flux {{ pkg_docs.prerequisites.requires.fluxcd.version }}"
+    msg: "{{ pkg_docs.prerequisites.metadata.package }} requires {{ pkg_docs.prerequisites.requires.gitops.engine }} {{ pkg_docs.prerequisites.requires.gitops.version }}"
   when: pkg_docs.prerequisites is defined
 
 - name: Keep the extracted documentation for a later task to read

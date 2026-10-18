@@ -100,16 +100,54 @@
     - name: Collect what the document asks for and what the cluster reported
       ansible.builtin.set_fact:
         _zarf_prereq_requires: "{{ zarf_prerequisites_document.requires | default({}) }}"
-        _zarf_prereq_controllers: "{{ zarf_prerequisites_document.requires.fluxcd.controllers | default([]) }}"
+        _zarf_prereq_gitops: "{{ zarf_prerequisites_document.requires.gitops | default({}) }}"
+        _zarf_prereq_controllers: "{{ zarf_prerequisites_document.requires.controllers | default([]) }}"
         _zarf_prereq_storage: "{{ zarf_prerequisites_document.requires.storage | default({}) }}"
-        _zarf_prereq_required_crds: "{{ zarf_prerequisites_document.requires.fluxcd.crds | default([]) }}"
+        _zarf_prereq_required_crds: "{{ zarf_prerequisites_document.requires.crds | default([]) }}"
         _zarf_prereq_required_packages: "{{ zarf_prerequisites_document.requires.packages | default([]) }}"
-        _zarf_prereq_deployments: "{{ _zarf_prereq_cluster.deployments }}"
+        # Deployments and StatefulSets as one list with the kind on each entry, so that the
+        # controller check below selects by (namespace, name, kind) instead of choosing which of
+        # two facts to read inside an expression that is hard enough to follow already.
+        _zarf_prereq_workloads: >-
+          {{ (_zarf_prereq_cluster.deployments | map('combine', {'kind': 'Deployment'}) | list)
+             + (_zarf_prereq_cluster.statefulsets | default([])
+                | map('combine', {'kind': 'StatefulSet'}) | list) }}
         _zarf_prereq_crds: "{{ _zarf_prereq_cluster.crds }}"
         _zarf_prereq_classes: "{{ _zarf_prereq_cluster.storage_classes | map(attribute='name') | list }}"
         _zarf_prereq_deployed: "{{ _zarf_prereq_packages.packages | default([]) }}"
         _zarf_prereq_version_checks: []
       run_once: true
+
+    # The namespace a controller requirement that names none is checked in. It is engine-specific
+    # and nothing else about the checking is, which is the whole reason requires.gitops carries an
+    # engine at all: "these workloads must be available" is the same question whatever reconciles
+    # the cluster, and only the default address of the engine differs.
+    #
+    # A document with controllers and no gitops section gets flux-system, which is what every
+    # document written against the older shape of this format meant.
+    - name: Work out the engine and the namespace its controllers default to
+      ansible.builtin.set_fact:
+        _zarf_prereq_engine: "{{ _zarf_prereq_gitops.engine | default('fluxcd', true) }}"
+        # .get rather than a subscript: an engine not in the mapping is reported by the task
+        # below, and a subscript would raise here before that task ever ran.
+        _zarf_prereq_namespace: >-
+          {{ zarf_engine_namespaces.get(_zarf_prereq_gitops.engine | default('fluxcd', true),
+                                        'flux-system') }}
+      run_once: true
+
+    # An engine this role has never heard of is named, not guessed at. The two things that differ
+    # per engine -- the default namespace and which workloads carry the version label -- cannot
+    # both be defaulted safely, and a role that picked flux-system for an engine called "jenkins"
+    # would report a cluster as satisfying a document it never checked.
+    - name: Note that the engine is one this role does not know
+      ansible.builtin.set_fact:
+        zarf_prerequisites_skipped: >-
+          {{ zarf_prerequisites_skipped
+             + ['requires.gitops.engine is ' ~ _zarf_prereq_engine
+                ~ ', which this role does not know: its controllers must name their namespaces, '
+                ~ 'and its version cannot be read'] }}
+      run_once: true
+      when: _zarf_prereq_engine not in zarf_engine_namespaces
 
     # The document travels separately from the package it describes -- it is extracted on its own --
     # so a document copied from the package beside it and not fully edited would otherwise be
@@ -135,44 +173,53 @@
       run_once: true
       when: (_zarf_prereq_requires.kubernetes.version | default('')) | length > 0
 
-    # The Flux version a controller Deployment reports. Flux's own manifests label every component
-    # with the flux2 release they were built from, which is what requires.fluxcd.version
-    # constrains -- the controllers' own versions are a different set of numbers entirely, and a
-    # document naming ">=2.9.0" is not talking about source-controller v1.9.5.
+    # The engine version its own workloads report. Both engines label their components with the
+    # release the manifests were built from, which is what requires.gitops.version constrains --
+    # the components' own versions are a different set of numbers entirely, and a document naming
+    # ">=2.9.0" is not talking about source-controller v1.9.5.
     #
-    # The namespaces and names come from the document's own controller list, so that a Flux
-    # installed outside flux-system is still found. A document that requires a version and names no
-    # controller falls back to the usual pair, and if neither is there the constraint is reported as
-    # unchecked rather than satisfied -- tasks/version_check.yml does that for an empty version.
+    # Neither upstream sets that label: `flux install` adds it, Argo CD's install.yaml has none at
+    # all, and a package vendoring either has to add it. A cluster whose engine carries no version
+    # label has the constraint reported as unchecked rather than satisfied -- version_check.yml
+    # does that for an empty version.
+    #
+    # The namespaces and names come from the document's own controller list, so that an engine
+    # installed outside its usual namespace is still found. A document that requires a version and
+    # names no controller falls back to the engine's default namespace and takes whatever version
+    # it finds there.
     #
     # _namespaces fills the default per entry, with map's own default argument, rather than
     # rejecting the empties afterwards. A list where one controller omits namespace raises inside
     # the map, which collapses the whole expression to Undefined and hands every explicitly named
     # namespace to the fallback -- so a Flux in gitops reported no version, the constraint was
     # recorded as unchecked, and the role passed a cluster it had not checked.
-    - name: Record the FluxCD version constraint, and the version the cluster reports
+    - name: Record the GitOps engine version constraint, and the version the cluster reports
       ansible.builtin.set_fact:
         _zarf_prereq_version_checks: >-
           {{ _zarf_prereq_version_checks
-             + [{'label': "the cluster's FluxCD version",
-                 'constraint': _zarf_prereq_requires.fluxcd.version,
+             + [{'label': "the cluster's " ~ _zarf_prereq_engine ~ " version",
+                 'constraint': _zarf_prereq_gitops.version,
                  'actual': _reported}] }}
       vars:
         _namespaces: >-
           {{ (_zarf_prereq_controllers | map(attribute='namespace', default='')
-              | map('default', 'flux-system', true) | unique | list)
-             | default(['flux-system'], true) }}
+              | map('default', _zarf_prereq_namespace, true) | unique | list)
+             | default([_zarf_prereq_namespace], true) }}
+        # A document that requires a version and names no controller is asking about whatever the
+        # engine installed in its own namespace, so the names fall back to everything found there
+        # rather than to one component this role picked.
         _names: >-
           {{ (_zarf_prereq_controllers | map(attribute='name') | list)
-             | default(['source-controller'], true) }}
+             | default(_zarf_prereq_workloads | selectattr('namespace', 'in', _namespaces)
+                       | map(attribute='name') | list, true) }}
         _reported: >-
-          {{ (_zarf_prereq_deployments
+          {{ (_zarf_prereq_workloads
               | selectattr('namespace', 'in', _namespaces)
               | selectattr('name', 'in', _names)
               | selectattr('version', '!=', '')
               | map(attribute='version') | unique | sort | last) | default('', true) }}
       run_once: true
-      when: (_zarf_prereq_requires.fluxcd.version | default('')) | length > 0
+      when: (_zarf_prereq_gitops.version | default('')) | length > 0
 
     # One entry per prerequisite package that states a version. The deployed version comes from the
     # list `zarf package list` reported, and is empty when the package is not deployed at all --
@@ -237,21 +284,29 @@
     # readiness is what minAvailable means, and it is the distinction that matters here: a replica
     # that is ready but not available has passed its probes and not satisfied minReadySeconds, and a
     # controller in that state is in the middle of a rollout.
-    - name: Check each required FluxCD controller
+    #
+    # The kind is matched as well as the name and namespace, and defaults to Deployment because
+    # that is what almost every controller is. Argo CD's argocd-application-controller is the
+    # exception that makes it a field at all: it is a StatefulSet, and a check that assumed
+    # Deployment would report the component doing all of the reconciling as absent from a healthy
+    # cluster -- a false failure, in the one format whose whole purpose is avoiding a false success.
+    - name: Check each required controller
       ansible.builtin.set_fact:
         zarf_prerequisites_checked: >-
           {{ zarf_prerequisites_checked
-             + ['the Flux controller ' ~ item.name ~ ' in ' ~ _namespace ~ ' has '
+             + ['the ' ~ _kind ~ ' ' ~ item.name ~ ' in ' ~ _namespace ~ ' has '
                 ~ _minimum ~ ' available replica(s)'] }}
         zarf_prerequisites_unmet: "{{ zarf_prerequisites_unmet + _messages }}"
       vars:
-        _namespace: "{{ item.namespace | default('flux-system', true) }}"
+        _namespace: "{{ item.namespace | default(_zarf_prereq_namespace, true) }}"
+        _kind: "{{ item.kind | default('Deployment', true) }}"
         _minimum: "{{ item.minAvailable | default(1) | int }}"
         _found: >-
-          {{ _zarf_prereq_deployments | selectattr('namespace', 'equalto', _namespace)
+          {{ _zarf_prereq_workloads | selectattr('namespace', 'equalto', _namespace)
+             | selectattr('kind', 'equalto', _kind)
              | selectattr('name', 'equalto', item.name) | list }}
-        _absent: "the Flux controller {{ item.name }} is not deployed in {{ _namespace }}"
-        _short: "the Flux controller {{ item.name }} in {{ _namespace }} has {{ (_found | first).available | default(0) }} available replica(s), and the package requires {{ _minimum }}"
+        _absent: "the {{ _kind }} {{ item.name }} is not deployed in {{ _namespace }}"
+        _short: "the {{ _kind }} {{ item.name }} in {{ _namespace }} has {{ (_found | first).available | default(0) }} available replica(s), and the package requires {{ _minimum }}"
         _messages: >-
           {{ [_absent] if (_found | length == 0)
              else ([] if ((_found | first).available | int) >= (_minimum | int) else [_short]) }}

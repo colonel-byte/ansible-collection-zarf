@@ -8,13 +8,13 @@ Write it as `colonel_byte.zarf.zarf_cluster_info`. It runs the installed zarf on
 
 Added in `colonel_byte.zarf` 0.33.0.
 
-Reads the cluster through `zarf tools kubectl` and returns the facts a `colonel-byte.dev/v1alpha1` `PackagePrerequisites` document can require: the Kubernetes version, the established CRDs, the StorageClasses, and the readiness of every Deployment.
+Reads the cluster through `zarf tools kubectl` and returns the facts a `colonel-byte.dev/v1alpha1` `PackagePrerequisites` document can require: the Kubernetes version, the established CRDs, the StorageClasses, and the readiness of every Deployment and StatefulSet.
 
 Needs no `kubernetes.core`: everything is read through the `zarf` binary this collection already requires, which carries its own kubectl. The management node is typically air-gapped, and a second collection to stage onto it is a cost every consumer would pay.
 
 The answers are digested rather than returned whole. `crds` is a list of names, not of objects: a cluster with two hundred CRDs answers with megabytes of schemas that no prerequisite check reads.
 
-Runs four kubectl queries. The first one to fail fails the task, and `query` names which it was.
+Runs five kubectl queries. The first one to fail fails the task, and `query` names which it was.
 
 Runs on the node the task is delegated to (typically localhost), reaching the cluster through a kubeconfig.
 
@@ -30,7 +30,8 @@ Runs on the node the task is delegated to (typically localhost), reaching the cl
 - Set `run_once: true` and `delegate_to: localhost` on the task.
 - The module runs in check mode and reports `changed: false`, because reading a cluster changes nothing.
 - `requires.storage.accessModes` in a prerequisites document is not reported here and cannot be: what a provisioner will actually bind is not discoverable without creating a PersistentVolumeClaim, which is not a thing a read-only module does. The `prerequisites` role skips that check and says so.
-- `deployments` covers every namespace. A cluster running hundreds of Deployments returns hundreds of entries, each of five fields.
+- `deployments` and `statefulsets` cover every namespace, and carry the same five fields each. A cluster running hundreds of workloads returns hundreds of entries.
+- StatefulSets are reported separately because a GitOps engine is not all Deployments. Argo CD runs `argocd-application-controller` as a StatefulSet and the rest of itself as Deployments, so a check that read only `deployments` would report the component doing all of the reconciling as absent from a healthy cluster.
 
 ### Example
 
@@ -55,6 +56,14 @@ Runs on the node the task is delegated to (typically localhost), reaching the cl
         | selectattr('name', 'equalto', 'helm-controller')
         | selectattr('available', 'ge', 1) | list | length > 0
     fail_msg: no available helm-controller, so a HelmRelease would never be reconciled
+
+- name: Require an available argocd-application-controller, which is a StatefulSet
+  ansible.builtin.assert:
+    that:
+      - cluster.statefulsets | selectattr('namespace', 'equalto', 'argocd')
+        | selectattr('name', 'equalto', 'argocd-application-controller')
+        | selectattr('available', 'ge', 1) | list | length > 0
+    fail_msg: no available argocd-application-controller, so an Application would never be reconciled
 
 - name: Report what is there
   ansible.builtin.debug:

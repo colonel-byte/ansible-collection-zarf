@@ -91,10 +91,29 @@ type Resources struct {
 	Renovate string `json:"renovate,omitempty" jsonschema:"example=datasource=github-releases depName=fluxcd/flux2"`
 	// Repo is the upstream repository's URL.
 	Repo string `json:"repo" jsonschema:"example=https://github.com/fluxcd/flux2"`
-	// Asset is the release asset to download, by name.
-	Asset string `json:"asset" jsonschema:"example=manifests.tar.gz"`
+	// Asset is the release asset to download, by name. Exactly one of Asset and Tree is set.
+	Asset string `json:"asset,omitempty" jsonschema:"example=manifests.tar.gz"`
+	// Tree vendors from a directory in the tagged source tree instead of from a release asset,
+	// and is the directory the project Match paths are relative to.
+	//
+	// It exists because not every upstream attaches its manifests to a release. Flux publishes
+	// manifests.tar.gz and this package was written for that; Argo CD attaches only CLI binaries
+	// and SBOMs, and its own release notes tell you to apply
+	// raw.githubusercontent.com/argoproj/argo-cd/<tag>/manifests/install.yaml -- a path in the
+	// tagged tree. Both are a pin to a tag, which is the only property that matters here; the
+	// difference is where the bytes are.
+	//
+	// The repository's source archive is not used instead, which would keep one code path: it is
+	// a gzip tar and readArchive flattens entry names to their basename, so a whole repository of
+	// thousands of files collapses onto a handful of names and trips the clash check. Fetching the
+	// named files is both smaller and exact.
+	Tree string `json:"tree,omitempty" jsonschema:"example=manifests"`
 	// Namespace is the namespace every generated kustomization places its resources in.
-	Namespace string `json:"namespace" jsonschema:"example=flux-system"`
+	Namespace string `json:"namespace" jsonschema:"example=flux-system,example=argocd"`
+	// PartOf is the app.kubernetes.io/part-of label every generated kustomization stamps on. It
+	// is what upstream already sets on most of its own resources, repeated so that every resource
+	// in the project carries it including the ones that do not today.
+	PartOf string `json:"partOf" jsonschema:"example=flux,example=argocd"`
 	// Registry re-homes every image the vendored manifests name without one onto this host, as a
 	// kustomize image transform in the generated kustomization.
 	//
@@ -116,6 +135,15 @@ type Project struct {
 	// these manifests. It is named here rather than inferred, because the mapping is the one thing
 	// a reader of either file cannot work out from the other.
 	Component string `json:"component" jsonschema:"example=fluxcd-core"`
+	// Imageless says this project's manifests deploy no containers, so `zarf dev find-images`
+	// reporting none for its component is the right answer rather than a misconfiguration.
+	//
+	// It is declared rather than inferred because the two cases look identical from the outside:
+	// a component genuinely carrying only CustomResourceDefinitions, and a component whose name
+	// here no longer matches anything in zarf.yaml. Treating an empty result as acceptable for
+	// every project would turn a renamed component into a package that quietly stops carrying its
+	// images -- which fails on an air-gapped cluster, at deploy time, with nothing to pull from.
+	Imageless bool `json:"imageless,omitempty"`
 	// Match are the filenames to take out of the release asset, which is also the resource list of
 	// the generated kustomization and so the order the manifests are applied in.
 	//
@@ -123,6 +151,9 @@ type Project struct {
 	// names are part of its interface, and a glob that silently stops matching -- because upstream
 	// renamed one -- produces a component that deploys less than it used to and fails nothing.
 	// A name that is not in the archive is an error.
+	//
+	// On the tree source they are paths relative to Resources.Tree, because a source tree has
+	// directories where an archive is flat. The file is still written out under its basename.
 	Match []string `json:"match"`
 }
 
@@ -152,8 +183,15 @@ func (r *Resources) validate(path string) error {
 		return fmt.Errorf("%s: tag is empty, so there is no pinned release to vendor", path)
 	case r.Repo == "":
 		return fmt.Errorf("%s: repo is empty", path)
-	case r.Asset == "":
-		return fmt.Errorf("%s: asset is empty", path)
+	case r.Asset == "" && r.Tree == "":
+		return fmt.Errorf("%s: neither asset nor tree is set, so there is nowhere to read the "+
+			"manifests from: name a release asset with \"asset\", or a directory in the tagged "+
+			"source tree with \"tree\"", path)
+	case r.Asset != "" && r.Tree != "":
+		return fmt.Errorf("%s: both asset and tree are set, and the manifests come from one place "+
+			"or the other", path)
+	case r.PartOf == "":
+		return fmt.Errorf("%s: partOf is empty, and every generated kustomization stamps it", path)
 	case len(r.Projects) == 0:
 		return fmt.Errorf("%s: no projects, so vendoring would write nothing", path)
 	}
@@ -204,12 +242,7 @@ func Vendor(pkg string) error {
 		return err
 	}
 
-	archive, err := download(assetURL(resources))
-	if err != nil {
-		return err
-	}
-
-	files, err := readArchive(archive)
+	files, err := fetchFiles(resources)
 	if err != nil {
 		return err
 	}
@@ -227,11 +260,15 @@ func Vendor(pkg string) error {
 			return err
 		}
 
-		for _, name := range project.Match {
+		for _, match := range project.Match {
+			// Keyed and written by basename: an archive is flat already, and a tree-sourced match
+			// carries the directory it came from upstream, which has no meaning beside the
+			// kustomization that lists it.
+			name := filepath.Base(match)
 			content, ok := files[name]
 			if !ok {
 				return fmt.Errorf("%s names %s, which release %s of %s does not carry. Its files are: %s",
-					ResourcesFile, name, resources.Tag, resources.Repo, strings.Join(sortedNames(files), ", "))
+					ResourcesFile, match, resources.Tag, resources.Repo, strings.Join(sortedNames(files), ", "))
 			}
 			path := filepath.Join(directory, name)
 			if err := os.WriteFile(path, content, 0o644); err != nil { //nolint:gosec // vendored manifests are world-readable
@@ -256,6 +293,51 @@ func Vendor(pkg string) error {
 func assetURL(resources *Resources) string {
 	return fmt.Sprintf("%s/releases/download/%s/%s",
 		strings.TrimSuffix(resources.Repo, "/"), resources.Tag, resources.Asset)
+}
+
+// treeURL is one file in the tagged source tree, on the raw host that serves file contents rather
+// than the HTML page github.com answers with.
+func treeURL(resources *Resources, name string) string {
+	repo := strings.TrimSuffix(strings.TrimPrefix(
+		strings.TrimSuffix(resources.Repo, "/"), "https://github.com/"), ".git")
+	return fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s/%s",
+		repo, resources.Tag, strings.Trim(resources.Tree, "/"), name)
+}
+
+// fetchFiles returns the vendored files by the name each is written under, from whichever of the
+// two sources the declaration names.
+//
+// The asset path downloads once and reads every project out of the one copy. The tree path fetches
+// each named file, because there is no archive to read them from -- which also means a Match entry
+// that upstream has moved fails as a 404 naming the file, rather than as the "release does not
+// carry it" message the archive path gives.
+func fetchFiles(resources *Resources) (map[string][]byte, error) {
+	if resources.Tree == "" {
+		archive, err := download(assetURL(resources))
+		if err != nil {
+			return nil, err
+		}
+		return readArchive(archive)
+	}
+
+	files := map[string][]byte{}
+	for _, project := range resources.Projects {
+		for _, match := range project.Match {
+			// The basename is the key, so that the rest of Vendor writes and kustomizes these the
+			// same way it does an archive's entries. Two matches whose paths differ and whose
+			// basenames do not would otherwise silently become one file.
+			name := filepath.Base(match)
+			if _, clash := files[name]; clash {
+				return nil, fmt.Errorf("two matched files are named %s", name)
+			}
+			content, err := download(treeURL(resources, match))
+			if err != nil {
+				return nil, err
+			}
+			files[name] = content
+		}
+	}
+	return files, nil
 }
 
 // download fetches a URL into memory, within fetchTimeout and maxAssetBytes.

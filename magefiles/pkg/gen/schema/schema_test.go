@@ -190,7 +190,7 @@ func TestEveryRequirementIsNamedByTheRole(t *testing.T) {
 // slices and pointers walked through.
 //
 // The whole tree rather than the top level, because a section added to an existing one is as
-// invisible to the role as a whole new section: requires.fluxcd.crds and requires.fluxcd are the
+// invisible to the role as a whole new section: requires.gitops.engine and requires.gitops are the
 // same kind of drift one level apart.
 func jsonFieldNames(t reflect.Type) []string {
 	for t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice {

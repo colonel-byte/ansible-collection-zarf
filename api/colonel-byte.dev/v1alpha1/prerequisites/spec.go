@@ -91,8 +91,12 @@ type Metadata struct {
 type Requires struct {
 	// Kubernetes constrains the cluster's own version.
 	Kubernetes *KubernetesRequirement `json:"kubernetes,omitempty"`
-	// FluxCD requires a GitOps engine that is installed, running, and new enough.
-	FluxCD *FluxCDRequirement `json:"fluxcd,omitempty"`
+	// GitOps requires a GitOps engine that is installed and new enough.
+	GitOps *GitOpsRequirement `json:"gitops,omitempty"`
+	// Controllers are the workloads that must be present and available.
+	Controllers []ControllerRequirement `json:"controllers,omitempty"`
+	// CRDs are the custom resource definitions that must be established on the cluster.
+	CRDs []string `json:"crds,omitempty" jsonschema:"example=helmreleases.helm.toolkit.fluxcd.io,example=applications.argoproj.io"`
 	// Storage requires somewhere for a PersistentVolumeClaim to land.
 	Storage *StorageRequirement `json:"storage,omitempty"`
 	// Packages requires other Zarf packages to be deployed first.
@@ -114,28 +118,67 @@ type KubernetesRequirement struct {
 	Version string `json:"version" jsonschema:"example=>=1.30.0,example=>=1.31.0"`
 }
 
-// FluxCDRequirement requires a GitOps engine that is installed, running, and new enough.
+// Engine names a GitOps engine this format knows how to check a cluster for.
 //
-// Three things rather than one, because each catches a different failure, and the version alone
-// catches the least interesting of them. A cluster can hold the right Flux version with its
-// controllers scaled to zero, or hold the controllers without the CRDs the package's own
-// HelmRelease needs -- which is the silent case this whole format exists for: zarf deploys the
-// manifests, nothing reconciles them, and the deployment is reported as a success.
-type FluxCDRequirement struct {
-	// Version is a SemVer range the installed Flux version must satisfy.
-	Version string `json:"version,omitempty" jsonschema:"example=>=2.9.0"`
-	// Controllers are the controller Deployments that must be present and available.
-	Controllers []ControllerRequirement `json:"controllers,omitempty"`
-	// CRDs are the custom resource definitions that must be established on the cluster.
-	CRDs []string `json:"crds,omitempty" jsonschema:"example=helmreleases.helm.toolkit.fluxcd.io,example=ocirepositories.source.toolkit.fluxcd.io"`
+// They are constants because the checking differs per engine in exactly two ways -- which
+// namespace a controller defaults to, and which workloads carry the version label -- and a
+// consumer handed an engine it has never heard of should say so rather than guess at both.
+const (
+	// EngineFluxCD is Flux: https://fluxcd.io.
+	EngineFluxCD = "fluxcd"
+	// EngineArgoCD is Argo CD: https://argo-cd.readthedocs.io.
+	EngineArgoCD = "argocd"
+)
+
+// GitOpsRequirement requires a GitOps engine that is installed and new enough.
+//
+// It is one small section rather than a per-engine one, because almost nothing about checking an
+// engine is engine-specific. "These workloads must be available" and "these CRDs must be
+// established" are the same question whatever reconciles the cluster, which is why Controllers and
+// CRDs sit on Requires beside this rather than inside it. What is left here is the engine's
+// identity and its version, and the identity is needed only because the version is read off a
+// label whose meaning differs: for Flux it is the flux2 release the manifests were built from, and
+// a document naming ">=2.9.0" is not talking about source-controller v1.9.5.
+//
+// The version alone is the least interesting of the three checks a document can make. A cluster can
+// hold the right version with its controllers scaled to zero, or hold the controllers without the
+// CRDs the package's own Application or HelmRelease needs -- which is the silent case this whole
+// format exists for: zarf deploys the manifests, nothing reconciles them, and the deployment is
+// reported as a success.
+type GitOpsRequirement struct {
+	// Engine is which GitOps engine the cluster must be running.
+	Engine string `json:"engine" jsonschema:"enum=fluxcd,enum=argocd"`
+	// Version is a SemVer range the installed engine's version must satisfy.
+	//
+	// It is read from the app.kubernetes.io/version label on the engine's own workloads, and
+	// neither Flux's nor Argo CD's upstream manifests carry that label -- a package that vendors
+	// them has to add it. A cluster whose engine carries no version label has the constraint
+	// reported as unchecked rather than satisfied.
+	Version string `json:"version,omitempty" jsonschema:"example=>=2.9.0,example=>=3.5.0"`
 }
 
-// ControllerRequirement is one controller Deployment that must be present and available.
+// Workload kinds a ControllerRequirement may name.
+//
+// Two, because those are the two a GitOps engine's components are: Flux's controllers are all
+// Deployments, and Argo CD's argocd-application-controller is a StatefulSet while the rest of it
+// is Deployments. A format that assumed Deployment would report Argo CD's single most important
+// component as absent on a healthy cluster.
+const (
+	// KindDeployment is a Deployment, and the default when a requirement names no kind.
+	KindDeployment = "Deployment"
+	// KindStatefulSet is a StatefulSet.
+	KindStatefulSet = "StatefulSet"
+)
+
+// ControllerRequirement is one workload that must be present and available.
 type ControllerRequirement struct {
-	// Name is the Deployment's name.
-	Name string `json:"name" jsonschema:"example=source-controller,example=helm-controller"`
-	// Namespace is the namespace it is deployed into.
-	Namespace string `json:"namespace,omitempty" jsonschema:"default=flux-system"`
+	// Name is the workload's name.
+	Name string `json:"name" jsonschema:"example=source-controller,example=argocd-application-controller"`
+	// Namespace is the namespace it is deployed into. A requirement that names none is checked in
+	// the engine's own default namespace: flux-system for fluxcd, argocd for argocd.
+	Namespace string `json:"namespace,omitempty" jsonschema:"example=flux-system,example=argocd"`
+	// Kind is the workload's kind.
+	Kind string `json:"kind,omitempty" jsonschema:"enum=Deployment,enum=StatefulSet,default=Deployment"`
 	// MinAvailable is how many replicas must report available. One is enough to reconcile; a
 	// higher number is a statement about the package's tolerance for a controller restart during
 	// its own deployment.

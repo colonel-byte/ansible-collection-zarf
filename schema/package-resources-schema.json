@@ -18,12 +18,16 @@
             "fluxcd-core"
           ]
         },
+        "imageless": {
+          "type": "boolean",
+          "description": "Imageless says this project's manifests deploy no containers, so `zarf dev find-images`\nreporting none for its component is the right answer rather than a misconfiguration.\n\nIt is declared rather than inferred because the two cases look identical from the outside:\na component genuinely carrying only CustomResourceDefinitions, and a component whose name\nhere no longer matches anything in zarf.yaml. Treating an empty result as acceptable for\nevery project would turn a renamed component into a package that quietly stops carrying its\nimages -- which fails on an air-gapped cluster, at deploy time, with nothing to pull from."
+        },
         "match": {
           "items": {
             "type": "string"
           },
           "type": "array",
-          "description": "Match are the filenames to take out of the release asset, which is also the resource list of\nthe generated kustomization and so the order the manifests are applied in.\n\nThey are exact names rather than globs. The upstream archive is a flat handful of files whose\nnames are part of its interface, and a glob that silently stops matching -- because upstream\nrenamed one -- produces a component that deploys less than it used to and fails nothing.\nA name that is not in the archive is an error."
+          "description": "Match are the filenames to take out of the release asset, which is also the resource list of\nthe generated kustomization and so the order the manifests are applied in.\n\nThey are exact names rather than globs. The upstream archive is a flat handful of files whose\nnames are part of its interface, and a glob that silently stops matching -- because upstream\nrenamed one -- produces a component that deploys less than it used to and fails nothing.\nA name that is not in the archive is an error.\n\nOn the tree source they are paths relative to Resources.Tree, because a source tree has\ndirectories where an archive is flat. The file is still written out under its basename."
         }
       },
       "additionalProperties": false,
@@ -64,16 +68,32 @@
     },
     "asset": {
       "type": "string",
-      "description": "Asset is the release asset to download, by name.",
+      "description": "Asset is the release asset to download, by name. Exactly one of Asset and Tree is set.",
       "examples": [
         "manifests.tar.gz"
+      ]
+    },
+    "tree": {
+      "type": "string",
+      "description": "Tree vendors from a directory in the tagged source tree instead of from a release asset,\nand is the directory the project Match paths are relative to.\n\nIt exists because not every upstream attaches its manifests to a release. Flux publishes\nmanifests.tar.gz and this package was written for that; Argo CD attaches only CLI binaries\nand SBOMs, and its own release notes tell you to apply\nraw.githubusercontent.com/argoproj/argo-cd/\u003ctag\u003e/manifests/install.yaml -- a path in the\ntagged tree. Both are a pin to a tag, which is the only property that matters here; the\ndifference is where the bytes are.\n\nThe repository's source archive is not used instead, which would keep one code path: it is\na gzip tar and readArchive flattens entry names to their basename, so a whole repository of\nthousands of files collapses onto a handful of names and trips the clash check. Fetching the\nnamed files is both smaller and exact.",
+      "examples": [
+        "manifests"
       ]
     },
     "namespace": {
       "type": "string",
       "description": "Namespace is the namespace every generated kustomization places its resources in.",
       "examples": [
-        "flux-system"
+        "flux-system",
+        "argocd"
+      ]
+    },
+    "partOf": {
+      "type": "string",
+      "description": "PartOf is the app.kubernetes.io/part-of label every generated kustomization stamps on. It\nis what upstream already sets on most of its own resources, repeated so that every resource\nin the project carries it including the ones that do not today.",
+      "examples": [
+        "flux",
+        "argocd"
       ]
     },
     "registry": {
@@ -96,8 +116,8 @@
   "required": [
     "tag",
     "repo",
-    "asset",
     "namespace",
+    "partOf",
     "projects"
   ],
   "description": "Resources is a package's resources.json: one upstream release, and the projects extracted from it."

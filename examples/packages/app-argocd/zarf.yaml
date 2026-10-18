@@ -1,0 +1,77 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/zarf-dev/zarf/main/zarf.schema.json
+#
+# Argo CD, packaged from the upstream manifests, as the GitOps engine the rest of a bundle
+# reconciles through.
+#
+# It is the sibling of examples/packages/app-fluxcd, and it exists because the two engines are not
+# the same shape. Argo CD runs argocd-application-controller as a StatefulSet and everything else
+# as Deployments, it installs into argocd rather than flux-system, and its manifests carry no
+# version label at all -- three differences that the PackagePrerequisites format has to survive if
+# "which GitOps engine" is a property of a cluster rather than an assumption of this collection.
+# docs/guides/package-prerequisites.md walks through what each part is for.
+#
+# Like app-fluxcd, three parts of this file are machine-maintained by `mage examples:vendor` and
+# `mage examples:images`. Do not edit them by hand:
+#
+#   - metadata.version, which is the pinned upstream tag in resources.json
+#   - the upstream/ manifest trees each component's kustomization points at
+#   - each component's images: list, discovered by `zarf dev find-images`
+#
+# One thing differs from app-fluxcd in how it is vendored. Flux attaches manifests.tar.gz to each
+# release; Argo CD attaches only CLI binaries and SBOMs, and its release notes tell you to apply
+# raw.githubusercontent.com/argoproj/argo-cd/<tag>/manifests/install.yaml -- a path in the tagged
+# source tree. resources.json says `tree` instead of `asset` for that reason.
+kind: ZarfPackageConfig
+metadata:
+  name: app-argocd
+  # The upstream release this package is: the pin lives in resources.json, and examples:vendor
+  # writes it here.
+  version: v3.5.5
+  description: Argo CD from the upstream manifests, as the GitOps engine a bundle reconciles through
+  source: https://github.com/colonel-byte/ansible-collection-zarf
+  annotations:
+    # Readable from `zarf package inspect definition` alone, for a consumer that only needs to
+    # order a bundle. docs/prerequisites.yaml is the source of truth and the prerequisites role
+    # reads that rather than these.
+    colonel-byte.dev/provides-capability: argocd-engine
+    colonel-byte.dev/delivery-mode: upstream-manifests
+
+documentation:
+  prerequisites: docs/prerequisites.yaml
+  schema: ../../../schema/zarf-v1alpha1-package-prerequisites-schema.json
+  readme: README.md
+
+components:
+  # The CRDs, separately and first. Argo CD's install.yaml bundles them with the workloads, and
+  # this package takes them from manifests/crds/ instead so that the two can be ordered: a cluster
+  # whose Application CRD is not established yet cannot hold the Applications a downstream package
+  # deploys, and a bundle that installs both in one component has no way to wait in between.
+  #
+  # They are most of the package by size. Argo CD's applicationset-crd.yaml alone is 1.4 MB of
+  # OpenAPI schema, which is what a CRD with a fully specified spec costs.
+  - name: argocd-crds
+    required: true
+    description: The Application, ApplicationSet and AppProject CRDs
+    manifests:
+      - name: argocd-crds
+        namespace: argocd
+        kustomizations:
+          - upstream/crds
+
+  # The controllers themselves. namespace-install.yaml rather than install.yaml: the two differ
+  # only in that install.yaml also carries the CRDs above, and vendoring them twice would put two
+  # copies of 1.8 MB in the package.
+  - name: argocd-core
+    required: true
+    description: The application, applicationset, notifications and repo-server controllers, with their RBAC
+    manifests:
+      - name: argocd
+        namespace: argocd
+        kustomizations:
+          - upstream/core
+    # Written by `mage examples:images` from `zarf dev find-images`. Do not edit by hand.
+    images:
+      - ghcr.io/dexidp/dex:v2.45.1
+      - public.ecr.aws/docker/library/redis:8.2.3-alpine
+      - quay.io/argoproj/argocd:v3.5.5

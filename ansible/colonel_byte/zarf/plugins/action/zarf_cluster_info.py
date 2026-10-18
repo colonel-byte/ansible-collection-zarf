@@ -50,10 +50,10 @@ DOCUMENTATION = r"""
 module: zarf_cluster_info
 short_description: Report the cluster facts a package's prerequisites are checked against
 description:
-  - "Reads the cluster through C(zarf tools kubectl) and returns the facts a C(colonel-byte.dev/v1alpha1) C(PackagePrerequisites) document can require: the Kubernetes version, the established CRDs, the StorageClasses, and the readiness of every Deployment."
+  - "Reads the cluster through C(zarf tools kubectl) and returns the facts a C(colonel-byte.dev/v1alpha1) C(PackagePrerequisites) document can require: the Kubernetes version, the established CRDs, the StorageClasses, and the readiness of every Deployment and StatefulSet."
   - "Needs no C(kubernetes.core): everything is read through the C(zarf) binary this collection already requires, which carries its own kubectl. The management node is typically air-gapped, and a second collection to stage onto it is a cost every consumer would pay."
   - "The answers are digested rather than returned whole. C(crds) is a list of names, not of objects: a cluster with two hundred CRDs answers with megabytes of schemas that no prerequisite check reads."
-  - "Runs four kubectl queries. The first one to fail fails the task, and C(query) names which it was."
+  - "Runs five kubectl queries. The first one to fail fails the task, and C(query) names which it was."
   - "Runs on the node the task is delegated to (typically localhost), reaching the cluster through a kubeconfig."
 version_added: "0.33.0"
 author:
@@ -62,7 +62,8 @@ notes:
   - "Set C(run_once: true) and C(delegate_to: localhost) on the task."
   - "The module runs in check mode and reports C(changed: false), because reading a cluster changes nothing."
   - "C(requires.storage.accessModes) in a prerequisites document is not reported here and cannot be: what a provisioner will actually bind is not discoverable without creating a PersistentVolumeClaim, which is not a thing a read-only module does. The C(prerequisites) role skips that check and says so."
-  - "C(deployments) covers every namespace. A cluster running hundreds of Deployments returns hundreds of entries, each of five fields."
+  - "C(deployments) and C(statefulsets) cover every namespace, and carry the same five fields each. A cluster running hundreds of workloads returns hundreds of entries."
+  - "StatefulSets are reported separately because a GitOps engine is not all Deployments. Argo CD runs C(argocd-application-controller) as a StatefulSet and the rest of itself as Deployments, so a check that read only C(deployments) would report the component doing all of the reconciling as absent from a healthy cluster."
 options:
   kubeconfig:
     description:
@@ -101,6 +102,14 @@ EXAMPLES = r"""
         | selectattr('available', 'ge', 1) | list | length > 0
     fail_msg: no available helm-controller, so a HelmRelease would never be reconciled
 
+- name: Require an available argocd-application-controller, which is a StatefulSet
+  ansible.builtin.assert:
+    that:
+      - cluster.statefulsets | selectattr('namespace', 'equalto', 'argocd')
+        | selectattr('name', 'equalto', 'argocd-application-controller')
+        | selectattr('available', 'ge', 1) | list | length > 0
+    fail_msg: no available argocd-application-controller, so an Application would never be reconciled
+
 - name: Report what is there
   ansible.builtin.debug:
     msg:
@@ -116,6 +125,7 @@ QUERY_VERSION = "version"
 QUERY_CRDS = "crds"
 QUERY_STORAGE_CLASSES = "storage_classes"
 QUERY_DEPLOYMENTS = "deployments"
+QUERY_STATEFULSETS = "statefulsets"
 
 # The annotation marking a StorageClass as the cluster's default, and the one older provisioners
 # still set. Both are checked: a cluster installed years ago may carry only the beta spelling, and
@@ -125,9 +135,13 @@ DEFAULT_CLASS_ANNOTATIONS = (
     "storageclass.beta.kubernetes.io/is-default-class",
 )
 
-# The label a Flux controller -- and most charts following the Kubernetes recommended labels --
-# records its version under. It is how a Deployment's version is reported without asking the
-# registry what tag its image resolves to.
+# The label a GitOps engine's workloads -- and most charts following the Kubernetes recommended
+# labels -- record their version under. It is how a workload's version is reported without asking
+# the registry what tag its image resolves to.
+#
+# Neither Flux's nor Argo CD's upstream manifests set it; `flux install` adds it, and a package
+# that vendors either has to add it too. A workload without it reports an empty version, which the
+# prerequisites role names as unchecked rather than treating as a failed comparison.
 VERSION_LABEL = "app.kubernetes.io/version"
 
 # A Kubernetes gitVersion, reduced to the three numbers Ansible's version test compares. The
@@ -170,6 +184,13 @@ def command_parts_all(params):
         (QUERY_CRDS, kubectl + ["get", "customresourcedefinitions.apiextensions.k8s.io", "-o", "name"]),
         (QUERY_STORAGE_CLASSES, kubectl + ["get", "storageclasses.storage.k8s.io", "-o", "json"]),
         (QUERY_DEPLOYMENTS, kubectl + ["get", "deployments.apps", "--all-namespaces", "-o", "json"]),
+        # StatefulSets are a query of their own rather than a `get deploy,sts` that would save a
+        # round trip, because the two answer with one List each and merging them would mean
+        # telling them apart by a field kubectl omits from an item inside a List. Argo CD's
+        # argocd-application-controller is a StatefulSet while the rest of Argo CD is Deployments,
+        # so a role that looked only at Deployments would report the component that does all the
+        # reconciling as absent from a perfectly healthy cluster.
+        (QUERY_STATEFULSETS, kubectl + ["get", "statefulsets.apps", "--all-namespaces", "-o", "json"]),
     ]
 
 
@@ -224,8 +245,12 @@ def parse_storage_classes(stdout):
     return sorted(classes, key=lambda entry: entry["name"])
 
 
-def parse_deployments(stdout):
-    """Return each Deployment digested to what a controller requirement is checked against.
+def parse_workloads(stdout):
+    """Return each workload digested to what a controller requirement is checked against.
+
+    One function for Deployments and StatefulSets, because the three fields a requirement is
+    checked against -- availableReplicas, readyReplicas and the version label -- are spelled the
+    same on both. What differs is only which query the document came from, which the caller knows.
 
     `available` is availableReplicas rather than readyReplicas, because availability is what a
     minAvailable requirement means: a replica that is ready but not yet available is one that
@@ -236,13 +261,13 @@ def parse_deployments(stdout):
     missing key and a zero are the same fact and the result should not make a playbook handle them
     as two.
     """
-    deployments = []
+    workloads = []
     for item in json.loads(stdout).get("items") or []:
         metadata = item.get("metadata") or {}
         status = item.get("status") or {}
         spec = item.get("spec") or {}
         labels = metadata.get("labels") or {}
-        deployments.append(
+        workloads.append(
             {
                 "name": metadata.get("name", ""),
                 "namespace": metadata.get("namespace", ""),
@@ -255,7 +280,7 @@ def parse_deployments(stdout):
                 "version": str(labels.get(VERSION_LABEL, "")),
             }
         )
-    return sorted(deployments, key=lambda entry: (entry["namespace"], entry["name"]))
+    return sorted(workloads, key=lambda entry: (entry["namespace"], entry["name"]))
 
 
 class ActionModule(ZarfInfoActionBase):
@@ -271,7 +296,8 @@ class ActionModule(ZarfInfoActionBase):
             reported, semver = parse_version(outputs[QUERY_VERSION])
             crds = parse_crd_names(outputs[QUERY_CRDS])
             storage_classes = parse_storage_classes(outputs[QUERY_STORAGE_CLASSES])
-            deployments = parse_deployments(outputs[QUERY_DEPLOYMENTS])
+            deployments = parse_workloads(outputs[QUERY_DEPLOYMENTS])
+            statefulsets = parse_workloads(outputs[QUERY_STATEFULSETS])
         except (ValueError, TypeError) as exc:
             # ValueError covers json.JSONDecodeError, which is a subclass of it.
             result["failed"] = True
@@ -290,9 +316,13 @@ class ActionModule(ZarfInfoActionBase):
         result["storage_classes"] = storage_classes
         result["default_storage_class"] = defaults[0] if defaults else ""
         result["deployments"] = deployments
-        result["msg"] = "cluster is %s with %d CRDs, %d storage classes and %d deployments" % (
-            reported or "of an unreported version",
-            len(crds),
-            len(storage_classes),
-            len(deployments),
+        result["statefulsets"] = statefulsets
+        result["msg"] = (
+            "cluster is %s with %d CRDs, %d storage classes, %d deployments and %d statefulsets" % (
+                reported or "of an unreported version",
+                len(crds),
+                len(storage_classes),
+                len(deployments),
+                len(statefulsets),
+            )
         )

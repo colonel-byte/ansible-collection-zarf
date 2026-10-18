@@ -18,18 +18,19 @@ metadata:
 requires:
   kubernetes:
     version: ">=1.30.0"
-  fluxcd:
+  gitops:
+    engine: fluxcd
     version: ">=2.9.0"
-    controllers:
-      - name: source-controller
-        namespace: flux-system
-        minAvailable: 1
-      - name: helm-controller
-        namespace: flux-system
-        minAvailable: 1
-    crds:
-      - helmreleases.helm.toolkit.fluxcd.io
-      - ocirepositories.source.toolkit.fluxcd.io
+  controllers:
+    - name: source-controller
+      namespace: flux-system
+      minAvailable: 1
+    - name: helm-controller
+      namespace: flux-system
+      minAvailable: 1
+  crds:
+    - helmreleases.helm.toolkit.fluxcd.io
+    - ocirepositories.source.toolkit.fluxcd.io
   packages:
     - name: app-fluxcd
       version: ">=2.9.0"

@@ -25,7 +25,9 @@ The format's full reference -- every section and why each is shaped the way it i
 | `metadata`            | yes      | The package's name and version, and a sentence for a human.                        |
 | `requires`            | yes      | What the cluster must already be.                                                  |
 | `requires.kubernetes` | no       | A SemVer constraint on the API server's version.                                   |
-| `requires.fluxcd`     | no       | A Flux version, the controller Deployments that must be available, and the CRDs.   |
+| `requires.gitops`     | no       | Which GitOps engine the cluster runs (`fluxcd` or `argocd`), and a SemVer constraint on it. |
+| `requires.controllers` | no      | The workloads that must be present and available, by name, namespace and kind.     |
+| `requires.crds`       | no       | The CustomResourceDefinitions that must be established.                            |
 | `requires.storage`    | no       | A default StorageClass, named StorageClasses, and the access modes claims ask for. |
 | `requires.packages`   | no       | Other Zarf packages that must be deployed first, with SemVer constraints.          |
 | `provides`            | no       | The capabilities, CRDs and namespaces this package contributes to the cluster.     |
@@ -45,18 +47,19 @@ metadata:
 requires:
   kubernetes:
     version: ">=1.30.0"
-  fluxcd:
+  gitops:
+    engine: fluxcd
     version: ">=2.9.0"
-    controllers:
-      - name: source-controller
-        namespace: flux-system
-        minAvailable: 1
-      - name: helm-controller
-        namespace: flux-system
-        minAvailable: 1
-    crds:
-      - helmreleases.helm.toolkit.fluxcd.io
-      - ocirepositories.source.toolkit.fluxcd.io
+  controllers:
+    - name: source-controller
+      namespace: flux-system
+      minAvailable: 1
+    - name: helm-controller
+      namespace: flux-system
+      minAvailable: 1
+  crds:
+    - helmreleases.helm.toolkit.fluxcd.io
+    - ocirepositories.source.toolkit.fluxcd.io
   packages:
     - name: app-fluxcd
       version: ">=2.9.0"
@@ -120,6 +123,8 @@ Deploying a bundle in order means checking inside the loop, not ahead of it: the
 
 - **`apiVersion` and `kind` must be exact.** `colonel-byte.dev/v1alpha1` and `PackagePrerequisites`. A file under the `prerequisites` key that says anything else is returned as plain text and never surfaces as a document -- deliberately, because a prose file returned as a document would hand the role a mapping with no `requires`.
 - **`metadata.package` must match the package's `metadata.name`.** The document travels on its own, so one copied from a neighbouring package and not fully edited would otherwise be checked against a cluster and pass while describing something else.
+- **Name the engine when the controllers do not name their namespaces.** `requires.gitops.engine` is `fluxcd` or `argocd`, and it decides the namespace a controller requirement that names none is checked in -- `flux-system` or `argocd`. An engine the role does not know is reported as unchecked rather than guessed at.
+- **Argo CD's `argocd-application-controller` is a `StatefulSet`.** Set `kind: StatefulSet` on it. The default is `Deployment`, which is right for every Flux controller and for the rest of Argo CD, and a requirement that leaves it wrong reports a healthy controller as absent.
 - **One comparator and one version.** `>=2.9.0` is evaluated; `>=1.30.0 <1.34.0` is not, and lands in `zarf_prerequisites_skipped`. Jinja is not a semver library, and a half-parsed range would check its first half and pass.
 - **`requires.storage.accessModes` cannot be checked** -- what a provisioner will actually bind is not discoverable without creating a `PersistentVolumeClaim`. It is reported as skipped, never as satisfied.
 - **The Flux version is the flux2 release, not a controller's.** It is read from the `app.kubernetes.io/version` label on the controller Deployments. A package whose manifests are vendored from upstream has to stamp that label itself -- upstream's carry no version anywhere -- or the constraint is reported as unchecked.

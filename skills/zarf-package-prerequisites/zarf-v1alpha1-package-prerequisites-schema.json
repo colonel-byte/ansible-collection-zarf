@@ -30,16 +30,28 @@
       "properties": {
         "name": {
           "type": "string",
-          "description": "Name is the Deployment's name.",
+          "description": "Name is the workload's name.",
           "examples": [
             "source-controller",
-            "helm-controller"
+            "argocd-application-controller"
           ]
         },
         "namespace": {
           "type": "string",
-          "description": "Namespace is the namespace it is deployed into.",
-          "default": "flux-system"
+          "description": "Namespace is the namespace it is deployed into. A requirement that names none is checked in\nthe engine's own default namespace: flux-system for fluxcd, argocd for argocd.",
+          "examples": [
+            "flux-system",
+            "argocd"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "Deployment",
+            "StatefulSet"
+          ],
+          "description": "Kind is the workload's kind.",
+          "default": "Deployment"
         },
         "minAvailable": {
           "type": "integer",
@@ -53,39 +65,33 @@
       "required": [
         "name"
       ],
-      "description": "ControllerRequirement is one controller Deployment that must be present and available."
+      "description": "ControllerRequirement is one workload that must be present and available."
     },
-    "FluxCDRequirement": {
+    "GitOpsRequirement": {
       "properties": {
+        "engine": {
+          "type": "string",
+          "enum": [
+            "fluxcd",
+            "argocd"
+          ],
+          "description": "Engine is which GitOps engine the cluster must be running."
+        },
         "version": {
           "type": "string",
-          "description": "Version is a SemVer range the installed Flux version must satisfy.",
+          "description": "Version is a SemVer range the installed engine's version must satisfy.\n\nIt is read from the app.kubernetes.io/version label on the engine's own workloads, and\nneither Flux's nor Argo CD's upstream manifests carry that label -- a package that vendors\nthem has to add it. A cluster whose engine carries no version label has the constraint\nreported as unchecked rather than satisfied.",
           "examples": [
-            "\u003e=2.9.0"
+            "\u003e=2.9.0",
+            "\u003e=3.5.0"
           ]
-        },
-        "controllers": {
-          "items": {
-            "$ref": "#/$defs/ControllerRequirement"
-          },
-          "type": "array",
-          "description": "Controllers are the controller Deployments that must be present and available."
-        },
-        "crds": {
-          "items": {
-            "type": "string",
-            "examples": [
-              "helmreleases.helm.toolkit.fluxcd.io",
-              "ocirepositories.source.toolkit.fluxcd.io"
-            ]
-          },
-          "type": "array",
-          "description": "CRDs are the custom resource definitions that must be established on the cluster."
         }
       },
       "additionalProperties": false,
       "type": "object",
-      "description": "FluxCDRequirement requires a GitOps engine that is installed, running, and new enough."
+      "required": [
+        "engine"
+      ],
+      "description": "GitOpsRequirement requires a GitOps engine that is installed and new enough."
     },
     "KubernetesRequirement": {
       "properties": {
@@ -194,9 +200,27 @@
           "$ref": "#/$defs/KubernetesRequirement",
           "description": "Kubernetes constrains the cluster's own version."
         },
-        "fluxcd": {
-          "$ref": "#/$defs/FluxCDRequirement",
-          "description": "FluxCD requires a GitOps engine that is installed, running, and new enough."
+        "gitops": {
+          "$ref": "#/$defs/GitOpsRequirement",
+          "description": "GitOps requires a GitOps engine that is installed and new enough."
+        },
+        "controllers": {
+          "items": {
+            "$ref": "#/$defs/ControllerRequirement"
+          },
+          "type": "array",
+          "description": "Controllers are the workloads that must be present and available."
+        },
+        "crds": {
+          "items": {
+            "type": "string",
+            "examples": [
+              "helmreleases.helm.toolkit.fluxcd.io",
+              "applications.argoproj.io"
+            ]
+          },
+          "type": "array",
+          "description": "CRDs are the custom resource definitions that must be established on the cluster."
         },
         "storage": {
           "$ref": "#/$defs/StorageRequirement",

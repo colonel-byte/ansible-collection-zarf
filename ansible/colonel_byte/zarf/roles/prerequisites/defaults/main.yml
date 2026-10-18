@@ -46,3 +46,15 @@ zarf_quiet: true
 
 # The node zarf runs on. Defaults to localhost.
 zarf_delegate_to: localhost
+
+# Where each GitOps engine installs itself, which is the namespace a controller requirement that
+# names none is checked in.
+#
+# It is a variable rather than a literal because the default is a convention, not a rule: Flux can
+# be installed outside flux-system and Argo CD outside argocd, and a fleet that does so would
+# otherwise have to repeat the namespace on every controller of every document. An engine not
+# named here is reported in zarf_prerequisites_skipped rather than guessed at, so adding a third
+# engine is this mapping plus whatever adds its version label.
+zarf_engine_namespaces:
+  fluxcd: flux-system
+  argocd: argocd

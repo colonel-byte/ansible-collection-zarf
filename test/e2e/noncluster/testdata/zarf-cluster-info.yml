@@ -2,7 +2,7 @@
 # What colonel_byte.zarf.zarf_cluster_info reports, and that it keeps four answers apart.
 #
 # The module's only impure step is running zarf, so testdata/zarf-cluster-stub.sh stands in for it
-# and answers each of the four kubectl queries from a recorded document. The stub reads its
+# and answers each of the five kubectl queries from a recorded document. The stub reads its
 # arguments, which the other stubs in this directory do not: what is under test here is partly that
 # the module asked four different questions and did not mix up the answers.
 #
@@ -40,7 +40,7 @@
     - name: The CRDs come back as bare names, sorted
       ansible.builtin.assert:
         that:
-          - "cluster.crds == ['helmreleases.helm.toolkit.fluxcd.io', 'kustomizations.kustomize.toolkit.fluxcd.io', 'ocirepositories.source.toolkit.fluxcd.io']"
+          - "cluster.crds == ['applications.argoproj.io', 'appprojects.argoproj.io', 'helmreleases.helm.toolkit.fluxcd.io', 'kustomizations.kustomize.toolkit.fluxcd.io', 'ocirepositories.source.toolkit.fluxcd.io']"
         success_msg: ASSERTED the CRDs are reported as the names a document lists
         fail_msg: the CRDs are not the names the fixture holds
 
@@ -61,7 +61,7 @@
       # to reconcile, and it is about to be restarted by its own rollout.
       ansible.builtin.assert:
         that:
-          - "(cluster.deployments | map(attribute='name') | list) == ['helm-controller', 'source-controller', 'kustomize-controller', 'coredns']"
+          - "(cluster.deployments | map(attribute='name') | list) == ['argocd-server', 'helm-controller', 'source-controller', 'kustomize-controller', 'coredns']"
           - (cluster.deployments | selectattr('name', 'equalto', 'source-controller') | first).available == 1
           - (cluster.deployments | selectattr('name', 'equalto', 'source-controller') | first).version == 'v2.9.5'
           - (cluster.deployments | selectattr('name', 'equalto', 'helm-controller') | first).ready == 1
@@ -69,6 +69,23 @@
           - (cluster.deployments | selectattr('name', 'equalto', 'coredns') | first).version == ''
         success_msg: ASSERTED the Deployments are digested, and available is not ready
         fail_msg: the Deployments are not what the fixture holds
+
+    - name: The StatefulSets are reported separately, with the same five fields
+      # The reason the module runs a fifth query. Argo CD's argocd-application-controller is a
+      # StatefulSet and the rest of Argo CD is Deployments, so a module that read only Deployments
+      # would report the component doing all of the reconciling as absent from a healthy cluster.
+      ansible.builtin.assert:
+        that:
+          - "(cluster.statefulsets | map(attribute='name') | list) == ['argocd-application-controller', 'source-controller']"
+          - (cluster.statefulsets | selectattr('name', 'equalto', 'argocd-application-controller') | first).namespace == 'argocd'
+          - (cluster.statefulsets | selectattr('name', 'equalto', 'argocd-application-controller') | first).available == 1
+          - (cluster.statefulsets | selectattr('name', 'equalto', 'argocd-application-controller') | first).version == 'v3.5.5'
+          # A StatefulSet of the same name as a Deployment elsewhere is a different workload, and
+          # the two lists are what keeps them from being confused for one another.
+          - (cluster.statefulsets | selectattr('name', 'equalto', 'source-controller') | first).available == 0
+          - "'statefulsets' in cluster.msg"
+        success_msg: ASSERTED the StatefulSets are reported beside the Deployments
+        fail_msg: the StatefulSets are not what the fixture holds
 
     - name: A query the stub does not serve fails the task and names which one
       # The module runs four commands and the first non-zero exit fails the task. What is under test
