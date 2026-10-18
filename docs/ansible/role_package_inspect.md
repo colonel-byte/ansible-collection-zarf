@@ -12,7 +12,9 @@ Runs `zarf package inspect definition` against a package source and parses the Y
 
 A `zarf_public_key` with no `zarf_verify` requires a signature, which is stricter than the module's own default. See `zarf_verify`.
 
-Sets the `zarf_package_definition`, `zarf_package_name`, `zarf_package_version`, and `zarf_package_flavor` facts.
+Sets the `zarf_package_definition`, `zarf_package_name`, `zarf_package_version`, `zarf_package_flavor`, and `zarf_package_documentation` facts.
+
+`zarf_package_documentation` is the package's `documentation:` mapping: documentation keys to paths inside the package's own source tree. It is empty for a package that declares none.
 
 Every task carries `run_once: true` and delegates to `zarf_delegate_to`.
 

@@ -43,6 +43,10 @@ Runs on the node the task is delegated to (typically localhost).
   run_once: true
   register: pkg_inspect
 
+- name: Report the documentation the package carries
+  ansible.builtin.debug:
+    msg: "the package declares {{ pkg_inspect.package_documentation.keys() | list | join(', ') or 'no documentation' }}"
+
 - name: Display package version and flavor
   ansible.builtin.debug:
     msg:
