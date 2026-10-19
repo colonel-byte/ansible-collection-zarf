@@ -10,17 +10,42 @@ The proof began in [colonel-byte/cargoship](https://github.com/colonel-byte/carg
 
 ## Modules
 
-| Module                 | What it does                                                                | How it is built                   |
-| ---------------------- | --------------------------------------------------------------------------- | --------------------------------- |
-| `zarf_init`            | `zarf init` against the cluster in a kubeconfig                             | Wrapper binary, from `cmd/init`   |
-| `zarf_package_deploy`  | `zarf package deploy`                                                       | Wrapper binary, from `cmd/deploy` |
-| `zarf_package_info`    | Lists the packages deployed to a cluster                                    | Action plugin                     |
-| `zarf_package_inspect` | Reads and verifies a package without deploying it                           | Action plugin                     |
-| `zarf_state_info`      | Reads the `zarf-state` Secret, withholding its eight credentials by default | Action plugin                     |
+| Module                       | What it does                                                                   | How it is built                   |
+| ---------------------------- | ------------------------------------------------------------------------------ | --------------------------------- |
+| `zarf_init`                  | `zarf init` against the cluster in a kubeconfig                                | Wrapper binary, from `cmd/init`   |
+| `zarf_package_deploy`        | `zarf package deploy`                                                          | Wrapper binary, from `cmd/deploy` |
+| `zarf_cluster_info`          | Reports the cluster's Kubernetes version, CRDs, StorageClasses and Deployments | Action plugin                     |
+| `zarf_package_documentation` | Extracts the files a package carries in its `documentation:` mapping           | Action plugin                     |
+| `zarf_package_info`          | Lists the packages deployed to a cluster                                       | Action plugin                     |
+| `zarf_package_inspect`       | Reads and verifies a package without deploying it                              | Action plugin                     |
+| `zarf_state_info`            | Reads the `zarf-state` Secret, withholding its eight credentials by default    | Action plugin                     |
 
-The first two converge a cluster and are the proof. The last three read one, are not part of the proof, and are plain action plugins with no binary behind them -- [choice-zarf-info-modules](agent/choice-zarf-info-modules.md) records why, and why `zarf_state_info` redacts.
+The first two converge a cluster and are the proof. The other five read one, are not part of the proof, and are plain action plugins with no binary behind them -- [choice-zarf-info-modules](agent/choice-zarf-info-modules.md) records why, and why `zarf_state_info` redacts.
 
-Each read-only module has a role apiece: `packages`, `package_inspect` and `state`.
+There are four roles: `packages`, `package_inspect` and `state` wrap a read-only module apiece, and [`prerequisites`](ansible/role_prerequisites.md) refuses to deploy a package onto a cluster that cannot run it.
+
+## Package prerequisites
+
+A package can state what it needs of a cluster in a machine-readable document carried inside the package itself, and a deployment can refuse to proceed when the cluster does not satisfy it. That is the second thing in this repository: a `colonel-byte.dev/v1alpha1` `PackagePrerequisites` format, a [generated JSON Schema](https://github.com/colonel-byte/ansible-collection-zarf/blob/main/schema/zarf-v1alpha1-package-prerequisites-schema.json), and the modules and role that read one.
+
+It exists for a failure that reports itself as a success. A workload package delivered as a `HelmRelease` needs a running `helm-controller` to do anything at all; deploy it onto a cluster without one and zarf applies the manifests, the API server accepts them, `zarf package deploy` reports a successful deployment, and nothing is ever reconciled.
+
+```yaml
+- name: Refuse to deploy onto a cluster that cannot run this package
+  ansible.builtin.include_role:
+    name: colonel_byte.zarf.prerequisites
+  vars:
+    zarf_package: /srv/staging/zarf-package-operator-external-secrets-amd64-2.12.0.tar.zst
+    zarf_public_key: /etc/zarf/colonel-byte-zarf-packages.pub
+    zarf_kubeconfig: /etc/rancher/rke2/rke2.yaml
+
+- name: Report what could not be checked
+  ansible.builtin.debug:
+    msg: "{{ zarf_prerequisites_skipped }}"
+  when: zarf_prerequisites_skipped | length > 0
+```
+
+The cluster is read through `zarf tools kubectl`, so this needs no `kubernetes.core` -- the management node is typically air-gapped, and a second Galaxy collection to stage onto it is a cost every consumer would pay. [The guide](guides/package-prerequisites.md) is the format and what reads it; [`examples/packages`](https://github.com/colonel-byte/ansible-collection-zarf/tree/main/examples/packages) holds three reference packages that declare one: a GitOps engine from each of Flux and Argo CD, and a workload that requires one.
 
 ## Installing
 
@@ -102,9 +127,11 @@ go run ./magefiles/core test:unit                # everything but the e2e suites
 go run ./magefiles/core test:endToEndNonCluster  # needs ansible-playbook; no cluster
 go run ./magefiles/core test:endToEndCluster     # needs k3d, zarf, Docker and the network
 go run ./magefiles/core generate:document        # regenerate docs/ansible, docs/golang, docs/index.md, docs/SUMMARY.md
+go run ./magefiles/core generate:schema          # regenerate schema/ from the Go types in api/
+go run ./magefiles/core examples:lint            # zarf dev lint over the reference packages
 ```
 
-The unit tests are where the collection and the Go code are held against each other: `TestActionPluginDocsMatchModuleParams` holds each action plugin's `DOCUMENTATION` block against the Go parameter struct, `TestInfoPluginDocsMatchRenderedFlags` does the same for the read-only modules against the flags their `command_parts` functions name, and `TestEveryActionPluginIsCovered` fails on a plugin that neither test looks at. `TestInitArgsAreKnownFlags` holds every flag the wrappers can render against a recorded list; refresh it with `generate:zarfFlags` when the zarf they run moves.
+The unit tests are where the collection and the Go code are held against each other: `TestActionPluginDocsMatchModuleParams` holds each action plugin's `DOCUMENTATION` block against the Go parameter struct, `TestInfoPluginDocsMatchRenderedFlags` does the same for the read-only modules against the flags their `command_parts` functions name, and `TestEveryActionPluginIsCovered` fails on a plugin that neither test looks at. `TestInitArgsAreKnownFlags` holds every flag the wrappers can render against a recorded list; refresh it with `generate:zarfFlags` when the zarf they run moves. On the prerequisites side, `TestCommittedSchemasAreCurrent` fails when a committed schema stops matching the Go type it is reflected from, and `TestExampleDocumentsMatchTheTypes` decodes each reference package's document into those types with unknown fields rejected.
 
 ## Known limits of the proof
 

@@ -1,6 +1,6 @@
 # Working in this repository
 
-This repository is the `colonel_byte.zarf` Ansible collection: a working proof of [ZEP-0072](https://github.com/zarf-dev/proposals/pull/73), which proposes native Ansible module support for [zarf](https://zarf.dev). Two modules converge a cluster -- `zarf_init` and `zarf_package_deploy` -- and three read one. See [`README.md`](README.md) for the pitch, [`docs/guides/zarf-ansible-module.md`](docs/guides/zarf-ansible-module.md) for the user guide, and [`docs/agent/choice-zarf-ansible-module.md`](docs/agent/choice-zarf-ansible-module.md) for the one place the proof deliberately diverges from the proposal.
+This repository is the `colonel_byte.zarf` Ansible collection: a working proof of [ZEP-0072](https://github.com/zarf-dev/proposals/pull/73), which proposes native Ansible module support for [zarf](https://zarf.dev). Two modules converge a cluster -- `zarf_init` and `zarf_package_deploy` -- and five read one. See [`README.md`](README.md) for the pitch, [`docs/guides/zarf-ansible-module.md`](docs/guides/zarf-ansible-module.md) for the user guide, and [`docs/agent/choice-zarf-ansible-module.md`](docs/agent/choice-zarf-ansible-module.md) for the one place the proof deliberately diverges from the proposal.
 
 The proof began in [colonel-byte/cargoship](https://github.com/colonel-byte/cargoship), beside the `colonel_byte.cargoship` collection whose shape it copies, and moved here once it had outgrown being a guest there. Several conventions in this tree -- the mage layout, the doc generators, the `AGENTS.md` habit itself -- arrived with it.
 
@@ -8,20 +8,24 @@ Nothing here runs on the cluster's nodes. The modules run the installed `zarf` o
 
 ## Layout
 
-| Path                          | What lives there                                                                                                                                           |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cmd/init/`, `cmd/deploy/`    | A `main` package per wrapper binary. Both are thirty-line entry points; everything they do is in `internal/zarfmod`                                        |
-| `internal/zarfmod/`           | The module logic: `argv[0]` dispatch, the WANT_JSON intake, the command-line rendering, the progress reader, the stdout guard, the heartbeat, the response |
-| `internal/testenv/`           | Scaffolding the end-to-end suites share: the repo-root chdir, the per-run `TMPDIR`, and waiting on a cluster                                                                     |
-| `ansible/colonel_byte/zarf/`  | The collection: action plugins, the shared Python, roles. See [`ansible/colonel_byte/zarf/AGENTS.md`](ansible/colonel_byte/zarf/AGENTS.md)                 |
-| `ansible/examples/playbooks/` | Runnable example playbooks                                                                                                                                 |
-| `test/e2e/noncluster/`        | The suite that needs no cluster: the read-only modules and the state redaction, against a stub zarf                                                        |
-| `test/e2e/cluster/`           | The suite that needs k3d, zarf and Docker: both wrappers walked across two real clusters                                                                   |
-| `magefiles/`                  | The task runner's source: build, test and generate targets. See [`magefiles/AGENTS.md`](magefiles/AGENTS.md)                                               |
-| `docs/`                       | The mdBook source. Several subpaths are generated and must not be hand-edited -- see [`docs/AGENTS.md`](docs/AGENTS.md)                                    |
-| `docs/workflows/`             | One page per file under `.github/workflows/`, named after it with a `.md` extension -- required by [`.github/AGENTS.md`](.github/AGENTS.md)                |
-| `docs/agent/choice-*.md`      | Records of non-obvious decisions and the tradeoffs behind them -- read before reversing one                                                                |
-| `containers/ansible/`         | The management node image: `ansible-core`, the collection, both module files and a `zarf`. Its build asserts the dispatch contract                         |
+| Path                          | What lives there                                                                                                                                                                                |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api/colonel-byte.dev/`       | The `colonel-byte.dev/v1alpha1` `PackagePrerequisites` Go types, which the published JSON Schema is reflected from                                                                              |
+| `cmd/init/`, `cmd/deploy/`    | A `main` package per wrapper binary. Both are thirty-line entry points; everything they do is in `internal/zarfmod`                                                                             |
+| `internal/zarfmod/`           | The module logic: `argv[0]` dispatch, the WANT_JSON intake, the command-line rendering, the progress reader, the stdout guard, the heartbeat, the response                                      |
+| `internal/testenv/`           | Scaffolding the end-to-end suites share: the repo-root chdir, the per-run `TMPDIR`, and waiting on a cluster                                                                                                          |
+| `ansible/colonel_byte/zarf/`  | The collection: action plugins, the shared Python, roles. See [`ansible/colonel_byte/zarf/AGENTS.md`](ansible/colonel_byte/zarf/AGENTS.md)                                                      |
+| `ansible/examples/playbooks/` | Runnable example playbooks                                                                                                                                                                      |
+| `test/e2e/noncluster/`        | The suite that needs no cluster: the read-only modules and the state redaction, against a stub zarf                                                                                             |
+| `test/e2e/cluster/`           | The suite that needs k3d, zarf and Docker: both wrappers walked across two real clusters                                                                                                        |
+| `magefiles/`                  | The task runner's source: build, test and generate targets. See [`magefiles/AGENTS.md`](magefiles/AGENTS.md)                                                                                    |
+| `docs/`                       | The mdBook source. Several subpaths are generated and must not be hand-edited -- see [`docs/AGENTS.md`](docs/AGENTS.md)                                                                         |
+| `docs/workflows/`             | One page per file under `.github/workflows/`, named after it with a `.md` extension -- required by [`.github/AGENTS.md`](.github/AGENTS.md)                                                     |
+| `docs/agent/choice-*.md`      | Records of non-obvious decisions and the tradeoffs behind them -- read before reversing one                                                                                                     |
+| `containers/ansible/`         | The management node image: `ansible-core`, the collection, both module files and a `zarf`. Its build asserts the dispatch contract                                                              |
+| `schema/`                     | The generated JSON Schemas, written by `generate:schema` and committed because other repositories reference them                                                                                |
+| `examples/packages/`          | Reference Zarf packages declaring their cluster prerequisites. Read, linted and inspected; nothing builds one                                                                                   |
+| `skills/`                     | Skills for the two authoring tasks this repository is about: writing a Zarf package, and declaring its prerequisites. Connected-side authoring only. See [`skills/AGENTS.md`](skills/AGENTS.md) |
 
 Several directories carry their own `AGENTS.md` with rules specific to that directory. Check the closest one before editing. Keep this table in sync when adding or removing one.
 
@@ -30,11 +34,22 @@ Several directories carry their own `AGENTS.md` with rules specific to that dire
 | [`ansible/AGENTS.md`](ansible/AGENTS.md)                                     | Markdown and table formatting rules that feed generated docs                                                                             |
 | [`ansible/colonel_byte/zarf/AGENTS.md`](ansible/colonel_byte/zarf/AGENTS.md) | The collection's contract: the two kinds of module, the `cli_flag` key, quoting every description, the test lists a new plugin must join |
 | [`docs/AGENTS.md`](docs/AGENTS.md)                                           | Markdown formatting, generated pages, redirects for a moved page                                                                         |
+| [`skills/AGENTS.md`](skills/AGENTS.md)                                       | The authoring-only scope of the two skills, and the tests that hold a page to the format                                                 |
 | [`magefiles/AGENTS.md`](magefiles/AGENTS.md)                                 | Mage target layout and structure rules                                                                                                   |
 | [`test/e2e/AGENTS.md`](test/e2e/AGENTS.md)                                   | Fixtures belong in files, not Go string constants                                                                                        |
 | [`.github/AGENTS.md`](.github/AGENTS.md)                                     | Scorecard-safe workflow changes, the workflow docs under `docs/workflows/`, the issue forms, PR description format                       |
 
-`CLAUDE.md` in the repository root is a symlink to this file, so a Claude Code session started there loads these rules without being asked. That covers the root and nothing else: the directory-specific files above are not symlinked. Do not treat "nothing was loaded for me" as "there are no rules here", and do not grep a rules file for the one thing you thought to ask about. Open the closest `AGENTS.md` and read it.
+Three things in the root are symlinks, and they exist so that the real file sits where a reader would look for it rather than inside a tool's directory:
+
+| Symlink          | Points at           | So that                                                                      |
+| ---------------- | ------------------- | ---------------------------------------------------------------------------- |
+| `CLAUDE.md`      | this file           | a Claude Code session started here loads these rules without being asked     |
+| `.claude/skills` | [`skills/`](skills) | the same session loads those skills                                          |
+| `.agents/skills` | [`skills/`](skills) | an agent runner that is not Claude Code finds them in the tool-neutral place |
+
+`.agents/` is the same convention as the `AGENTS.md` filename this repository already uses everywhere: a location agreed between tools rather than owned by one. Both skill symlinks point at the same `skills/` tree, so there is exactly one copy of every page and adding a skill means touching neither -- which is the whole reason they are symlinks and not a directory per tool. A copy would be a second thing to keep current, and nothing would report it going stale.
+
+That covers the root and nothing else: the directory-specific files above are not symlinked. Do not treat "nothing was loaded for me" as "there are no rules here", and do not grep a rules file for the one thing you thought to ask about. Open the closest `AGENTS.md` and read it.
 
 ## Building and testing
 
@@ -46,6 +61,8 @@ go run ./magefiles/core test:unit                # everything but the e2e suites
 go run ./magefiles/core test:endToEndNonCluster  # needs ansible-playbook
 go run ./magefiles/core test:endToEndCluster     # needs k3d, zarf, Docker, network
 go run ./magefiles/core generate:document        # regenerate the book's generated pages
+go run ./magefiles/core generate:schema          # regenerate schema/ from the Go types in api/
+go run ./magefiles/core examples:lint            # zarf dev lint over every reference package
 ```
 
 See [`docs/dev/mage.md`](docs/dev/mage.md) for the full reference and [`docs/dev/e2e-tests.md`](docs/dev/e2e-tests.md) for what each suite covers.
@@ -78,13 +95,24 @@ A test file in `internal/zarfmod` is named for the source file it covers -- `ini
 | `TestEveryActionPluginIsCovered`                           | A new action plugin that no test looks at, and a test list naming a plugin that no longer exists                |
 | `TestInitArgsAreKnownFlags`, `TestDeployArgsAreKnownFlags` | A flag the module renders that the recorded zarf does not accept                                                |
 
-The last pair checks against a recorded list, not against zarf's own command tree, so it cannot catch a zarf release that renamed a flag. Refresh the lists with `generate:zarfFlags` when the zarf the modules run moves, and read the diff.
+Three more, in `magefiles/pkg/gen/schema`, hold the `PackagePrerequisites` format together the same way:
+
+| Test                                   | What it would catch                                                                                                                                 |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TestCommittedSchemasAreCurrent`       | A field added to a type in `api/` without `generate:schema` being run, leaving a schema that validates the wrong document                           |
+| `TestExampleDocumentsMatchTheTypes`    | A reference package's `docs/prerequisites.yaml` written against an older shape of the format                                                        |
+| `TestEveryRequirementIsNamedByTheRole` | A field added under `requires` that no task in the `prerequisites` role mentions -- a prerequisite a package declares and the role silently ignores |
+| `TestRenderedSchemaRefusesBothEngines` | The mutual exclusivity of `requires.fluxcd` and `requires.argocd` going missing from the generated schema                                           |
+
+`TestInitArgsAreKnownFlags` and `TestDeployArgsAreKnownFlags` check against a recorded list, not against zarf's own command tree, so they cannot catch a zarf release that renamed a flag. Refresh the lists with `generate:zarfFlags` when the zarf the modules run moves, and read the diff.
+
+Those are Go tests over the Go types. The generated schema itself is held by a pre-commit hook: `check-jsonschema` validates every reference package's `docs/prerequisites.yaml` and `resources.json` against the schema generated from `api/`. That is a different check from the Go ones, and the difference is the point -- they hold a document against the *types*, and the hook holds it against the *schema a consumer actually validates with*. A `jsonschema` tag that rendered wrong would leave the two disagreeing, and nothing reflecting over the types could see it.
 
 ## Keeping `.gitattributes` in sync with the generators
 
 Everything a generator writes is marked `linguist-generated` in [`.gitattributes`](.gitattributes), which collapses it in a GitHub diff and keeps it out of the repository's language statistics. A generated file that is not marked shows up as hand-written work in every review.
 
-So a change to what a generator produces is a change to `.gitattributes` as well: a new output path gets an entry, a moved or removed one loses its entry. Hand-written files inside a generated tree stay unmarked, and there are three -- `docs/ansible/collection.md`, `modules.md` and `roles.md` sit beside generated module and role pages. Mark the pattern the generator writes, not the directory it writes into.
+So a change to what a generator produces is a change to `.gitattributes` as well: a new output path gets an entry, a moved or removed one loses its entry. Hand-written files inside a generated tree stay unmarked: `docs/ansible/collection.md`, `modules.md` and `roles.md` sit beside generated module and role pages, each reference package's `zarf.yaml` and `docs/prerequisites.yaml` sit beside its vendored `upstream/` tree, and `skills/zarf-package-prerequisites/SKILL.md` sits beside its generated copy of the schema. Mark the pattern the generator writes, not the directory it writes into.
 
 Check a specific file rather than reasoning about the patterns:
 
