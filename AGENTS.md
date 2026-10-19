@@ -69,6 +69,8 @@ The `tool` directives in `go.mod` are vendored too, so `generate:document` runs 
 
 Most of what is worth knowing about this repository is enforced by four tests in `internal/zarfmod`, and it is worth knowing which one catches what:
 
+A test file in `internal/zarfmod` is named for the source file it covers -- `init_test.go` beside `init.go`, `progress_test.go` beside `progress.go` -- with three exceptions, each named for what it holds rather than what it is beside: `helpers_test.go` is the scaffolding the package shares, and `plugindocs_test.go` and `infoplugins_test.go` are the two contract tests that reach into `ansible/`. Put a new test beside its subject; a file that collects whatever was written most recently is how the four tests below stop being findable.
+
 | Test                                                       | What it would catch                                                                                             |
 | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `TestActionPluginDocsMatchModuleParams`                    | A parameter added to a wrapper module's Go struct and not to its Python `DOCUMENTATION`, or the reverse         |
@@ -116,6 +118,8 @@ Do not condense struct literals in table-driven test cases onto single lines. Fo
 
 Use `-` (hyphen), not `—` (em dash), wherever a hyphen reads fine.
 
+Markdown is not hard-wrapped, and table cells are padded so the columns line up in the source. Both rules, with examples, are in [`docs/AGENTS.md`](docs/AGENTS.md) and [`ansible/AGENTS.md`](ansible/AGENTS.md); they apply to every Markdown file in the tree, including this one.
+
 ## Commit messages
 
 Keep commit messages to a short title only - no body paragraph explaining the change. End with a `Co-Authored-By` trailer.
@@ -149,3 +153,20 @@ When a decision looks reversible from the code alone -- a read-only module built
 ### The e2e suites skip rather than fail
 
 Every test in both suites checks its prerequisites and calls `t.Skip` with a reason when one is missing. A green run is not proof that anything ran; read the output. This is deliberate -- the alternative is a suite that fails on every contributor's laptop -- but it means a suite that silently stopped running looks exactly like a suite that passed.
+
+### `build/tmp` breaks every `./...` command while an e2e run is in flight
+
+The e2e targets point `TMPDIR` at `build/tmp` inside the repository, so the `go test` process that runs a suite puts its own build scratch there too -- a `go-build<n>/` tree of generated cgo. `go list ./...` walks the filesystem rather than the index, so `build/.gitignore` does not keep it out, and loading that package fails:
+
+```
+package github.com/colonel-byte/ansible-collection-zarf/build/tmp/go-build.../b170
+    .../src/runtime/cgo/cgo.go:39:8: use of internal package internal/runtime/sys not allowed
+```
+
+It names the Go toolchain's own source, so it reads as a broken checkout or a bad toolchain. It is neither: it is leftovers from a suite running in another terminal, or from one that was interrupted before it cleaned up.
+
+While that directory exists, **`go build ./...`, `go vet ./...` and `go list ./...` all fail**, and so does the `golangci-lint` hook -- `.golangci.yaml` excludes `^build/`, but that suppresses *issues* in a path, not a package that fails to load. `test:unit` is immune: it lists with `go list -e` so one unbuildable directory cannot take the command down, then drops `build/` in `unitPackages`. Nothing else is.
+
+So: scope the command (`go build ./internal/... ./cmd/...`), or wait for the suite to finish, or remove the `go-build*` tree if no suite is running. A run that exits normally takes its own `go-build` tree with it, which is why this is only ever hit mid-run or after an interrupt.
+
+Do not `rm -rf build/tmp` wholesale. `build/tmp/zarf-e2e` is the e2e package cache, kept between runs on purpose -- it is around 800MB of pinned init and provider packages, and removing it means every suite re-downloads all three.
