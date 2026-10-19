@@ -27,6 +27,7 @@
 - [zarf roles](ansible/roles.md)
   - [package_inspect](ansible/role_package_inspect.md)
   - [packages](ansible/role_packages.md)
+  - [prerequisites](ansible/role_prerequisites.md)
   - [state](ansible/role_state.md)
 
 
@@ -72,6 +73,7 @@
 - [choice-dependabot-title-length](agent/choice-dependabot-title-length.md)
 - [choice-fuzz-targets](agent/choice-fuzz-targets.md)
 - [choice-gitops-engine-key](agent/choice-gitops-engine-key.md)
+- [choice-package-documentation-module](agent/choice-package-documentation-module.md)
 - [choice-version-tracks-zarf](agent/choice-version-tracks-zarf.md)
 - [choice-zarf-ansible-module](agent/choice-zarf-ansible-module.md)
 - [choice-zarf-collection-removal](agent/choice-zarf-collection-removal.md)

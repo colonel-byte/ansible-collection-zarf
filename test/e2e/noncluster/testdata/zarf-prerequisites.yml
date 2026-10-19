@@ -1,0 +1,147 @@
+---
+# What the colonel_byte.zarf.prerequisites role does with a document and a cluster.
+#
+# The cluster is testdata/zarf-cluster-stub.sh over the zarf-cluster-*.json fixtures, which is a
+# cluster running Kubernetes v1.31.2+k3s1 and Flux v2.9.5, with three Flux CRDs, a default
+# StorageClass called local-path, an available source-controller, a helm-controller that is ready
+# and not available, and the init and app-fluxcd packages deployed. It also holds a second,
+# newer Flux outside flux-system: an available kustomize-controller in gitops labelled v2.11.0,
+# which is what the last case below reads.
+#
+# The package is built from testdata/zarf-inspect-fixture by the Go test, and the stub hands
+# documentation extraction to the real zarf -- so the first case below walks the whole role,
+# extraction included, with no cluster anywhere.
+#
+# Nothing here is contacted.
+- name: The prerequisites role checks a cluster against a package's document
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: A package whose prerequisites the cluster satisfies
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.prerequisites
+      vars:
+        zarf_package: "{{ fixture_package }}"
+        zarf_binary: "{{ zarf_binary }}"
+
+    - name: The document was extracted from the package and every check held
+      # accessModes is the one thing that has to be reported as skipped rather than passed. What a
+      # provisioner will bind cannot be known without creating a PersistentVolumeClaim, and a role
+      # that counted it as satisfied would be reporting a check it never made.
+      ansible.builtin.assert:
+        that:
+          - zarf_prerequisites_document.metadata.package == 'inspect-fixture'
+          - zarf_prerequisites_document.apiVersion == 'colonel-byte.dev/v1alpha1'
+          - zarf_prerequisites_unmet == []
+          # Eight: the Kubernetes and Flux versions, the prerequisite package's version and its
+          # presence, the controller, the CRD, the default StorageClass and the named one.
+          - zarf_prerequisites_checked | length == 8
+          - zarf_prerequisites_skipped | length == 1
+          - "'accessModes' in zarf_prerequisites_skipped | join(' ')"
+          - "'PersistentVolumeClaim' in zarf_prerequisites_skipped | join(' ')"
+        success_msg: ASSERTED a satisfied document is extracted, checked, and reports what it skipped
+        fail_msg: the role did not report the fixture cluster as satisfying the fixture package
+
+    - name: A document the cluster does not satisfy, reported rather than enforced
+      # Supplied directly rather than read from a package, which is what zarf_prerequisites is for.
+      # Three things are wrong with it at once, and the point of the case is that all three are
+      # reported: the role appends to a list and asserts once, so that an operator is not told to
+      # fix one thing, told to fix the next, and told to fix the third.
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.prerequisites
+      vars:
+        zarf_binary: "{{ zarf_binary }}"
+        zarf_prerequisites_enforce: false
+        zarf_prerequisites:
+          apiVersion: colonel-byte.dev/v1alpha1
+          kind: PackagePrerequisites
+          metadata:
+            package: a-package-this-cluster-is-not-ready-for
+            version: 1.0.0
+          requires:
+            kubernetes:
+              version: ">=1.99.0"
+            controllers:
+              - name: helm-controller
+                namespace: flux-system
+                minAvailable: 1
+            crds:
+              - externalsecrets.external-secrets.io
+            packages:
+              - name: operator-external-secrets
+
+    - name: Every unsatisfied prerequisite is reported, and the play continued
+      # helm-controller is in the fixture with readyReplicas and no availableReplicas, so this is
+      # also the case that holds the availability-is-not-readiness rule from the cluster's side: a
+      # role that read `ready` would find this controller satisfactory.
+      ansible.builtin.assert:
+        that:
+          - zarf_prerequisites_unmet | length == 4
+          - zarf_prerequisites_unmet | select('search', 'Kubernetes') | list | length == 1
+          - zarf_prerequisites_unmet | select('search', 'helm-controller') | list | length == 1
+          - zarf_prerequisites_unmet | select('search', 'externalsecrets.external-secrets.io') | list | length == 1
+          - zarf_prerequisites_unmet | select('search', 'operator-external-secrets') | list | length == 1
+        success_msg: ASSERTED every unsatisfied prerequisite is reported at once
+        fail_msg: the role did not report all four unsatisfied prerequisites
+
+    - name: The same document, enforced
+      block:
+        - name: Include the role with enforcement left at its default
+          ansible.builtin.include_role:
+            name: colonel_byte.zarf.prerequisites
+          vars:
+            zarf_binary: "{{ zarf_binary }}"
+            zarf_prerequisites:
+              apiVersion: colonel-byte.dev/v1alpha1
+              kind: PackagePrerequisites
+              metadata:
+                package: a-package-this-cluster-is-not-ready-for
+                version: 1.0.0
+              requires:
+                crds:
+                  - externalsecrets.external-secrets.io
+
+        - name: The role should not have got this far
+          ansible.builtin.fail:
+            msg: >-
+              the prerequisites role accepted a cluster missing a CRD the document requires, so
+              zarf_prerequisites_enforce is not being applied
+      rescue:
+        - name: The role refused, naming the CRD and the package
+          ansible.builtin.assert:
+            that:
+              - "'externalsecrets.external-secrets.io' in ansible_failed_result.msg"
+              - "'a-package-this-cluster-is-not-ready-for' in ansible_failed_result.msg"
+            success_msg: ASSERTED an unsatisfied prerequisite fails the play by default
+            fail_msg: the role failed, but not because of the prerequisite it should have named
+
+    - name: A version range the role cannot evaluate is skipped rather than passed
+      # A compound range needs a semver library and Jinja is not one. The role reads one comparator
+      # and one version, and names anything else in zarf_prerequisites_skipped -- because the
+      # alternative, treating a half-parsed range as satisfied, is a check that reports success for
+      # a comparison it never made.
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.prerequisites
+      vars:
+        zarf_binary: "{{ zarf_binary }}"
+        zarf_prerequisites:
+          apiVersion: colonel-byte.dev/v1alpha1
+          kind: PackagePrerequisites
+          metadata:
+            package: a-package-with-a-range
+            version: 1.0.0
+          requires:
+            kubernetes:
+              version: ">=1.30.0 <1.31.0"
+
+    - name: The range is named as unevaluated, and nothing is reported as unmet
+      ansible.builtin.assert:
+        that:
+          - zarf_prerequisites_unmet == []
+          - zarf_prerequisites_checked == []
+          - zarf_prerequisites_skipped | length == 1
+          - "'cannot evaluate' in zarf_prerequisites_skipped | join(' ')"
+        success_msg: ASSERTED a range the role cannot evaluate is skipped and named
+        fail_msg: a compound version range was not reported as unevaluated
