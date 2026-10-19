@@ -28,6 +28,13 @@ A subclass implements ``zarf_argv`` by returning its module-level ``command_part
 plain function of the task's parameters so that internal/zarfmod/infoplugins_test.go can read the
 flags it renders out of the source. It implements ``interpret`` to turn the command's stdout into
 the keys the module returns.
+
+One module asks the cluster more than one question, and for it there is a second shape: a subclass
+overrides ``zarf_argvs`` -- returning a list of (name, argv) pairs -- and ``interpret_outputs``,
+which receives the stdout of each one keyed by that name. It exists for ``zarf_cluster_info``: the Kubernetes version, the CRDs, the StorageClasses and the Deployments are
+four kubectl queries and no amount of flags makes them one, while splitting them across four
+modules would make a prerequisite check four tasks that can each half-fail. The commands run in the
+order given and the first non-zero exit fails the task, naming which one it was.
 """
 
 from __future__ import absolute_import, division, print_function
@@ -47,6 +54,11 @@ BINARY = "zarf_binary"
 # The parameter naming the kubeconfig. Zarf has no --kubeconfig flag, so it is passed as KUBECONFIG
 # in zarf's environment, the same way the converging modules pass it.
 KUBECONFIG = "kubeconfig"
+
+# The name the output of a single-command module is collected under, so that run() has one code
+# path rather than a branch per shape. No subclass sees it: a module with one command gets its
+# stdout handed to interpret() as a string, the way it did before there were two shapes.
+SOLE = "sole"
 
 
 class ZarfInfoActionBase(ActionBase):
@@ -90,23 +102,34 @@ class ZarfInfoActionBase(ActionBase):
             )
             return result
 
-        argv = self.zarf_argv(dict(args, **{BINARY: resolved}))
+        params = dict(args, **{BINARY: resolved})
+        kubeconfig = args.get(KUBECONFIG)
 
-        rc, stdout, stderr = self._run_zarf(argv, args.get(KUBECONFIG))
-        if rc != 0:
-            result["failed"] = True
-            result["msg"] = "%s failed: %s" % (
-                " ".join(argv),
-                stderr.strip() or stdout.strip() or "zarf exited %d with no output" % rc,
-            )
-            result["rc"] = rc
-            result["stderr"] = stderr
-            return result
+        commands = list(self.zarf_argvs(params))
+
+        outputs = {}
+        for name, argv in commands:
+            rc, stdout, stderr = self._run_zarf(argv, kubeconfig)
+            if rc != 0:
+                result["failed"] = True
+                result["msg"] = "%s failed: %s" % (
+                    " ".join(argv),
+                    stderr.strip() or stdout.strip() or "zarf exited %d with no output" % rc,
+                )
+                result["rc"] = rc
+                result["stderr"] = stderr
+                # Which question went unanswered, for a module that asks several. A message naming
+                # only the command line leaves the reader to work out which of four kubectl
+                # queries that was.
+                if len(commands) > 1:
+                    result["query"] = name
+                return result
+            outputs[name] = stdout
 
         # A read-only module changes nothing, which is also why no subclass answers check mode:
         # running during a check-mode play is the honest thing for it to do.
         result["changed"] = False
-        self.interpret(result, stdout, args)
+        self.interpret_outputs(result, outputs, args)
         return result
 
     def _run_zarf(self, argv, kubeconfig):
@@ -135,3 +158,16 @@ class ZarfInfoActionBase(ActionBase):
     def interpret(self, result, stdout, params):
         """Put what the command printed into the module's result."""
         raise NotImplementedError
+
+    def zarf_argvs(self, params):
+        """Return the zarf command lines to run, as (name, argv) pairs.
+
+        The default is the single command ``zarf_argv`` returns, which is what a module asking the
+        cluster one question implements. A module asking several overrides this and
+        ``interpret_outputs`` instead.
+        """
+        return [(SOLE, self.zarf_argv(params))]
+
+    def interpret_outputs(self, result, outputs, params):
+        """Put what the commands printed into the module's result, keyed by name."""
+        self.interpret(result, outputs[SOLE], params)

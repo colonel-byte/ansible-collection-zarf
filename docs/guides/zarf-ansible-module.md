@@ -2,14 +2,14 @@
 
 The `colonel_byte.zarf` collection initialises a cluster with zarf and deploys zarf packages onto it from a playbook. It is a proof of [ZEP-0072](https://github.com/zarf-dev/proposals/pull/73), which proposes native Ansible module support for zarf. It began in [colonel-byte/cargoship](https://github.com/colonel-byte/cargoship), because the pattern it proposes is the one `colonel_byte.cargoship` already runs there.
 
-This guide covers the two modules that converge a cluster: what they are, how to install them, the two-module walk that a cluster with no storage provider needs, and what the result holds. The collection also ships three read-only modules and three roles that wrap them -- `zarf_package_info`, `zarf_package_inspect` and `zarf_state_info` -- which are not part of the walk and are documented on the [collection reference](../ansible/collection.md); [choice-zarf-info-modules](../agent/choice-zarf-info-modules.md) records why they are built differently. The full parameter set of each module, and the zarf flag each parameter renders, is on its reference page: [`zarf_init`](../ansible/module_init.md) and [`zarf_package_deploy`](../ansible/module_package_deploy.md), both generated from the collection. For why the modules are separate wrapper binaries rather than the `zarf` binary itself, see [choice-zarf-ansible-module](../agent/choice-zarf-ansible-module.md).
+This guide covers the two modules that converge a cluster: what they are, how to install them, the two-module walk that a cluster with no storage provider needs, and what the result holds. The collection also ships five read-only modules and three roles that wrap three of them -- `zarf_cluster_info`, `zarf_package_documentation`, `zarf_package_info`, `zarf_package_inspect` and `zarf_state_info` -- which are not part of the walk and are documented on the [collection reference](../ansible/collection.md); [choice-zarf-info-modules](../agent/choice-zarf-info-modules.md) records why they are built differently. The full parameter set of each module, and the zarf flag each parameter renders, is on its reference page: [`zarf_init`](../ansible/module_init.md) and [`zarf_package_deploy`](../ansible/module_package_deploy.md), both generated from the collection. For why the modules are separate wrapper binaries rather than the `zarf` binary itself, see [choice-zarf-ansible-module](../agent/choice-zarf-ansible-module.md).
 
 ## The two converging modules
 
-| Module                                  | Command it renders   | What it is for                                                                       |
-| --------------------------------------- | -------------------- | ------------------------------------------------------------------------------------ |
-| `colonel_byte.zarf.zarf_init`           | `zarf init`          | Initialise a cluster: the injector, the seed registry, the registry, the agent       |
-| `colonel_byte.zarf.zarf_package_deploy` | `zarf package deploy`| Put a package on a cluster, from a path, an `oci://` reference, or an `https://` URL |
+| Module                                  | Command it renders    | What it is for                                                                       |
+| --------------------------------------- | --------------------- | ------------------------------------------------------------------------------------ |
+| `colonel_byte.zarf.zarf_init`           | `zarf init`           | Initialise a cluster: the injector, the seed registry, the registry, the agent       |
+| `colonel_byte.zarf.zarf_package_deploy` | `zarf package deploy` | Put a package on a cluster, from a path, an `oci://` reference, or an `https://` URL |
 
 Both run on the node the task is delegated to, not on the cluster's nodes. Zarf reaches the cluster through a kubeconfig, so there is no inventory to project and nothing to copy to a managed node: a task supplies a kubeconfig, a package, and the parameters the zarf command takes.
 

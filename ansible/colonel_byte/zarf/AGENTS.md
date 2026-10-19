@@ -12,12 +12,12 @@ A role that configures cluster nodes directly -- writing files on them, installi
 
 ## Two kinds of module, and the boundary between them
 
-| Kind       | Modules                                                        | How it is built                                                                                                                                                                                                                          |
-| ---------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Converging | `zarf_init`, `zarf_package_deploy`                             | A compiled wrapper binary, with its parameters as a Go struct in `internal/zarfmod` and its command line rendered by a Go function. The action plugin holds the documented parameter surface and the delivery, and no translation rules. |
-| Read-only  | `zarf_package_info`, `zarf_package_inspect`, `zarf_state_info` | The action plugin is the whole implementation, sharing `ZarfInfoActionBase` in `plugins/plugin_utils/info.py`. No binary, no Go struct.                                                                                                  |
+| Kind       | Modules                                                                                                           | How it is built                                                                                                                                                                                                                          |
+| ---------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Converging | `zarf_init`, `zarf_package_deploy`                                                                                | A compiled wrapper binary, with its parameters as a Go struct in `internal/zarfmod` and its command line rendered by a Go function. The action plugin holds the documented parameter surface and the delivery, and no translation rules. |
+| Read-only  | `zarf_cluster_info`, `zarf_package_documentation`, `zarf_package_info`, `zarf_package_inspect`, `zarf_state_info` | The action plugin is the whole implementation, sharing `ZarfInfoActionBase` in `plugins/plugin_utils/info.py`. No binary, no Go struct.                                                                                                  |
 
-The boundary is not stylistic, and [choice-zarf-info-modules](../../../docs/agent/choice-zarf-info-modules.md) records where it sits. The short version: a wrapper earns its keep on a flag surface worth projecting, progress worth following, and a `changed` worth signalling. A read-only command has none of the three. The threshold for crossing back is named in that record -- **a read-only module that grows a second or third parameter-controlled flag, or any flag whose value attaches in a way pflag cares about, wants a wrapper binary** rather than a better regular expression.
+The boundary is not stylistic, and [choice-zarf-info-modules](../../../docs/agent/choice-zarf-info-modules.md) records where it sits. The short version: a wrapper earns its keep on a flag surface worth projecting, progress worth following, and a `changed` worth signalling. A read-only command has none of the three. The threshold for crossing back has been restated once: counting flags turned out to be a proxy for the thing that matters, which is coverage. It now reads -- **a read-only module needs its rendered command line exercised against a real zarf, or it needs to be a wrapper.** `zarf_package_documentation` renders three parameter-controlled flags and is not a wrapper for that reason; [choice-package-documentation-module](../../../docs/agent/choice-package-documentation-module.md) has the argument.
 
 ## Markdown line formatting
 
@@ -95,3 +95,24 @@ This exists because `plugindocs_test.go` is a table of modules, so a module abse
 `set_fact` defaults to `cacheable: false`, so the parsed `zarf_state` stays in the play's memory and never reaches a configured fact cache plugin. Setting it true would write the cluster's registry credentials into a jsonfile cache on the control node, outliving the play that read them.
 
 For the same reason, `zarf_no_log` defaults to true on **both** of the `state` role's tasks, not only the module call: a `set_fact` that reads a censored result prints the value in its own result, so `no_log` on the module alone looks correct in review and leaks on the next line.
+
+## The `prerequisites` role is split by phase, not kept in one file
+
+`tasks/main.yml` validates its inputs, extracts the document and then includes three files in
+order. The split is by what a phase is for, and the order is load-bearing:
+
+| File                  | What it does                                                                            |
+| --------------------- | --------------------------------------------------------------------------------------- |
+| `collect.yml`         | Reads the cluster, resolves which GitOps engine the document names, sets the facts      |
+| `check_versions.yml`  | Gathers every version constraint into one list and hands each to `version_check.yml`    |
+| `check_resources.yml` | The checks that are not about a version: a package, a controller, a CRD, a StorageClass |
+| `version_check.yml`   | One constraint, evaluated and recorded. Included per entry by `check_versions.yml`      |
+
+Everything after `collect.yml` reads the facts it set rather than the registered results, so that a
+check says what it is checking instead of where the answer came from. Every check file appends to
+the same three lists -- checked, unmet, skipped -- because the single assert at the end of
+`main.yml` is what names everything wrong at once, and a check that asserted for itself would stop
+the run before the rest had anything to say.
+
+A new check goes in whichever file matches what it checks, and `TestEveryRequirementIsNamedByTheRole`
+globs the directory rather than reading a list, so a fourth file is covered on arrival.

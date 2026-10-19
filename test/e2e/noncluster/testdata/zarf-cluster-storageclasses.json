@@ -1,0 +1,25 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "storage.k8s.io/v1",
+      "kind": "StorageClass",
+      "metadata": {
+        "name": "local-path",
+        "annotations": {
+          "storageclass.kubernetes.io/is-default-class": "true"
+        }
+      },
+      "provisioner": "rancher.io/local-path"
+    },
+    {
+      "apiVersion": "storage.k8s.io/v1",
+      "kind": "StorageClass",
+      "metadata": {
+        "name": "slow-and-never-default"
+      },
+      "provisioner": "example.com/nfs"
+    }
+  ]
+}
