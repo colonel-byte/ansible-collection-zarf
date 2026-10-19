@@ -1,0 +1,107 @@
+---
+# What colonel_byte.zarf.zarf_cluster_info reports, and that it keeps four answers apart.
+#
+# The module's only impure step is running zarf, so testdata/zarf-cluster-stub.sh stands in for it
+# and answers each of the five kubectl queries from a recorded document. The stub reads its
+# arguments, which the other stubs in this directory do not: what is under test here is partly that
+# the module asked four different questions and did not mix up the answers.
+#
+# The fixtures are a cluster with Flux v2.9.5 installed, three Flux CRDs, a default StorageClass and
+# a second one that is not default, and three Deployments -- one of which reports readyReplicas and
+# no availableReplicas, which is the state a controller is in mid-rollout and the one a minAvailable
+# requirement has to reject.
+#
+# Nothing here is contacted.
+- name: zarf_cluster_info digests what kubectl reports about a cluster
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Read the cluster through the stub
+      colonel_byte.zarf.zarf_cluster_info:
+        zarf_binary: "{{ zarf_binary }}"
+      register: cluster
+
+    - name: The Kubernetes version comes from the server and is reduced to three numbers
+      # The client's version is in the same document and is not the answer: it is whichever kubectl
+      # zarf was built with. The distribution suffix is dropped from the semver because `is
+      # version('1.30.0', '>=')` on "1.31.2+k3s1" is comparing a build identifier against nothing,
+      # while the unreduced string is kept so that a report says what the cluster actually said.
+      ansible.builtin.assert:
+        that:
+          - cluster is not failed
+          - cluster.changed is false
+          - cluster.kubernetes_version == 'v1.31.2+k3s1'
+          - cluster.kubernetes_semver == '1.31.2'
+        success_msg: ASSERTED the Kubernetes version is the server's, and reduced for comparison
+        fail_msg: the reported Kubernetes version is not the server's
+
+    - name: The CRDs come back as bare names, sorted
+      ansible.builtin.assert:
+        that:
+          - "cluster.crds == ['applications.argoproj.io', 'appprojects.argoproj.io', 'helmreleases.helm.toolkit.fluxcd.io', 'kustomizations.kustomize.toolkit.fluxcd.io', 'ocirepositories.source.toolkit.fluxcd.io']"
+        success_msg: ASSERTED the CRDs are reported as the names a document lists
+        fail_msg: the CRDs are not the names the fixture holds
+
+    - name: The StorageClasses carry their provisioner and which one is default
+      ansible.builtin.assert:
+        that:
+          - (cluster.storage_classes | map(attribute='name') | list) == ['local-path', 'slow-and-never-default']
+          - (cluster.storage_classes | selectattr('default') | map(attribute='name') | list) == ['local-path']
+          - (cluster.storage_classes | first).provisioner == 'rancher.io/local-path'
+          - cluster.default_storage_class == 'local-path'
+        success_msg: ASSERTED the StorageClasses report their provisioner and their default
+        fail_msg: the StorageClasses are not what the fixture holds
+
+    - name: The Deployments are digested, and availability is not readiness
+      # helm-controller in the fixture reports readyReplicas and no availableReplicas at all, which
+      # is what Kubernetes does for a Deployment whose replica has passed its probes and not
+      # satisfied minReadySeconds. A module that read readyReplicas would call that controller ready
+      # to reconcile, and it is about to be restarted by its own rollout.
+      ansible.builtin.assert:
+        that:
+          - "(cluster.deployments | map(attribute='name') | list) == ['argocd-server', 'helm-controller', 'source-controller', 'kustomize-controller', 'coredns']"
+          - (cluster.deployments | selectattr('name', 'equalto', 'source-controller') | first).available == 1
+          - (cluster.deployments | selectattr('name', 'equalto', 'source-controller') | first).version == 'v2.9.5'
+          - (cluster.deployments | selectattr('name', 'equalto', 'helm-controller') | first).ready == 1
+          - (cluster.deployments | selectattr('name', 'equalto', 'helm-controller') | first).available == 0
+          - (cluster.deployments | selectattr('name', 'equalto', 'coredns') | first).version == ''
+        success_msg: ASSERTED the Deployments are digested, and available is not ready
+        fail_msg: the Deployments are not what the fixture holds
+
+    - name: The StatefulSets are reported separately, with the same five fields
+      # The reason the module runs a fifth query. Argo CD's argocd-application-controller is a
+      # StatefulSet and the rest of Argo CD is Deployments, so a module that read only Deployments
+      # would report the component doing all of the reconciling as absent from a healthy cluster.
+      ansible.builtin.assert:
+        that:
+          - "(cluster.statefulsets | map(attribute='name') | list) == ['argocd-application-controller', 'source-controller']"
+          - (cluster.statefulsets | selectattr('name', 'equalto', 'argocd-application-controller') | first).namespace == 'argocd'
+          - (cluster.statefulsets | selectattr('name', 'equalto', 'argocd-application-controller') | first).available == 1
+          - (cluster.statefulsets | selectattr('name', 'equalto', 'argocd-application-controller') | first).version == 'v3.5.5'
+          # A StatefulSet of the same name as a Deployment elsewhere is a different workload, and
+          # the two lists are what keeps them from being confused for one another.
+          - (cluster.statefulsets | selectattr('name', 'equalto', 'source-controller') | first).available == 0
+          - "'statefulsets' in cluster.msg"
+        success_msg: ASSERTED the StatefulSets are reported beside the Deployments
+        fail_msg: the StatefulSets are not what the fixture holds
+
+    - name: A query the stub does not serve fails the task and names which one
+      # The module runs four commands and the first non-zero exit fails the task. What is under test
+      # is that the failure says which query it was: a message naming only the command line leaves
+      # the reader to work out which of four kubectl calls that was.
+      colonel_byte.zarf.zarf_cluster_info:
+        # /bin/false rather than a stub of its own: what is under test is a non-zero exit, and
+        # the shortest way to get one is a program whose whole job is to be one.
+        zarf_binary: /bin/false
+      register: refused
+      ignore_errors: true
+
+    - name: The failure names the query
+      ansible.builtin.assert:
+        that:
+          - refused is failed
+          - refused.query == 'version'
+        success_msg: ASSERTED a failed query is named in the result
+        fail_msg: a failed query did not name itself

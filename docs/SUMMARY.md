@@ -17,6 +17,7 @@
 
 - [zarf collection](ansible/collection.md)
 - [zarf modules](ansible/modules.md)
+  - [cluster_info](ansible/module_cluster_info.md)
   - [init](ansible/module_init.md)
   - [package_deploy](ansible/module_package_deploy.md)
   - [package_documentation](ansible/module_package_documentation.md)
