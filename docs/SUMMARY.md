@@ -7,6 +7,7 @@
 
 # Guides
 
+- [package-prerequisites](guides/package-prerequisites.md)
 - [zarf-ansible-module](guides/zarf-ansible-module.md)
 
 
@@ -68,6 +69,7 @@
 - [ai-usage](agent/ai-usage.md)
 - [choice-dependabot-title-length](agent/choice-dependabot-title-length.md)
 - [choice-fuzz-targets](agent/choice-fuzz-targets.md)
+- [choice-gitops-engine-key](agent/choice-gitops-engine-key.md)
 - [choice-version-tracks-zarf](agent/choice-version-tracks-zarf.md)
 - [choice-zarf-ansible-module](agent/choice-zarf-ansible-module.md)
 - [choice-zarf-collection-removal](agent/choice-zarf-collection-removal.md)
