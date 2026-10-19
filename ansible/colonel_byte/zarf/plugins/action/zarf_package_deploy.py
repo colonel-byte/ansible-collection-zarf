@@ -39,6 +39,7 @@ notes:
   - "Set C(no_log: true) on the task when any parameter carries a credential. A binary module has no per-parameter C(no_log)."
   - "Check mode reports the task as skipped. C(zarf package deploy) has no dry run, so there is nothing honest to report instead."
   - "A parameter left unset renders no flag, so whatever zarf's own config file sets still applies."
+  - "The wrapper runs C(zarf version) before the deploy and reports it as C(zarf.version), so a failed run says which zarf produced it. Unlike C(zarf_init) there is no minimum: a version it cannot read is simply absent from the result."
 options:
   package:
     description:
