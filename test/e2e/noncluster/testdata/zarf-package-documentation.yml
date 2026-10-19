@@ -1,0 +1,110 @@
+---
+# What colonel_byte.zarf.zarf_package_documentation extracts, and what it refuses to claim.
+#
+# The package is built from testdata/zarf-inspect-fixture by the Go test, and carries two
+# documentation keys: a prerequisites document and a Markdown file. It is a real tarball extracted
+# by a real zarf, so this play needs no stub -- a package on disk is a complete input.
+#
+# The Markdown file is not incidental. yaml.safe_load succeeds on a Markdown document and returns
+# the whole thing as one string, which looks like a parse and is not, so the module parses by
+# suffix and that file is what holds it to it.
+#
+# Nothing here is contacted.
+- name: zarf_package_documentation extracts a package's documentation layer
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Extract every documentation key the package carries
+      colonel_byte.zarf.zarf_package_documentation:
+        package: "{{ zarf_package }}"
+        zarf_binary: "{{ zarf_binary }}"
+      register: every
+
+    - name: Both keys come back as text, and only the YAML one is parsed
+      ansible.builtin.assert:
+        that:
+          - every is not failed
+          - every.changed is false
+          - "(every.documents.keys() | sort | list) == ['notes', 'prerequisites']"
+          - "(every.parsed.keys() | list) == ['prerequisites']"
+          - "'# Notes' in every.documents.notes"
+          - every.parsed.prerequisites.metadata.package == 'inspect-fixture'
+        success_msg: ASSERTED every key is returned as text, and only the YAML one is parsed
+        fail_msg: the extracted documents are not what the fixture package carries
+
+    - name: The prerequisites document is also returned under its own key
+      # Returned as `prerequisites` only when the file declares the right apiVersion and kind. A
+      # package is free to use that documentation key for a prose file, and returning that would
+      # hand the prerequisites role a mapping with no `requires` for the most boring possible
+      # reason.
+      ansible.builtin.assert:
+        that:
+          - every.prerequisites.apiVersion == 'colonel-byte.dev/v1alpha1'
+          - every.prerequisites.kind == 'PackagePrerequisites'
+          - every.prerequisites == every.parsed.prerequisites
+          - every.prerequisites.requires.fluxcd.version == '>=2.9.0'
+        success_msg: ASSERTED a document declaring the right kind is returned as prerequisites
+        fail_msg: the prerequisites document was not returned under its own key
+
+    - name: Extract one named key only
+      colonel_byte.zarf.zarf_package_documentation:
+        package: "{{ zarf_package }}"
+        zarf_binary: "{{ zarf_binary }}"
+        keys:
+          - prerequisites
+      register: one
+
+    - name: Only the named key is extracted
+      ansible.builtin.assert:
+        that:
+          - "(one.documents.keys() | list) == ['prerequisites']"
+          - one.prerequisites == every.prerequisites
+        success_msg: ASSERTED naming a key extracts that key and no other
+        fail_msg: naming one key did not restrict the extraction to it
+
+    - name: Extract into a destination that is kept
+      # Left unset, the destination is a temporary directory removed before the task returns, so
+      # `files` names paths that no longer exist. This is the other case: a destination the caller
+      # owns, which a later task can read from.
+      colonel_byte.zarf.zarf_package_documentation:
+        package: "{{ zarf_package }}"
+        zarf_binary: "{{ zarf_binary }}"
+        destination: "{{ documentation_destination }}"
+      register: kept
+
+    - name: Check the extracted file is on disk where the module said it was
+      ansible.builtin.stat:
+        path: "{{ kept.files.prerequisites }}"
+      register: extracted
+
+    - name: The destination holds the extracted files, under the directory zarf created
+      ansible.builtin.assert:
+        that:
+          - kept.directory is search('inspect-fixture-documentation$')
+          - kept.directory is search(documentation_destination)
+          - extracted.stat.exists
+        success_msg: ASSERTED a named destination keeps the files, under zarf's own subdirectory
+        fail_msg: the extracted files are not under the destination the module reported
+
+    - name: Extract with verify always, from an unsigned package
+      colonel_byte.zarf.zarf_package_documentation:
+        package: "{{ zarf_package }}"
+        zarf_binary: "{{ zarf_binary }}"
+        verify: always
+      register: refused
+      ignore_errors: true
+
+    - name: verify always refuses an unsigned package, as one word
+      # The same finding as zarf_package_inspect's: --verify declares a no-argument default, so the
+      # space form leaves the mode as a positional argument and zarf rejects the command for having
+      # one too many. The message is part of the assertion because a module that rendered it as two
+      # words would fail here too, for the wrong reason.
+      ansible.builtin.assert:
+        that:
+          - refused is failed
+          - "'--verify=always' in refused.msg"
+          - "'not signed' in refused.msg"
+        success_msg: ASSERTED verify always refuses an unsigned package during extraction
+        fail_msg: verify always did not refuse the unsigned package for the expected reason
