@@ -1,0 +1,65 @@
+---
+# What the leaf-name matching in zarf_state_info does with credential names zarf does not write yet.
+#
+# testdata/zarf-state.json is the faithful shape of zarf v0.85.0, and the play beside it holds the
+# eight credentials that document actually carries. This one is not faithful on purpose: every
+# field below is invented, named the way a future zarf release plausibly would name one, and the
+# whole point is that the module withholds it without this repository having been told it exists.
+#
+# That is the claim the CREDENTIAL_SUBSTRINGS comment makes -- "a field zarf adds under a name like
+# these is withheld before anybody has read this file" -- and it is a claim about names nobody has
+# written down, so the only way to hold it is to invent some. It is a separate fixture rather than
+# five more keys in zarf-state.json so that the faithful document stays faithful: a reader comparing
+# it against a real zarf-state Secret should find no field that is not in one.
+#
+# The public half of the agent PKI is in here too, with a publicKey beside the privateKey. Matching
+# `key` loosely would withhold both, and withholding the CA an operator calls this module to
+# template into a trust bundle is the failure this module must not have.
+#
+# Nothing here is contacted.
+- name: zarf_state_info withholds credentials under names zarf does not write yet
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    # Named rather than counted, for the reason the sibling play gives: a count passes when the
+    # wrong ones were removed.
+    expected_redacted:
+      - agentInfo.tls.keyPassphrase
+      - agentInfo.tls.privateKey
+      - gitServer.oauthCredential
+      - gitServer.refreshToken
+      - registryInfo.pullSecretRef
+      - registryInfo.pushSecret
+
+  tasks:
+    - name: Read the invented state with the default parameters
+      colonel_byte.zarf.zarf_state_info:
+        zarf_binary: "{{ lookup('env', 'ZARF_ANSIBLE_E2E_STUB') }}"
+      register: future_result
+
+    - name: Every invented credential is withheld, and the module says which
+      ansible.builtin.assert:
+        that:
+          - future_result.redacted == expected_redacted
+          - "'pushSecret' not in future_result.state.registryInfo"
+          - "'pullSecretRef' not in future_result.state.registryInfo"
+          - "'oauthCredential' not in future_result.state.gitServer"
+          - "'refreshToken' not in future_result.state.gitServer"
+          - "'privateKey' not in future_result.state.agentInfo.tls"
+          - "'keyPassphrase' not in future_result.state.agentInfo.tls"
+        success_msg: ASSERTED a credential named as no zarf names one today is still withheld
+        fail_msg: a credential under an unfamiliar name survived the default redaction
+
+    - name: The public half of the PKI survives the wider matching
+      # The reason `key` is matched by exact name while `privatekey` is a substring. A loose `key`
+      # withholds publicKey along with privateKey, and the CA and certificate an operator templates
+      # into a trust bundle are the reason this module returns the agent's TLS at all. This fixture
+      # is the one that puts privateKey and keyPassphrase next to publicKey to prove it.
+      ansible.builtin.assert:
+        that:
+          - future_result.state.agentInfo.tls.ca == 'UFVCTElDLUNB'
+          - future_result.state.agentInfo.tls.cert == 'UFVCTElDLUNFUlQ='
+          - future_result.state.agentInfo.tls.publicKey == 'UFVCTElDLUtFWQ=='
+        success_msg: ASSERTED the public PKI survives names the wider matching could have caught
