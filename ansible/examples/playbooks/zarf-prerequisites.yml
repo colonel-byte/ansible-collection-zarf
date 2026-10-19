@@ -1,0 +1,44 @@
+---
+# Refuse to deploy a package onto a cluster that cannot run it.
+#
+# This is the case the colonel-byte.dev/v1alpha1 PackagePrerequisites format exists for. A workload
+# package delivered as a HelmRelease needs a running helm-controller to do anything at all, and a
+# cluster without one accepts the manifests, reports the deployment as a success, and reconciles
+# nothing. The only symptom is a HelmRelease that never becomes ready, hours later, in a cluster
+# nobody is watching.
+#
+# The packages carry the answer themselves: each states its requirements in a document under its
+# `documentation:` mapping, which `zarf package inspect documentation` extracts without deploying
+# anything. The prerequisites role reads that document, reads the cluster through `zarf tools
+# kubectl`, and fails the play before zarf_package_deploy runs.
+#
+# See docs/guides/package-prerequisites.md for the format, and examples/packages for two reference
+# packages that declare one.
+- name: Check prerequisites before deploying a bundle in order
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    zarf_kubeconfig: /etc/rancher/rke2/rke2.yaml
+    zarf_public_key: /etc/zarf/colonel-byte-zarf-packages.pub
+    zarf_timeout: 15m
+
+    # The bundle, in the order it has to be deployed. The order is a statement by the playbook, and
+    # the documents are what make it checkable: app-fluxcd provides the fluxcd-engine capability and
+    # the CRDs, and operator-external-secrets requires them.
+    zarf_bundle:
+      - /srv/staging/zarf-package-app-fluxcd-amd64-v2.9.5.tar.zst
+      - /srv/staging/zarf-package-operator-external-secrets-amd64-2.12.0.tar.zst
+
+  tasks:
+    - name: Deploy each package once its prerequisites are satisfied
+      # The check is inside the loop rather than ahead of it, and that is the point: the first
+      # package is what satisfies the second one's prerequisites, so checking the whole bundle up
+      # front would refuse a deployment that is about to be correct. Each package is checked against
+      # the cluster as it is when its turn comes.
+      ansible.builtin.include_tasks: zarf-prerequisites-step.yml
+      loop: "{{ zarf_bundle }}"
+      loop_control:
+        loop_var: zarf_bundle_package
+        label: "{{ zarf_bundle_package | basename }}"

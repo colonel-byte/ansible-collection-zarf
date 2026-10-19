@@ -4,9 +4,15 @@ There are two suites, split by whether they need a cluster. Both drive a real `a
 
 ## `test/e2e/noncluster`
 
-Needs `ansible-playbook` and nothing else. It covers the three read-only modules and the `state` role.
+Needs `ansible-playbook`, and a `zarf` on `PATH` for the tests that build a real package. It covers the five read-only modules and the `state`, `package_inspect` and `prerequisites` roles.
 
-The one impure step in a read-only module is running zarf, so the suite stands a stub in its place: `testdata/zarf-state-stub.sh` prints the base64 of a recorded `zarf-state` Secret, and `zarf-package-list-stub.sh` prints a recorded package list. The playbook passes the stub as the module's `zarf_binary`.
+The one impure step in most read-only modules is running zarf, so the suite stands a stub in its place: `testdata/zarf-state-stub.sh` prints the base64 of a recorded `zarf-state` Secret, and `zarf-package-list-stub.sh` prints a recorded package list. The playbook passes the stub as the module's `zarf_binary`.
+
+`testdata/zarf-cluster-stub.sh` is the exception that reads its arguments. `zarf_cluster_info` asks the cluster four questions -- the Kubernetes version, the CRDs, the StorageClasses and the Deployments -- and a stub that printed one document whatever it was asked would show that the module can parse a document, not that it asked four questions and kept the answers apart. It fails loudly on a command it does not recognise, for the same reason: a silent empty answer is a cluster that looks empty, and an empty cluster satisfies no prerequisite.
+
+The tests that need a real zarf build a package rather than committing one. `testdata/zarf-inspect-fixture` is the smallest package that builds -- a files-only component needs no registry, no cluster and no network -- and it carries a `documentation:` mapping with a `PackagePrerequisites` document and a Markdown file, which is the fixture for `zarf_package_inspect`, `zarf_package_documentation` and the `prerequisites` role. A `.tar.zst` is a binary blob nobody can review; the document in that directory is what the tests are actually about.
+
+The prerequisites test is the one combination worth knowing: the cluster is the stub, and the stub hands `package inspect documentation` to the real zarf. The role takes one zarf binary for both the extraction and the cluster reads, so it cannot be given a real one for half of them -- and faking the extraction would leave the role's own extraction branch untested, which is the branch an operator uses.
 
 ```sh
 go run ./magefiles/core test:endToEndNonCluster

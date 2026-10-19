@@ -1,0 +1,100 @@
+---
+# What the cluster is, and what the document is asking of it.
+#
+# Everything after this reads the facts set here rather than the registered results, so that
+# each check says what it is checking instead of where the answer came from. The two documents
+# this resolves -- which engine, and whether the document is coherent at all -- belong here for
+# the same reason: a check that had to work them out for itself would work them out differently.
+
+- name: Read the cluster
+  colonel_byte.zarf.zarf_cluster_info:
+    kubeconfig: "{{ zarf_kubeconfig | default(omit) if (zarf_kubeconfig | length > 0) else omit }}"
+    zarf_binary: "{{ zarf_binary }}"
+  delegate_to: "{{ zarf_delegate_to }}"
+  run_once: true
+  register: _zarf_prereq_cluster
+
+- name: Query the packages already deployed to the cluster
+  colonel_byte.zarf.zarf_package_info:
+    kubeconfig: "{{ zarf_kubeconfig | default(omit) if (zarf_kubeconfig | length > 0) else omit }}"
+    zarf_binary: "{{ zarf_binary }}"
+  delegate_to: "{{ zarf_delegate_to }}"
+  run_once: true
+  register: _zarf_prereq_packages
+  when:
+    - zarf_check_packages | bool
+    - (zarf_prerequisites_document.requires.packages | default([])) | length > 0
+
+# Every check below reads these rather than reaching back into the registered results, so that
+# the expressions say what they are checking instead of where it came from.
+- name: Collect what the document asks for and what the cluster reported
+  ansible.builtin.set_fact:
+    _zarf_prereq_requires: "{{ zarf_prerequisites_document.requires | default({}) }}"
+    # Which engine keys the document carries, by name. The engine is the key rather than a
+    # field inside one, so there is no separate engine name for a version to contradict:
+    # Flux is on 2.x and Argo CD on 3.x, and a document meaning ">=2.9.0" for Flux that said
+    # argocd would have been satisfied by Argo CD 3.5 -- a constraint passing against an
+    # engine it was never about.
+    _zarf_prereq_engines: >-
+      {{ zarf_engine_namespaces.keys() | select('in', zarf_prerequisites_document.requires
+                                                      | default({})) | list }}
+    _zarf_prereq_controllers: "{{ zarf_prerequisites_document.requires.controllers | default([]) }}"
+    _zarf_prereq_storage: "{{ zarf_prerequisites_document.requires.storage | default({}) }}"
+    _zarf_prereq_required_crds: "{{ zarf_prerequisites_document.requires.crds | default([]) }}"
+    _zarf_prereq_required_packages: "{{ zarf_prerequisites_document.requires.packages | default([]) }}"
+    # Deployments and StatefulSets as one list with the kind on each entry, so that the
+    # controller check below selects by (namespace, name, kind) instead of choosing which of
+    # two facts to read inside an expression that is hard enough to follow already.
+    _zarf_prereq_workloads: >-
+      {{ (_zarf_prereq_cluster.deployments | map('combine', {'kind': 'Deployment'}) | list)
+         + (_zarf_prereq_cluster.statefulsets | default([])
+            | map('combine', {'kind': 'StatefulSet'}) | list) }}
+    _zarf_prereq_classes: "{{ _zarf_prereq_cluster.storage_classes | map(attribute='name') | list }}"
+    _zarf_prereq_deployed: "{{ _zarf_prereq_packages.packages | default([]) }}"
+    _zarf_prereq_version_checks: []
+  run_once: true
+
+# A package is reconciled by one GitOps engine. The schema refuses a document requiring both,
+# and so does this -- a document reaches the role through zarf_prerequisites without ever
+# meeting a validator, and picking one of the two silently is the kind of guess this role
+# exists not to make.
+- name: Check that the document requires at most one GitOps engine
+  ansible.builtin.assert:
+    that:
+      - _zarf_prereq_engines | length <= 1
+    fail_msg: >-
+      the prerequisites document requires {{ _zarf_prereq_engines | join(' and ') }} at once,
+      and a package is reconciled by one of them. Name the one this package needs.
+    quiet: "{{ zarf_quiet | bool }}"
+  run_once: true
+
+# The namespace a controller requirement that names none is checked in. It is engine-specific
+# and nothing else about the checking is: "these workloads must be available" is the same
+# question whatever reconciles the cluster, and only the default address of the engine differs.
+#
+# A document with controllers and no engine section gets flux-system, which is what every
+# document written against the older shape of this format meant.
+- name: Work out the engine and the namespace its controllers default to
+  ansible.builtin.set_fact:
+    _zarf_prereq_engine: "{{ (_zarf_prereq_engines | first) | default('fluxcd', true) }}"
+    _zarf_prereq_engine_version: >-
+      {{ (_zarf_prereq_requires[_zarf_prereq_engines | first].version | default(''))
+         if (_zarf_prereq_engines | length > 0) else '' }}
+    _zarf_prereq_namespace: >-
+      {{ zarf_engine_namespaces.get((_zarf_prereq_engines | first) | default('fluxcd', true),
+                                    'flux-system') }}
+  run_once: true
+
+# The document travels separately from the package it describes -- it is extracted on its own --
+# so a document copied from the package beside it and not fully edited would otherwise be
+# checked against a cluster and pass while describing something else entirely.
+- name: Check that the document says which package it describes
+  ansible.builtin.assert:
+    that:
+      - (zarf_prerequisites_document.metadata.package | default('')) | length > 0
+    fail_msg: >-
+      the prerequisites document extracted from {{ zarf_package }} names no package in
+      metadata.package, so there is no telling which package it describes.
+    quiet: "{{ zarf_quiet | bool }}"
+  run_once: true
+  when: zarf_prerequisites | length == 0

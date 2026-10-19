@@ -23,10 +23,12 @@ body:
       options:
         - zarf_init
         - zarf_package_deploy
+        - zarf_cluster_info
+        - zarf_package_documentation
         - zarf_package_info
         - zarf_package_inspect
         - zarf_state_info
-        - A role (packages, package_inspect, state)
+        - A role (packages, package_inspect, prerequisites, state)
         - Not module-specific
     validations:
       required: true

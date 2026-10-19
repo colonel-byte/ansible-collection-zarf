@@ -1,0 +1,60 @@
+---
+# Default variables for the zarf prerequisites role.
+
+# The package whose prerequisites are checked: a path to a staged tarball, an oci:// reference, or
+# a deployed package name. The role extracts the package's own prerequisites document from it.
+zarf_package: ""
+
+# A prerequisites document supplied directly, as a mapping, instead of being read from a package.
+#
+# It exists for the case the package does not carry one: a bundle whose requirements are known to
+# the playbook rather than to the packages in it, or a package built before the format existed.
+# When it is set, zarf_package is not inspected and may be left empty.
+zarf_prerequisites: {}
+
+# Path to the public key the package's signature is verified against.
+zarf_public_key: ""
+
+# When to verify the package signature: never, if-possible, or always.
+#
+# Left empty, the role requires a signature when zarf_public_key names a key, and leaves zarf's own
+# default alone when it does not -- the same policy the package_inspect role applies, and for the
+# same reason: a role that takes a key and then accepts an unsigned package is doing the opposite
+# of what naming the key asked for.
+zarf_verify: ""
+
+# Path to the kubeconfig file the cluster is read through.
+zarf_kubeconfig: ""
+
+# Path to the zarf binary. Defaults to 'zarf'.
+zarf_binary: zarf
+
+# Whether to check the prerequisite packages in requires.packages against the cluster's deployed
+# packages. It is the one check that needs a second query, so it can be turned off for a run that
+# has not initialised the cluster yet -- `zarf package list` needs an initialised one.
+zarf_check_packages: true
+
+# Whether an unsatisfied prerequisite fails the play.
+#
+# True is the point of the role. Setting it false makes the role report rather than enforce: every
+# check still runs and zarf_prerequisites_unmet still lists what failed, and the play continues --
+# which is what a survey across a fleet of clusters wants, and what a deployment does not.
+zarf_prerequisites_enforce: true
+
+# Whether to suppress verbose assert output when asserting inputs. Defaults to true.
+zarf_quiet: true
+
+# The node zarf runs on. Defaults to localhost.
+zarf_delegate_to: localhost
+
+# Where each GitOps engine installs itself, which is the namespace a controller requirement that
+# names none is checked in.
+#
+# It is a variable rather than a literal because the default is a convention, not a rule: Flux can
+# be installed outside flux-system and Argo CD outside argocd, and a fleet that does so would
+# otherwise have to repeat the namespace on every controller of every document. An engine not
+# named here is reported in zarf_prerequisites_skipped rather than guessed at, so adding a third
+# engine is this mapping plus whatever adds its version label.
+zarf_engine_namespaces:
+  fluxcd: flux-system
+  argocd: argocd
