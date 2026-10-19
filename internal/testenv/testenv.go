@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Package testenv holds the scaffolding the end-to-end suites share: finding the repository
-// root, and waiting on a cluster.
+// root, narrowing TMPDIR to one directory per run, and waiting on a cluster.
 //
 // It is a trimmed copy of the `test` package this proof grew up in, in colonel-byte/cargoship.
 // What was dropped is everything that drove the cargoship CLI -- the binary lookup under build/,
@@ -77,6 +77,50 @@ func RepoRoot() (string, error) {
 		}
 		dir = parent
 	}
+}
+
+// runTempRoot is where a suite's run directory is created: /var/tmp rather than /tmp, because the
+// cluster suite peaks near a gigabyte of scratch and /tmp is a tmpfs on most Linux distributions --
+// that is RAM, competing with the Docker and k3d processes the same suite is running. /var/tmp is
+// disk-backed, is where the FHS puts temporaries that may be large, and at eight characters leaves
+// the AF_UNIX budget below untouched.
+//
+// Naming an absolute path costs the portability the OS default gave: /var/tmp is on every Unix,
+// so macOS is fine, but on Windows this fails in TestMain rather than skipping. That is the right
+// trade here -- the cluster suite already skips on anything but Linux, the non-cluster suite needs
+// an ansible-playbook that is not there, and nothing in this repository targets Windows.
+const runTempRoot = "/var/tmp"
+
+// RunTempDir creates the directory a suite points TMPDIR at for the length of one run, points
+// TMPDIR at it, and returns it. The caller removes it when the run is over.
+//
+// Everything a suite spawns writes its temporaries somewhere, and under the mage runner that
+// somewhere is build/tmp, inside the repository: k3d leaves a copy of the config it was given and
+// a hosts file per cluster, zarf leaves a staging directory per deploy, and the suites leave the
+// collections path they stage. Narrowing TMPDIR to one directory and removing it afterwards is
+// what keeps a run from accumulating all of that where a developer has to notice it. Every child
+// inherits it through os.Environ().
+//
+// Naming runTempRoot rather than letting os.MkdirTemp pick is the part that is not obvious, and it
+// is the whole reason this is a function rather than three lines in each TestMain. MkdirTemp("")
+// consults TMPDIR, so the run directory would land inside build/tmp -- 30-odd bytes deeper than
+// the path it is narrowing, and the budget is already nearly spent. ansible-core runs its task
+// queue through a multiprocessing manager whose listener socket lives under TMPDIR as
+// pymp-xxxxxxxx/listener-xxxxxxxx, and Linux caps an AF_UNIX path at 107 bytes. On a GitHub runner
+// the repository path alone is 65 of them, so nested, every ansible-playbook in the non-cluster
+// suite failed with "Local RPC server did not start" -- while passing on every developer's laptop,
+// where the checkout sits somewhere shorter.
+func RunTempDir(prefix string) (string, error) {
+	dir, err := os.MkdirTemp(runTempRoot, prefix)
+	if err != nil {
+		return "", err
+	}
+
+	if err := os.Setenv("TMPDIR", dir); err != nil {
+		return "", err
+	}
+
+	return dir, nil
 }
 
 // KubeClient builds a Kubernetes clientset from the kubeconfig at $KUBECONFIG.

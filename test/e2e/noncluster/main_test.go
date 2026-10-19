@@ -31,5 +31,21 @@ func TestMain(m *testing.M) {
 	if _, _, err := testenv.Bootstrap(); err != nil {
 		log.Fatal(err)
 	}
-	os.Exit(m.Run())
+
+	// This suite builds a real package with a real zarf for the inspect fixture, so every run left
+	// a zarf staging directory behind with nothing to ever remove it -- beside zarf-e2e, the package
+	// cache that is kept between runs on purpose, so build/tmp stopped being a directory a developer
+	// can judge at a glance.
+	runTmp, err := testenv.RunTempDir("zarf-e2e-noncluster-")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	code := m.Run()
+
+	// After the run rather than deferred: os.Exit does not run deferred functions.
+	if err := os.RemoveAll(runTmp); err != nil {
+		log.Printf("unable to remove the suite temporary directory %s: %v", runTmp, err)
+	}
+	os.Exit(code)
 }

@@ -12,7 +12,7 @@ Nothing here runs on the cluster's nodes. The modules run the installed `zarf` o
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cmd/init/`, `cmd/deploy/`    | A `main` package per wrapper binary. Both are thirty-line entry points; everything they do is in `internal/zarfmod`                                        |
 | `internal/zarfmod/`           | The module logic: `argv[0]` dispatch, the WANT_JSON intake, the command-line rendering, the progress reader, the stdout guard, the heartbeat, the response |
-| `internal/testenv/`           | Scaffolding the end-to-end suites share: the repo-root chdir, and waiting on a cluster                                                                     |
+| `internal/testenv/`           | Scaffolding the end-to-end suites share: the repo-root chdir, the per-run `TMPDIR`, and waiting on a cluster                                                                     |
 | `ansible/colonel_byte/zarf/`  | The collection: action plugins, the shared Python, roles. See [`ansible/colonel_byte/zarf/AGENTS.md`](ansible/colonel_byte/zarf/AGENTS.md)                 |
 | `ansible/examples/playbooks/` | Runnable example playbooks                                                                                                                                 |
 | `test/e2e/noncluster/`        | The suite that needs no cluster: the read-only modules and the state redaction, against a stub zarf                                                        |
