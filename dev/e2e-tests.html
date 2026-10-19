@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-7e22e833.js";
+            window.path_to_searchindex_js = "../searchindex-aaf88b7e.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-f7162fff.js"></script>
+        <script src="../toc-1e97d9c5.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -185,8 +185,11 @@
                         <h1 id="end-to-end-tests"><a class="header" href="#end-to-end-tests">End-to-end tests</a></h1>
 <p>There are two suites, split by whether they need a cluster. Both drive a real <code>ansible-playbook</code>, because every module here is an action plugin and only Ansible can run one. Neither runs under a bare <code>go test ./...</code>: both are behind mage targets, and every test skips with a reason when a prerequisite is missing rather than failing.</p>
 <h2 id="teste2enoncluster"><a class="header" href="#teste2enoncluster"><code>test/e2e/noncluster</code></a></h2>
-<p>Needs <code>ansible-playbook</code> and nothing else. It covers the three read-only modules and the <code>state</code> role.</p>
-<p>The one impure step in a read-only module is running zarf, so the suite stands a stub in its place: <code>testdata/zarf-state-stub.sh</code> prints the base64 of a recorded <code>zarf-state</code> Secret, and <code>zarf-package-list-stub.sh</code> prints a recorded package list. The playbook passes the stub as the module’s <code>zarf_binary</code>.</p>
+<p>Needs <code>ansible-playbook</code>, and a <code>zarf</code> on <code>PATH</code> for the tests that build a real package. It covers the five read-only modules and the <code>state</code>, <code>package_inspect</code> and <code>prerequisites</code> roles.</p>
+<p>The one impure step in most read-only modules is running zarf, so the suite stands a stub in its place: <code>testdata/zarf-state-stub.sh</code> prints the base64 of a recorded <code>zarf-state</code> Secret, and <code>zarf-package-list-stub.sh</code> prints a recorded package list. The playbook passes the stub as the module’s <code>zarf_binary</code>.</p>
+<p><code>testdata/zarf-cluster-stub.sh</code> is the exception that reads its arguments. <code>zarf_cluster_info</code> asks the cluster four questions – the Kubernetes version, the CRDs, the StorageClasses and the Deployments – and a stub that printed one document whatever it was asked would show that the module can parse a document, not that it asked four questions and kept the answers apart. It fails loudly on a command it does not recognise, for the same reason: a silent empty answer is a cluster that looks empty, and an empty cluster satisfies no prerequisite.</p>
+<p>The tests that need a real zarf build a package rather than committing one. <code>testdata/zarf-inspect-fixture</code> is the smallest package that builds – a files-only component needs no registry, no cluster and no network – and it carries a <code>documentation:</code> mapping with a <code>PackagePrerequisites</code> document and a Markdown file, which is the fixture for <code>zarf_package_inspect</code>, <code>zarf_package_documentation</code> and the <code>prerequisites</code> role. A <code>.tar.zst</code> is a binary blob nobody can review; the document in that directory is what the tests are actually about.</p>
+<p>The prerequisites test is the one combination worth knowing: the cluster is the stub, and the stub hands <code>package inspect documentation</code> to the real zarf. The role takes one zarf binary for both the extraction and the cluster reads, so it cannot be given a real one for half of them – and faking the extraction would leave the role’s own extraction branch untested, which is the branch an operator uses.</p>
 <pre><code class="language-sh">go run ./magefiles/core test:endToEndNonCluster
 </code></pre>
 <p>Two things about these tests are deliberate rather than incidental, and both are easy to undo by accident:</p>

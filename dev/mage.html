@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-7e22e833.js";
+            window.path_to_searchindex_js = "../searchindex-aaf88b7e.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-f7162fff.js"></script>
+        <script src="../toc-1e97d9c5.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -222,15 +222,40 @@
 </thead>
 <tbody>
 <tr><td><code>generate:document</code></td><td><code>docs/ansible/module_*.md</code> and <code>role_*.md</code>, <code>docs/golang/</code>, <code>docs/index.md</code>, <code>docs/security.md</code>, <code>docs/SUMMARY.md</code>.</td></tr>
+<tr><td><code>generate:schema</code></td><td><code>schema/*.json</code>, reflected from the Go types in <code>api/</code> and <code>magefiles/pkg/pkgvendor</code>.</td></tr>
 <tr><td><code>generate:zarfFlags</code></td><td><code>internal/zarfmod/testdata/zarf-init-flags.txt</code> and <code>zarf-package-deploy-flags.txt</code>, read from the installed zarf.</td></tr>
 <tr><td><code>generate:dnfPins</code></td><td>The <code>ansible-core</code> and <code>bash-completion</code> pins in <code>containers/ansible/Dockerfile</code> and <code>.goreleaser.yaml</code>.</td></tr>
 </tbody>
 </table>
 </div>
 <p><code>generate:document</code> rewrites generated pages in place. The hand-written overviews beside them – <code>docs/ansible/collection.md</code>, <code>modules.md</code>, <code>roles.md</code> – are left alone, which is why only the <code>module_*</code> and <code>role_*</code> patterns are cleared before a run.</p>
+<p><code>generate:schema</code> writes the two published JSON Schemas: the <code>colonel-byte.dev/v1alpha1</code> <code>PackagePrerequisites</code> schema, from <code>api/colonel-byte.dev/v1alpha1/prerequisites</code>, and the schema of a reference package’s <code>resources.json</code>, from <code>magefiles/pkg/pkgvendor</code>. The descriptions in both are the doc comments on those types, so a reworded comment is a schema change. <code>TestCommittedSchemasAreCurrent</code> fails when a committed schema stops matching its type – a stale schema does not fail at build time, it validates the wrong document.</p>
 <p><code>generate:zarfFlags</code> is the refresh for the recorded flag lists <code>TestInitArgsAreKnownFlags</code> and <code>TestDeployArgsAreKnownFlags</code> check against. Run it when the zarf the modules run moves, and review the diff: a flag that disappeared is a module parameter that no longer works. Set <code>ZARF_ANSIBLE_FLAGS_BINARY</code> to name a zarf that is not on <code>PATH</code>. It deliberately does not read the flags at test time – the unit tests run with no zarf on the machine, in CI and on a contributor’s laptop, and a test that needs a binary to say anything is a test that gets skipped.</p>
 <p><code>generate:dnfPins</code> moves the two dnf package pins the management node image installs. It fetches <code>repomd.xml</code> and <code>primary.xml.gz</code> from the AlmaLinux 10 AppStream and BaseOS repodata over HTTP, picks the newest <code>ansible-core</code> and <code>bash-completion</code> by RPM epoch-version-release ordering, and rewrites the <code>ARG</code> lines in <code>containers/ansible/Dockerfile</code> along with the <code>zarf-ansible</code> <code>build_args</code> in <code>.goreleaser.yaml</code>. Both files carry the same two versions on purpose – the <code>ARG</code> defaults are what a local build gets and the <code>build_args</code> are what the release build passes – so one run writes both, and a rewriter that no longer finds what it edits fails the target rather than leaving one of them behind. Dependabot’s <code>docker</code> ecosystem moves the two <code>FROM</code> digests and nothing else, which is why these pins need a target at all.</p>
 <p>Read the diff rather than committing it unseen: a pin that jumped a minor line is a change to what the image installs, and the image’s own build is what proves it still works.</p>
+<h2 id="examples"><a class="header" href="#examples"><code>Examples</code></a></h2>
+<p>The reference packages under <code>examples/packages</code> are illustrative, and the parts of them that track an upstream release are machine-maintained. These are the targets that maintain them. Nothing in CI runs them: <code>examples:vendor</code> reaches the network, and <code>examples:images</code> and <code>examples:lint</code> need a zarf.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Target</th><th>What it needs</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>examples:vendor</code></td><td>The network</td><td>Fetches each package’s manifests at its pinned tag and rewrites its <code>upstream/</code> tree, kustomizations and version</td></tr>
+<tr><td><code>examples:images</code></td><td><code>zarf</code></td><td>Rewrites each component’s <code>images:</code> list from what <code>zarf dev find-images</code> discovers</td></tr>
+<tr><td><code>examples:lint</code></td><td><code>zarf</code></td><td>Runs <code>zarf dev lint</code> over every example package</td></tr>
+</tbody>
+</table>
+</div>
+<p>A package opts in by holding a <code>resources.json</code>, which declares the upstream repository, the pinned tag, where to read the manifests from, and which files go into which subdirectory and zarf component. <code>app-fluxcd</code> and <code>app-argocd</code> hold one; <code>operator-external-secrets</code> ships its own manifests and vendors nothing.</p>
+<p>The two differ in where the manifests live, which is why both are here. Flux attaches <code>manifests.tar.gz</code> to every release, so <code>app-fluxcd/resources.json</code> names an <code>asset</code>. Argo CD attaches only CLI binaries and SBOMs and documents applying <code>raw.githubusercontent.com/argoproj/argo-cd/&lt;tag&gt;/manifests/install.yaml</code> instead, so <code>app-argocd/resources.json</code> names a <code>tree</code> – a directory in the tagged source tree, whose <code>match</code> entries are paths relative to it. Exactly one of the two is set, and a declaration naming both or neither is refused.</p>
+<p>Moving a pin is a manual edit, which is the third kind of owner <a href="../../magefiles/AGENTS.html"><code>magefiles/AGENTS.md</code></a> allows and the one these pins have: write the new tag into <code>resources.json</code>, then run the two targets below in that order and read the diff. Nothing here discovers the upstream’s latest release on its own – the pin is on a reference package nothing deploys, and moving it is a reviewed change rather than a thing that happens to a tree.</p>
+<p>The order matters when a pin moves: <code>examples:vendor</code> writes the manifests, and <code>examples:images</code> discovers images from the manifests that are now there.</p>
+<pre><code class="language-sh">go run ./magefiles/core examples:vendor    # after editing tag in resources.json, or to re-apply it as it is
+go run ./magefiles/core examples:images
+go run ./magefiles/core examples:lint
+</code></pre>
+<p><code>magefiles/pkg/pkgvendor</code> is where that lives, and it is a Go port of the shell in <a href="https://github.com/colonel-byte/zarf-pkg-fluxcd">colonel-byte/zarf-pkg-fluxcd</a>’s <code>.github/hack</code>. <code>ZARF_ANSIBLE_FLAGS_BINARY</code> names a zarf that is not on <code>PATH</code>, the same variable <code>generate:zarfFlags</code> reads.</p>
 
                     </main>
 

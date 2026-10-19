@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-7e22e833.js";
+            window.path_to_searchindex_js = "../searchindex-aaf88b7e.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-f7162fff.js"></script>
+        <script src="../toc-1e97d9c5.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -191,6 +191,7 @@
 <tbody>
 <tr><td><a href="role_packages.html"><code>packages</code></a></td><td>Queries the cluster via <code>zarf package list</code> and sets the <code>zarf_packages</code> fact.</td></tr>
 <tr><td><a href="role_package_inspect.html"><code>package_inspect</code></a></td><td>Inspects a Zarf package definition and sets structured metadata facts.</td></tr>
+<tr><td><a href="role_prerequisites.html"><code>prerequisites</code></a></td><td>Checks a cluster against the prerequisites a package declares, and refuses to proceed.</td></tr>
 <tr><td><a href="role_state.html"><code>state</code></a></td><td>Queries the cluster for the <code>zarf-state</code> Secret and sets the parsed <code>zarf_state</code> fact.</td></tr>
 </tbody>
 </table>
@@ -224,6 +225,25 @@
       version: "{{ zarf_package_version }}"
       flavor: "{{ zarf_package_flavor }}"
 </code></pre>
+<h2 id="prerequisites"><a class="header" href="#prerequisites">prerequisites</a></h2>
+<p><code>prerequisites</code> is the check that belongs in front of <code>zarf_package_deploy</code>. It reads the <a href="../guides/package-prerequisites.html"><code>PackagePrerequisites</code></a> document a package carries in its <code>documentation:</code> mapping, reads the cluster, and fails the play when the cluster does not satisfy it.</p>
+<p>It exists for one failure in particular. A workload package delivered as a <code>HelmRelease</code> needs a running <code>helm-controller</code> to do anything at all; on a cluster without one, zarf writes the manifests, reports the deployment as a success, and nothing is ever reconciled. The only symptom is a <code>HelmRelease</code> that never becomes ready.</p>
+<p>Three facts come out of it, and the third matters as much as the other two. <code>zarf_prerequisites_checked</code> is what was checked and held, <code>zarf_prerequisites_unmet</code> is what did not, and <code>zarf_prerequisites_skipped</code> is what could not be checked at all – a compound version range the role will not half-evaluate, or an <code>accessModes</code> requirement that cannot be verified without creating a PersistentVolumeClaim. A check that cannot be made is named rather than quietly passed.</p>
+<p>Every unmet prerequisite is reported at once, from one assert at the end, so an operator who has to install Flux <em>and</em> a storage provider is told both rather than told one, fixing it, and being told the next.</p>
+<pre><code class="language-yaml">- name: Refuse to deploy onto a cluster that cannot run this package
+  ansible.builtin.include_role:
+    name: colonel_byte.zarf.prerequisites
+  vars:
+    zarf_package: /srv/staging/zarf-package-operator-external-secrets-amd64-2.12.0.tar.zst
+    zarf_public_key: /etc/zarf/colonel-byte-zarf-packages.pub
+    zarf_kubeconfig: /etc/rancher/rke2/rke2.yaml
+
+- name: Report what could not be checked
+  ansible.builtin.debug:
+    msg: "{{ zarf_prerequisites_skipped }}"
+  when: zarf_prerequisites_skipped | length &gt; 0
+</code></pre>
+<p>A package that carries no document is not a failure: nothing is checked, <code>zarf_prerequisites_checked</code> is empty, and the play continues. Set <code>zarf_prerequisites_enforce: false</code> to report rather than enforce, which is what a survey across a fleet of clusters wants and what a deployment does not. <a href="https://github.com/colonel-byte/ansible-collection-zarf/blob/main/ansible/examples/playbooks/zarf-prerequisites.yml"><code>ansible/examples/playbooks/zarf-prerequisites.yml</code></a> deploys a two-package bundle this way.</p>
 <h2 id="state"><a class="header" href="#state">state</a></h2>
 <p><code>state</code> is the convenient way to retrieve and parse Zarf’s cluster state. It runs <code>zarf tools kubectl get secret zarf-state -n zarf -o jsonpath='{.data.state}'</code>, decodes the payload, and sets the resulting dictionary as the <code>zarf_state</code> fact.</p>
 <p>The credentials in that Secret – the registry push, pull and seed secrets, the git server passwords, the artifact server token, and the agent webhook’s TLS private key – are withheld. The paths withheld are set as <code>zarf_state_redacted</code>, and <code>zarf_include_credentials: true</code> returns them instead. The role defaults <code>no_log</code> on both of its tasks, which is also why reaching for the role beats calling the module directly here: <code>set_fact</code> prints what the module censored, so the module alone cannot keep a credential out of a <code>-v</code> transcript. See <a href="../agent/choice-zarf-info-modules.html">choice-zarf-info-modules</a>.</p>

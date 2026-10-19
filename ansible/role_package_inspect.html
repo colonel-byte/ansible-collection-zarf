@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-7e22e833.js";
+            window.path_to_searchindex_js = "../searchindex-aaf88b7e.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-f7162fff.js"></script>
+        <script src="../toc-1e97d9c5.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -189,7 +189,8 @@
 <p>Added in <code>colonel_byte.zarf</code> 0.31.0.</p>
 <p>Runs <code>zarf package inspect definition</code> against a package source and parses the YAML definition.</p>
 <p>A <code>zarf_public_key</code> with no <code>zarf_verify</code> requires a signature, which is stricter than the module’s own default. See <code>zarf_verify</code>.</p>
-<p>Sets the <code>zarf_package_definition</code>, <code>zarf_package_name</code>, <code>zarf_package_version</code>, and <code>zarf_package_flavor</code> facts.</p>
+<p>Sets the <code>zarf_package_definition</code>, <code>zarf_package_name</code>, <code>zarf_package_version</code>, <code>zarf_package_flavor</code>, and <code>zarf_package_documentation</code> facts.</p>
+<p><code>zarf_package_documentation</code> is the package’s <code>documentation:</code> mapping: documentation keys to paths inside the package’s own source tree. It is empty for a package that declares none. Reading the file one of them names is <code>colonel_byte.zarf.zarf_package_documentation</code>, and checking a cluster against a <code>prerequisites</code> key is the <code>prerequisites</code> role.</p>
 <p>Every task carries <code>run_once: true</code> and delegates to <code>zarf_delegate_to</code>.</p>
 <h3 id="variables"><a class="header" href="#variables">Variables</a></h3>
 <div class="table-wrapper">

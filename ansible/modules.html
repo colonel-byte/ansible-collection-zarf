@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-7e22e833.js";
+            window.path_to_searchindex_js = "../searchindex-aaf88b7e.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-f7162fff.js"></script>
+        <script src="../toc-1e97d9c5.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -183,9 +183,9 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="modules"><a class="header" href="#modules">Modules</a></h1>
-<p>Five modules ship. Two of them converge a cluster, and three read it.</p>
+<p>Seven modules ship. Two of them converge a cluster, and five read it.</p>
 <p><code>zarf_init</code> and <code>zarf_package_deploy</code> are the converging pair: they are the proof of <a href="https://github.com/zarf-dev/proposals/pull/73">ZEP-0072</a>, each is a compiled wrapper binary with its parameters and command line in Go, and <a href="../agent/choice-zarf-ansible-module.html">choice-zarf-ansible-module</a> records how. Package creation is not among them – it builds an artifact from a definition in a repository, which belongs in a pipeline rather than in a convergence run – and neither is package removal, which nothing here has needed yet.</p>
-<p><code>zarf_package_info</code>, <code>zarf_package_inspect</code> and <code>zarf_state_info</code> read. They change nothing, they answer during a check-mode play rather than skipping, and they are plain action plugins with no wrapper binary behind them, for the reasons in <a href="../agent/choice-zarf-info-modules.html">choice-zarf-info-modules</a>.</p>
+<p><code>zarf_cluster_info</code>, <code>zarf_package_documentation</code>, <code>zarf_package_info</code>, <code>zarf_package_inspect</code> and <code>zarf_state_info</code> read. They change nothing, they answer during a check-mode play rather than skipping, and they are plain action plugins with no wrapper binary behind them, for the reasons in <a href="../agent/choice-zarf-info-modules.html">choice-zarf-info-modules</a> and – for the two added for the prerequisites format, which are the first to push past the threshold that record names – in <a href="../agent/choice-package-documentation-module.html">choice-package-documentation-module</a>.</p>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -194,6 +194,8 @@
 <tbody>
 <tr><td><a href="module_init.html"><code>zarf_init</code></a></td><td>Initialises a cluster: the injector, the seed registry, the registry, the agent.</td></tr>
 <tr><td><a href="module_package_deploy.html"><code>zarf_package_deploy</code></a></td><td>Puts a package on a cluster, from a path, an <code>oci://</code> reference, or an <code>https://</code> URL.</td></tr>
+<tr><td><a href="module_cluster_info.html"><code>zarf_cluster_info</code></a></td><td>Reports the cluster’s Kubernetes version, CRDs, StorageClasses and Deployment readiness.</td></tr>
+<tr><td><a href="module_package_documentation.html"><code>zarf_package_documentation</code></a></td><td>Extracts the files a package carries in its <code>documentation:</code> mapping, and parses the YAML ones.</td></tr>
 <tr><td><a href="module_package_info.html"><code>zarf_package_info</code></a></td><td>Lists the packages deployed to a cluster, via <code>zarf package list</code>.</td></tr>
 <tr><td><a href="module_package_inspect.html"><code>zarf_package_inspect</code></a></td><td>Reads the <code>zarf.yaml</code> of a package tarball, an <code>oci://</code> reference, or a deployed package.</td></tr>
 <tr><td><a href="module_state_info.html"><code>zarf_state_info</code></a></td><td>Reads the cluster’s <code>zarf-state</code> Secret, withholding the credentials in it.</td></tr>
@@ -209,8 +211,11 @@
 <p>Credentials given as parameters are rendered as flags, which puts them in the process table for the life of the run. <code>zarf_config</code> names a zarf configuration file instead, which zarf reads them from.</p>
 <h2 id="what-the-result-says"><a class="header" href="#what-the-result-says">What the result says</a></h2>
 <p>The two converging modules report <code>changed: true</code> with <code>changedSignal: partial</code> on every successful run, and name every component they deployed in <code>changedUndeclared</code>. Zarf reports which components ran and not whether any of them found the cluster already as it wanted, so <code>partial</code> is the honest answer rather than an unfinished one. Check mode reports the task as skipped, because neither command has a dry run.</p>
-<p>The three read-only modules report <code>changed: false</code>, which is not an approximation, and they run in check mode rather than skipping: answering a question during a run an operator asked to be told about is the honest thing to do.</p>
+<p>The five read-only modules report <code>changed: false</code>, which is not an approximation, and they run in check mode rather than skipping: answering a question during a run an operator asked to be told about is the honest thing to do.</p>
 <p><code>zarf_state_info</code> withholds what it reads. The <code>zarf-state</code> Secret carries the registry, git and artifact server credentials and the agent webhook’s TLS private key, so the returned <code>state</code> has them removed and <code>redacted</code> names the paths that went. <code>include_credentials: true</code> returns them and censors the task’s own output in the same breath; the task that reads the result afterwards needs its own <code>no_log</code>, because <code>set_fact</code> prints what the module hid.</p>
+<h2 id="the-two-that-exist-for-the-prerequisites-format"><a class="header" href="#the-two-that-exist-for-the-prerequisites-format">The two that exist for the prerequisites format</a></h2>
+<p><code>zarf_package_documentation</code> and <code>zarf_cluster_info</code> are the two halves of a check that runs before a deployment. A package states what it needs of a cluster in a <a href="../guides/package-prerequisites.html"><code>PackagePrerequisites</code></a> document carried in its own <code>documentation:</code> mapping; the first extracts that document, the second reports the cluster facts it is checked against, and the <a href="role_prerequisites.html"><code>prerequisites</code></a> role is what holds the two together and fails the play. Reach for the role rather than the modules unless you are checking something the format does not describe.</p>
+<p><code>zarf_cluster_info</code> reads the cluster through <code>zarf tools kubectl</code>, which is a whole vendored kubectl, rather than through <code>kubernetes.core</code>. That keeps this collection’s only requirement the zarf binary it already requires: the management node a playbook runs from is typically air-gapped, and a second Galaxy collection to stage onto it is a cost every consumer of this one would pay. <code>zarf_state_info</code> reads the <code>zarf-state</code> Secret the same way, and for the same reason.</p>
 <p>The <a href="../guides/zarf-ansible-module.html">module guide</a> covers installing the modules, the ordering a cluster with no storage provider needs, the live progress display, and the shape of the result.</p>
 
                     </main>
@@ -221,7 +226,7 @@
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../ansible/module_init.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../ansible/module_cluster_info.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -235,7 +240,7 @@
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../ansible/module_init.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../ansible/module_cluster_info.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

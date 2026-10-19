@@ -37,10 +37,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-7e22e833.js";
+            window.path_to_searchindex_js = "searchindex-aaf88b7e.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-f7162fff.js"></script>
+        <script src="toc-1e97d9c5.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -196,14 +196,33 @@
 <tbody>
 <tr><td><code>zarf_init</code></td><td><code>zarf init</code> against the cluster in a kubeconfig</td><td>Wrapper binary, from <code>cmd/init</code></td></tr>
 <tr><td><code>zarf_package_deploy</code></td><td><code>zarf package deploy</code></td><td>Wrapper binary, from <code>cmd/deploy</code></td></tr>
+<tr><td><code>zarf_cluster_info</code></td><td>Reports the cluster’s Kubernetes version, CRDs, StorageClasses and Deployments</td><td>Action plugin</td></tr>
+<tr><td><code>zarf_package_documentation</code></td><td>Extracts the files a package carries in its <code>documentation:</code> mapping</td><td>Action plugin</td></tr>
 <tr><td><code>zarf_package_info</code></td><td>Lists the packages deployed to a cluster</td><td>Action plugin</td></tr>
 <tr><td><code>zarf_package_inspect</code></td><td>Reads and verifies a package without deploying it</td><td>Action plugin</td></tr>
 <tr><td><code>zarf_state_info</code></td><td>Reads the <code>zarf-state</code> Secret, withholding its eight credentials by default</td><td>Action plugin</td></tr>
 </tbody>
 </table>
 </div>
-<p>The first two converge a cluster and are the proof. The last three read one, are not part of the proof, and are plain action plugins with no binary behind them – <a href="agent/choice-zarf-info-modules.html">choice-zarf-info-modules</a> records why, and why <code>zarf_state_info</code> redacts.</p>
-<p>Each read-only module has a role apiece: <code>packages</code>, <code>package_inspect</code> and <code>state</code>.</p>
+<p>The first two converge a cluster and are the proof. The other five read one, are not part of the proof, and are plain action plugins with no binary behind them – <a href="agent/choice-zarf-info-modules.html">choice-zarf-info-modules</a> records why, and why <code>zarf_state_info</code> redacts.</p>
+<p>There are four roles: <code>packages</code>, <code>package_inspect</code> and <code>state</code> wrap a read-only module apiece, and <a href="ansible/role_prerequisites.html"><code>prerequisites</code></a> refuses to deploy a package onto a cluster that cannot run it.</p>
+<h2 id="package-prerequisites"><a class="header" href="#package-prerequisites">Package prerequisites</a></h2>
+<p>A package can state what it needs of a cluster in a machine-readable document carried inside the package itself, and a deployment can refuse to proceed when the cluster does not satisfy it. That is the second thing in this repository: a <code>colonel-byte.dev/v1alpha1</code> <code>PackagePrerequisites</code> format, a <a href="https://github.com/colonel-byte/ansible-collection-zarf/blob/main/schema/zarf-v1alpha1-package-prerequisites-schema.json">generated JSON Schema</a>, and the modules and role that read one.</p>
+<p>It exists for a failure that reports itself as a success. A workload package delivered as a <code>HelmRelease</code> needs a running <code>helm-controller</code> to do anything at all; deploy it onto a cluster without one and zarf applies the manifests, the API server accepts them, <code>zarf package deploy</code> reports a successful deployment, and nothing is ever reconciled.</p>
+<pre><code class="language-yaml">- name: Refuse to deploy onto a cluster that cannot run this package
+  ansible.builtin.include_role:
+    name: colonel_byte.zarf.prerequisites
+  vars:
+    zarf_package: /srv/staging/zarf-package-operator-external-secrets-amd64-2.12.0.tar.zst
+    zarf_public_key: /etc/zarf/colonel-byte-zarf-packages.pub
+    zarf_kubeconfig: /etc/rancher/rke2/rke2.yaml
+
+- name: Report what could not be checked
+  ansible.builtin.debug:
+    msg: "{{ zarf_prerequisites_skipped }}"
+  when: zarf_prerequisites_skipped | length &gt; 0
+</code></pre>
+<p>The cluster is read through <code>zarf tools kubectl</code>, so this needs no <code>kubernetes.core</code> – the management node is typically air-gapped, and a second Galaxy collection to stage onto it is a cost every consumer would pay. <a href="guides/package-prerequisites.html">The guide</a> is the format and what reads it; <a href="https://github.com/colonel-byte/ansible-collection-zarf/tree/main/examples/packages"><code>examples/packages</code></a> holds three reference packages that declare one: a GitOps engine from each of Flux and Argo CD, and a workload that requires one.</p>
 <h2 id="installing"><a class="header" href="#installing">Installing</a></h2>
 <p>Build the two wrapper binaries and put them on the path of the node the play runs on:</p>
 <pre><code class="language-sh">go build -o zarf_init ./cmd/init
@@ -256,8 +275,10 @@ go run ./magefiles/core test:unit                # everything but the e2e suites
 go run ./magefiles/core test:endToEndNonCluster  # needs ansible-playbook; no cluster
 go run ./magefiles/core test:endToEndCluster     # needs k3d, zarf, Docker and the network
 go run ./magefiles/core generate:document        # regenerate docs/ansible, docs/golang, docs/index.md, docs/SUMMARY.md
+go run ./magefiles/core generate:schema          # regenerate schema/ from the Go types in api/
+go run ./magefiles/core examples:lint            # zarf dev lint over the reference packages
 </code></pre>
-<p>The unit tests are where the collection and the Go code are held against each other: <code>TestActionPluginDocsMatchModuleParams</code> holds each action plugin’s <code>DOCUMENTATION</code> block against the Go parameter struct, <code>TestInfoPluginDocsMatchRenderedFlags</code> does the same for the read-only modules against the flags their <code>command_parts</code> functions name, and <code>TestEveryActionPluginIsCovered</code> fails on a plugin that neither test looks at. <code>TestInitArgsAreKnownFlags</code> holds every flag the wrappers can render against a recorded list; refresh it with <code>generate:zarfFlags</code> when the zarf they run moves.</p>
+<p>The unit tests are where the collection and the Go code are held against each other: <code>TestActionPluginDocsMatchModuleParams</code> holds each action plugin’s <code>DOCUMENTATION</code> block against the Go parameter struct, <code>TestInfoPluginDocsMatchRenderedFlags</code> does the same for the read-only modules against the flags their <code>command_parts</code> functions name, and <code>TestEveryActionPluginIsCovered</code> fails on a plugin that neither test looks at. <code>TestInitArgsAreKnownFlags</code> holds every flag the wrappers can render against a recorded list; refresh it with <code>generate:zarfFlags</code> when the zarf they run moves. On the prerequisites side, <code>TestCommittedSchemasAreCurrent</code> fails when a committed schema stops matching the Go type it is reflected from, and <code>TestExampleDocumentsMatchTheTypes</code> decodes each reference package’s document into those types with unknown fields rejected.</p>
 <h2 id="known-limits-of-the-proof"><a class="header" href="#known-limits-of-the-proof">Known limits of the proof</a></h2>
 <ul>
 <li>The flag surface is a recorded list rather than a read of zarf’s own command tree. It catches a flag zarf does not accept; it cannot catch a zarf release that renamed one without the list being refreshed.</li>
