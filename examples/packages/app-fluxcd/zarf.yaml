@@ -1,0 +1,65 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/zarf-dev/zarf/main/zarf.schema.json
+#
+# FluxCD, packaged from the upstream release manifests, as the GitOps engine the rest of a bundle
+# reconciles through.
+#
+# This package and examples/packages/operator-external-secrets are reference implementations of the
+# PackagePrerequisites format rather than packages this repository builds or ships. They are here to
+# be read, linted and inspected; docs/guides/package-prerequisites.md walks through what each part
+# is for.
+#
+# Three parts of this file are machine-maintained, and `mage examples:vendor` and
+# `mage examples:images` are what maintain them. Do not edit them by hand:
+#
+#   - metadata.version, which is the pinned upstream tag in resources.json
+#   - the upstream/ manifest trees each component's kustomization points at
+#   - each component's images: list, discovered by `zarf dev find-images`
+#
+# Everything else here -- the structure, the documentation mapping, these comments -- is
+# hand-written. See magefiles/pkg/pkgvendor, which is a Go port of the shell in
+# colonel-byte/zarf-pkg-fluxcd's .github/hack.
+#
+# The part to copy for a package of your own is the `documentation:` mapping. It is zarf's own
+# top-level key -- a map of a name to a path inside the package's source tree -- and zarf packages
+# every file it names into a documentation layer, which `zarf package inspect documentation`
+# extracts without deploying anything. That is what makes a prerequisites document travel with the
+# package it describes instead of living in a README nothing can parse.
+kind: ZarfPackageConfig
+metadata:
+  name: app-fluxcd
+  # The upstream release this package is: the pin lives in resources.json, and examples:vendor
+  # writes it here. A package that said 1.0.0 while deploying Flux v2.9.5 would carry the one
+  # version number nobody could act on.
+  version: v2.9.5
+  description: FluxCD from the upstream manifests, as the GitOps engine a bundle reconciles through
+  source: https://github.com/colonel-byte/ansible-collection-zarf
+  annotations:
+    # The annotations duplicate two facts from docs/prerequisites.yaml on purpose. They are readable
+    # from `zarf package inspect definition` alone, which is one command and no extraction, so a
+    # consumer that only needs to order a bundle can read them; the document is for the consumer
+    # that is going to check a cluster against it. docs/prerequisites.yaml is the source of truth,
+    # and the prerequisites role reads that rather than these.
+    colonel-byte.dev/provides-capability: fluxcd-engine
+    colonel-byte.dev/delivery-mode: upstream-manifests
+
+documentation:
+  prerequisites: docs/prerequisites.yaml
+  readme: README.md
+
+components:
+  # The four controllers a GitOps workload package needs to be reconciled at all, and the RBAC and
+  # policies they run under. Required: a package that deploys none of this is not this package.
+  - name: fluxcd-core
+    required: true
+    description: The source, kustomize, helm and notification controllers, with their RBAC
+    manifests:
+      - name: fluxcd
+        namespace: flux-system
+        kustomizations:
+          - upstream/core
+    images:
+      - ghcr.io/fluxcd/helm-controller:v1.6.4
+      - ghcr.io/fluxcd/kustomize-controller:v1.9.5
+      - ghcr.io/fluxcd/notification-controller:v1.9.4
+      - ghcr.io/fluxcd/source-controller:v1.9.5

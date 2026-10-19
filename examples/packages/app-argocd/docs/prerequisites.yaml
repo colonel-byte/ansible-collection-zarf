@@ -1,0 +1,41 @@
+---
+# What Argo CD needs of a cluster, and what a cluster has once it is deployed.
+#
+# The mirror of examples/packages/app-fluxcd/docs/prerequisites.yaml, and the reason this package
+# exists: `provides` here and in that file are both read by a consumer ordering a bundle, so a
+# package that requires a GitOps engine can be satisfied by either one.
+#
+# Nothing here is contacted.
+apiVersion: colonel-byte.dev/v1alpha1
+kind: PackagePrerequisites
+metadata:
+  package: app-argocd
+  version: 3.5.5
+  description: >-
+    Argo CD needs only an initialised cluster and somewhere to run. It is the GitOps engine other
+    packages require, so almost everything here is in provides rather than requires.
+
+requires:
+  kubernetes:
+    version: ">=1.30.0"
+  packages:
+    # The initialised cluster itself, by the name `zarf package list` reports it under.
+    - name: init
+      version: ">=0.85.0"
+
+provides:
+  capabilities:
+    # The same capability name app-fluxcd provides, deliberately. A package that needs something
+    # to reconcile its Applications or HelmReleases requires `gitops-engine`, and either package
+    # satisfies it -- which is the whole point of a capability being a name this format owns
+    # rather than a thing Kubernetes knows about.
+    - name: gitops-engine
+      version: "3.5.5"
+    - name: argocd-engine
+      version: "3.5.5"
+  crds:
+    - applications.argoproj.io
+    - applicationsets.argoproj.io
+    - appprojects.argoproj.io
+  namespaces:
+    - argocd
