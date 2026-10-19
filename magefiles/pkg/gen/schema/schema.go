@@ -15,13 +15,14 @@
 // Package schema generates the JSON Schema documents this repository publishes, from the Go types
 // that define them.
 //
-// The colonel-byte.dev/v1alpha1 PackagePrerequisites schema is reflected from
+// There are two. The colonel-byte.dev/v1alpha1 PackagePrerequisites schema is reflected from
 // api/colonel-byte.dev/v1alpha1/prerequisites, and is the one a package author validates a document
-// against.
+// against. The package-resources schema is reflected from magefiles/pkg/pkgvendor, and describes the
+// resources.json a reference package declares its upstream pin in.
 //
-// It is generated rather than hand-written for the usual reason -- a hand-written schema beside a
-// Go struct is two definitions of one format, and the one nobody runs goes stale -- and it is
-// committed rather than built on demand because the files that validate against it name a
+// Both are generated rather than hand-written for the usual reason -- a hand-written schema beside a
+// Go struct is two definitions of one format, and the one nobody runs goes stale -- and both are
+// committed rather than built on demand because the files that validate against them name a
 // `$schema` path that has to resolve to a file that is simply there.
 //
 // The descriptions in the output are the godoc comments on the types, read by the reflector's
@@ -40,11 +41,22 @@ import (
 	"github.com/invopop/jsonschema"
 
 	"github.com/colonel-byte/ansible-collection-zarf/api/colonel-byte.dev/v1alpha1/prerequisites"
+	"github.com/colonel-byte/ansible-collection-zarf/magefiles/pkg/pkgvendor"
 )
 
 // Dir is where the generated schemas are written, at the repository root so that a package in
 // another repository can reference one by a path that survives being vendored next to it.
-var Dir = "schema"
+const Dir = "schema"
+
+// ResourcesFile is the schema of a reference package's resources.json, the declaration
+// magefiles/pkg/pkgvendor reads to vendor upstream manifests from a pinned release.
+//
+// It is generated for the same reason the prerequisites schema is -- the Go type is the definition,
+// and a hand-written schema beside it is a second one that goes stale -- and it is committed
+// because the file it validates names it in a `$schema` key that has to resolve to something.
+// colonel-byte/zarf-pkg-fluxcd commits a hand-written resources.schema.json; this is that file,
+// reflected from the type that actually reads it.
+const ResourcesFile = "package-resources-schema.json"
 
 // PrerequisitesFile is the PackagePrerequisites schema's name under Dir.
 //
@@ -52,6 +64,11 @@ var Dir = "schema"
 // author writes it as is a filename in their own tree, beside the zarf.yaml it belongs to: the
 // document is about a zarf package, and the API group is already inside the file.
 const PrerequisitesFile = "zarf-v1alpha1-package-prerequisites-schema.json"
+
+// resourcesDir is the directory holding the resources.json type, parsed for its doc comments the
+// same way apiDir is. It is under magefiles/ rather than under api/ because it is a build input
+// read by a mage target, not an API a package author writes against.
+const resourcesDir = "./magefiles/pkg/pkgvendor"
 
 // modulePath and apiDir are what AddGoComments needs to find the doc comments: the module the
 // types live in, and the directory to parse relative to the working directory. The generator runs
@@ -67,33 +84,50 @@ const (
 // directory on somebody's disk.
 const schemaIDBase = "https://colonel-byte.github.io/ansible-collection-zarf/schema/"
 
-// Generate writes every schema under Dir.
+// Generate writes every schema, each to every directory that publishes it.
 func Generate() error {
 	if err := os.MkdirAll(Dir, 0o775); err != nil {
 		return err
 	}
 
-	for _, document := range []struct {
-		file   string
-		render func() ([]byte, error)
-	}{
-		{
-			file:   PrerequisitesFile,
-			render: RenderPrerequisites,
-		},
-	} {
-		rendered, err := document.render()
+	for _, document := range Documents() {
+		rendered, err := document.Render()
 		if err != nil {
 			return err
 		}
 
-		path := filepath.Join(Dir, document.file)
+		path := filepath.Join(document.Dir, document.File)
 		fmt.Println(path)
 		if err := os.WriteFile(path, rendered, 0o644); err != nil { //nolint:gosec // a published schema is world-readable
 			return err
 		}
 	}
 	return nil
+}
+
+// Document is one generated schema at one of the paths it is committed to. Generate writes the
+// list and schema_test.go checks it, so a new copy of a schema is kept current by being added
+// here and nowhere else.
+type Document struct {
+	Dir    string
+	File   string
+	Render func() ([]byte, error)
+}
+
+// Documents returns every schema this repository commits, at every path it commits it to.
+func Documents() []Document {
+	return []Document{
+		{
+			Dir:    Dir,
+			File:   PrerequisitesFile,
+			Render: RenderPrerequisites,
+		},
+		{
+			Dir:    Dir,
+			File:   ResourcesFile,
+			Render: RenderResources,
+		},
+	}
 }
 
 // RenderPrerequisites returns the PackagePrerequisites schema as it belongs on disk.
@@ -104,6 +138,11 @@ func Generate() error {
 // fail -- it validates the wrong document, which is worse than not validating one.
 func RenderPrerequisites() ([]byte, error) {
 	return render(&prerequisites.Document{}, apiDir, PrerequisitesFile)
+}
+
+// RenderResources returns the package-resources schema as it belongs on disk.
+func RenderResources() ([]byte, error) {
+	return render(&pkgvendor.Resources{}, resourcesDir, ResourcesFile)
 }
 
 // render reflects one type into a schema document, reading its descriptions from the doc comments

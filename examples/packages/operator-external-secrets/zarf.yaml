@@ -1,0 +1,47 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/zarf-dev/zarf/main/zarf.schema.json
+#
+# A workload package delivered as a HelmRelease: the case the PackagePrerequisites format exists
+# for.
+#
+# Nothing in this package installs the External Secrets Operator. It writes an OCIRepository and a
+# HelmRelease into the cluster and leaves them for Flux to reconcile, which is why its prerequisites
+# are about Flux rather than about ESO: on a cluster with no helm-controller running,
+# `zarf package deploy` writes both manifests, reports success, and nothing ever happens. See
+# docs/guides/package-prerequisites.md, and docs/prerequisites.yaml beside this file for the
+# document that states it.
+#
+# ESO is a good package to say this with. What it reconciles are Secrets, so a cluster where it was
+# never actually installed does not fail loudly -- the ExternalSecret objects simply sit there and
+# the Secrets they promise never appear, and the first thing to notice is a workload that cannot
+# start because a Secret it mounts is missing.
+#
+# Like examples/packages/app-fluxcd, this is a reference implementation to read and lint rather than
+# a package this repository builds.
+kind: ZarfPackageConfig
+metadata:
+  name: operator-external-secrets
+  version: 2.12.0
+  description: The External Secrets Operator, delivered as a HelmRelease for Flux to reconcile
+  source: https://github.com/colonel-byte/ansible-collection-zarf
+  annotations:
+    # Readable from `zarf package inspect definition` with no extraction, for a consumer that only
+    # needs to order a bundle. docs/prerequisites.yaml is the source of truth for both, and the
+    # prerequisites role reads that rather than these.
+    colonel-byte.dev/requires-fluxcd: ">=2.9.0"
+    colonel-byte.dev/delivery-mode: gitops-helmrelease
+
+documentation:
+  prerequisites: docs/prerequisites.yaml
+  readme: README.md
+
+components:
+  - name: external-secrets-helmrelease
+    required: true
+    description: The OCIRepository and HelmRelease that Flux reconciles the operator from
+    manifests:
+      - name: external-secrets
+        namespace: external-secrets
+        files:
+          - manifests/external-secrets-source.yaml
+          - manifests/external-secrets-release.yaml
