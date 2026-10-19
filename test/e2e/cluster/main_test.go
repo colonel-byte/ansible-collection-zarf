@@ -131,17 +131,8 @@ func TestMain(m *testing.M) {
 	}
 	suite.root = root
 	suite.arch = e2e.Arch
-	// Everything the suite spawns writes its temporaries somewhere, and under the mage runner that
-	// somewhere is build/tmp, inside the repository: k3d leaves a copy of the config it was given
-	// and a hosts file per cluster, zarf leaves a staging directory per deploy, and this suite
-	// leaves the collections path it stages. Narrowing TMPDIR to one directory and removing it
-	// afterwards is what keeps a run from accumulating all of that where a developer has to notice
-	// it. Every child inherits it through os.Environ().
-	runTmp, err := os.MkdirTemp("", "zarf-e2e-run-")
+	runTmp, err := testenv.RunTempDir("zarf-e2e-run-")
 	if err != nil {
-		log.Fatal(err)
-	}
-	if err := os.Setenv("TMPDIR", runTmp); err != nil {
 		log.Fatal(err)
 	}
 
