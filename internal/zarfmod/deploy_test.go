@@ -49,11 +49,13 @@ func TestBuildDeployArgs(t *testing.T) {
 		{
 			name: "components and signature verification",
 			params: deployParams{
-				Package:    "/srv/staging/csi-local-path.tar.zst",
-				Components: "local-path-images,local-path-chart",
-				PublicKey:  "/etc/zarf/packages.pub",
-				Verify:     "always",
-				Timeout:    "15m",
+				Package: "/srv/staging/csi-local-path.tar.zst",
+				commonParams: commonParams{
+					Components: "local-path-images,local-path-chart",
+					PublicKey:  "/etc/zarf/packages.pub",
+					Verify:     "always",
+					Timeout:    "15m",
+				},
 			},
 			want: []string{
 				"package", "deploy",
@@ -72,7 +74,9 @@ func TestBuildDeployArgs(t *testing.T) {
 			params: deployParams{
 				Package:   "/srv/staging/pkg.tar.zst",
 				Connected: &yes,
-				PlainHTTP: &no,
+				commonParams: commonParams{
+					PlainHTTP: &no,
+				},
 			},
 			want: []string{
 				"package", "deploy",
@@ -80,17 +84,22 @@ func TestBuildDeployArgs(t *testing.T) {
 				"--confirm",
 				"--no-color",
 				"--log-format", "json",
-				"--connected=true",
+				// plain_http is shared with zarf_init and renders in applyCommonFlags, which runs
+				// before the module adds its own -- so --plain-http precedes --connected, which
+				// only a deploy has.
 				"--plain-http=false",
+				"--connected=true",
 			},
 		},
 		{
 			name: "variables render one flag per entry, sorted",
 			params: deployParams{
 				Package: "/srv/staging/pkg.tar.zst",
-				SetVariables: map[string]string{
-					"STORAGE_CLASS": "local-path",
-					"NODE_PATH":     "/var/lib/local-path-provisioner",
+				commonParams: commonParams{
+					SetVariables: map[string]string{
+						"STORAGE_CLASS": "local-path",
+						"NODE_PATH":     "/var/lib/local-path-provisioner",
+					},
 				},
 			},
 			want: []string{
@@ -125,8 +134,10 @@ func TestDeployPackageResolvesALocalPath(t *testing.T) {
 	}
 
 	kept := deployPackage(&deployParams{
-		Package:   "pkg.tar.zst",
-		Directory: "/srv/staging",
+		Package: "pkg.tar.zst",
+		commonParams: commonParams{
+			Directory: "/srv/staging",
+		},
 	})
 	if kept != "pkg.tar.zst" {
 		t.Errorf("a relative package with a directory was rewritten to %q", kept)
@@ -144,29 +155,31 @@ func TestDeployArgsAreKnownFlags(t *testing.T) {
 	yes := true
 	number := 1
 	widest := deployParams{
-		Package:               "/srv/staging/pkg.tar.zst",
-		Components:            "local-path-chart",
-		Namespace:             "storage",
-		Shasum:                "0000000000000000000000000000000000000000000000000000000000000000",
-		Connected:             &yes,
-		ForceConflicts:        &yes,
-		SkipValuesSchemaValid: &yes,
-		InsecureSkipTLSVerify: &yes,
-		PlainHTTP:             &yes,
-		TakeOwnership:         &yes,
-		Retries:               &number,
-		OCIConcurrency:        &number,
-		Architecture:          "amd64",
-		Cache:                 "/var/cache/zarf",
-		Tmpdir:                "/var/tmp/zarf",
-		Timeout:               "15m",
-		PublicKey:             "/etc/zarf/packages.pub",
-		Verify:                "always",
-		LogLevel:              "debug",
-		LogFormat:             "json",
-		Values:                []string{"/etc/zarf/values.yaml"},
-		SetValues:             map[string]string{"key": "value"},
-		SetVariables:          map[string]string{"KEY": "value"},
+		Package:   "/srv/staging/pkg.tar.zst",
+		Namespace: "storage",
+		Shasum:    "0000000000000000000000000000000000000000000000000000000000000000",
+		Connected: &yes,
+		commonParams: commonParams{
+			Components:            "local-path-chart",
+			ForceConflicts:        &yes,
+			SkipValuesSchemaValid: &yes,
+			InsecureSkipTLSVerify: &yes,
+			PlainHTTP:             &yes,
+			TakeOwnership:         &yes,
+			Retries:               &number,
+			OCIConcurrency:        &number,
+			Architecture:          "amd64",
+			Cache:                 "/var/cache/zarf",
+			Tmpdir:                "/var/tmp/zarf",
+			Timeout:               "15m",
+			PublicKey:             "/etc/zarf/packages.pub",
+			Verify:                "always",
+			LogLevel:              "debug",
+			LogFormat:             "json",
+			Values:                []string{"/etc/zarf/values.yaml"},
+			SetValues:             map[string]string{"key": "value"},
+			SetVariables:          map[string]string{"KEY": "value"},
+		},
 	}
 
 	for _, arg := range buildDeployArgs(&widest) {
@@ -230,6 +243,32 @@ func TestRunPackageDeployReportsTheRun(t *testing.T) {
 	}
 	if run.got.Dir != "" {
 		t.Errorf("zarf ran in %q, want the directory Ansible chose", run.got.Dir)
+	}
+	// Reported for the same reason init reports it: a result an operator reads after a failure
+	// should say which zarf produced it.
+	if resp.Zarf.Version != "v"+MinZarfVersion {
+		t.Errorf("the reported zarf version was %q", resp.Zarf.Version)
+	}
+}
+
+// TestRunPackageDeployReportsAnUnreadableVersion pins the half of that which must not fail the run.
+//
+// A deploy has no version floor to enforce -- unlike init, nothing it renders needs a zarf newer
+// than any in use -- so a version string it cannot parse, or a `zarf version` that exits non-zero,
+// is a missing field in the result and nothing more. Refusing to deploy over it would be a worse
+// failure than the one being reported.
+func TestRunPackageDeployReportsAnUnreadableVersion(t *testing.T) {
+	args := argsFor(t, map[string]any{
+		"package": "/srv/staging/zarf-package-monitoring-amd64.tar.zst",
+	})
+	resp := &Response{Zarf: &Detail{Module: "package_deploy"}}
+	run := &fakeRunner{version: "built from source"}
+
+	if err := runPackageDeploy(context.Background(), run, args, resp); err != nil {
+		t.Fatalf("runPackageDeploy reported %v", err)
+	}
+	if resp.Zarf.Version != "built from source" {
+		t.Errorf("the version it found was not reported: %q", resp.Zarf.Version)
 	}
 }
 

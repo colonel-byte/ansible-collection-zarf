@@ -92,77 +92,51 @@ const defaultBinary = "zarf"
 // not want to repeat the path in every task.
 const EnvBinary = "ZARF_ANSIBLE_BINARY"
 
-// initParams is the zarf_init module's parameter surface.
+// initParams is the zarf_init module's parameter surface: everything both wrappers take, plus the
+// init package and everything that configures the registry and git server the init package deploys.
 //
 // Every optional value is a pointer or an empty-able type for one reason: a parameter the operator
 // did not set must render no flag at all. Zarf reads a config file of its own, and a module that
 // renders a flag for an unset parameter overrules whatever that file said, which is the opposite
 // of an operator saying nothing.
 type initParams struct {
-	// Binary is the zarf to run. The wrapper is a module file, not zarf.
-	Binary string `json:"zarf_binary"`
+	commonParams
+
 	// InitPackage is the init package to deploy: a path to a staged tarball, an oci:// reference,
 	// or an https:// URL. It is the positional argument of the command, which zarf init has taken
 	// since v0.72.0 -- see MinZarfVersion. The file needs no particular name, because nothing
 	// looks it up by name any more.
+	//
+	// Directory, in commonParams, is where relative paths resolve from -- both a relative init
+	// package and a relative path inside an operator-supplied zarf config. Giving a directory and
+	// no package leaves zarf to find the package itself, which is its own documented search: the
+	// working directory, then the directory holding the binary, then its cache. See workingDir.
 	InitPackage string `json:"init_package"`
-	// Directory is the working directory to run zarf in. A relative init package is resolved
-	// against it, and so is a relative path inside an operator-supplied zarf config. Giving a
-	// directory and no package leaves zarf to find the package itself, which is its own documented
-	// search: the working directory, then the directory holding the binary, then its cache.
-	Directory string `json:"directory"`
-	// Kubeconfig is the cluster to initialise. Zarf has no --kubeconfig flag, so it is passed as
-	// KUBECONFIG in the child's environment.
-	Kubeconfig string `json:"kubeconfig"`
-	// ZarfConfig is an operator-supplied zarf config file, passed as ZARF_CONFIG. It is how a
-	// playbook keeps credentials out of the argument vector entirely: zarf reads them from the
-	// file, so they never reach the process table.
-	ZarfConfig string `json:"zarf_config"`
-	// StatusFile overrides the heartbeat file. The action plugin sets ZARF_STATUS_FILE instead,
-	// and this is for a run reproduced by hand.
-	StatusFile string `json:"status_file"`
 
-	Components   string `json:"components"`
 	StorageClass string `json:"storage_class"`
 
-	RegistryURL           string            `json:"registry_url"`
-	RegistryMode          string            `json:"registry_mode"`
-	RegistryPort          *int              `json:"registry_port"`
-	RegistrySecret        string            `json:"registry_secret"`
-	RegistryPushUsername  string            `json:"registry_push_username"`
-	RegistryPushPassword  string            `json:"registry_push_password"`
-	RegistryPullUsername  string            `json:"registry_pull_username"`
-	RegistryPullPassword  string            `json:"registry_pull_password"`
-	GitURL                string            `json:"git_url"`
-	GitPushUsername       string            `json:"git_push_username"`
-	GitPushPassword       string            `json:"git_push_password"`
-	GitPullUsername       string            `json:"git_pull_username"`
-	GitPullPassword       string            `json:"git_pull_password"`
-	InjectorImage         string            `json:"injector_image"`
-	InjectorPort          *int              `json:"injector_port"`
-	AgentMutationPolicy   string            `json:"agent_mutation_policy"`
-	AgentTLSCA            string            `json:"agent_tls_ca"`
-	AgentTLSCert          string            `json:"agent_tls_cert"`
-	AgentTLSKey           string            `json:"agent_tls_key"`
-	TakeOwnership         *bool             `json:"take_ownership"`
-	ForceConflicts        *bool             `json:"force_conflicts"`
-	SkipValuesSchemaValid *bool             `json:"skip_values_schema_validation"`
-	InsecureSkipTLSVerify *bool             `json:"insecure_skip_tls_verify"`
-	PlainHTTP             *bool             `json:"plain_http"`
-	Retries               *int              `json:"retries"`
-	OCIConcurrency        *int              `json:"oci_concurrency"`
-	Architecture          string            `json:"architecture"`
-	Cache                 string            `json:"cache"`
-	Tmpdir                string            `json:"tmpdir"`
-	Timeout               string            `json:"timeout"`
-	PublicKey             string            `json:"public_key"`
-	Verify                string            `json:"verify"`
-	Values                []string          `json:"values"`
-	SetValues             map[string]string `json:"set_values"`
-	SetVariables          map[string]string `json:"set_variables"`
+	RegistryURL          string `json:"registry_url"`
+	RegistryMode         string `json:"registry_mode"`
+	RegistryPort         *int   `json:"registry_port"`
+	RegistrySecret       string `json:"registry_secret"`
+	RegistryPushUsername string `json:"registry_push_username"`
+	RegistryPushPassword string `json:"registry_push_password"`
+	RegistryPullUsername string `json:"registry_pull_username"`
+	RegistryPullPassword string `json:"registry_pull_password"`
 
-	LogLevel  string `json:"log_level"`
-	LogFormat string `json:"log_format"`
+	GitURL          string `json:"git_url"`
+	GitPushUsername string `json:"git_push_username"`
+	GitPushPassword string `json:"git_push_password"`
+	GitPullUsername string `json:"git_pull_username"`
+	GitPullPassword string `json:"git_pull_password"`
+
+	InjectorImage string `json:"injector_image"`
+	InjectorPort  *int   `json:"injector_port"`
+
+	AgentMutationPolicy string `json:"agent_mutation_policy"`
+	AgentTLSCA          string `json:"agent_tls_ca"`
+	AgentTLSCert        string `json:"agent_tls_cert"`
+	AgentTLSKey         string `json:"agent_tls_key"`
 }
 
 // runInit initialises a cluster with the staged zarf init package and reports what it deployed.
@@ -194,7 +168,7 @@ func runInit(ctx context.Context, run Runner, args *Args, resp *Response) error 
 	// The version is read before the init runs, because an older zarf rejects the positional
 	// package source as a usage error about having too many arguments, which names neither the
 	// parameter nor the version that would accept it. What it finds is reported either way.
-	version, err := requireZarfVersion(ctx, run, binary(&p))
+	version, err := requireZarfVersion(ctx, run, p.binary())
 	resp.Zarf.Version = version
 	if err != nil {
 		return err
@@ -207,14 +181,14 @@ func runInit(ctx context.Context, run Runner, args *Args, resp *Response) error 
 	prog := newProgress(hb, componentCount(p.Components))
 	argv := buildInitArgs(&p, source)
 
-	resp.Zarf.Command = append([]string{binary(&p)}, redact(argv)...)
+	resp.Zarf.Command = append([]string{p.binary()}, redact(argv)...)
 	resp.Zarf.Directory = dir
 
 	res, runErr := run.Run(ctx, Invocation{
-		Binary: binary(&p),
+		Binary: p.binary(),
 		Args:   argv,
 		Dir:    dir,
-		Env:    childEnv(&p, hb),
+		Env:    p.childEnv(hb),
 		OnLine: prog.line,
 	})
 	resp.Zarf.ExitCode = res.ExitCode
@@ -247,17 +221,6 @@ func reportChanged(resp *Response, prog *progress) {
 	}
 	resp.Zarf.ChangedSignal = SignalPartial
 	resp.Zarf.ChangedUndeclared = prog.components
-}
-
-// binary is the zarf to run: the parameter, then the environment, then PATH.
-func binary(p *initParams) string {
-	if p.Binary != "" {
-		return p.Binary
-	}
-	if env := os.Getenv(EnvBinary); env != "" {
-		return env
-	}
-	return defaultBinary
 }
 
 // workingDir is the directory zarf runs in.
@@ -321,17 +284,6 @@ func initSource(p *initParams) (string, error) {
 	return filepath.Abs(p.InitPackage)
 }
 
-// isRemoteSource reports whether the package source is one zarf fetches rather than reads from
-// disk. The schemes are the ones zarf's package loader accepts.
-func isRemoteSource(source string) bool {
-	for _, scheme := range []string{"oci://", "http://", "https://"} {
-		if strings.HasPrefix(source, scheme) {
-			return true
-		}
-	}
-	return false
-}
-
 // componentCount is how many components the run will deploy, 0 when the wrapper cannot know. A
 // heartbeat with a total of 0 renders as "phase 2" rather than "phase 2/8", which is what an
 // honest unknown looks like in a progress display.
@@ -348,28 +300,6 @@ func componentCount(components string) int {
 	return n
 }
 
-// childEnv is what the wrapper adds to zarf's environment.
-func childEnv(p *initParams, hb *Heartbeat) []string {
-	var env []string
-	if p.Kubeconfig != "" {
-		env = append(env, "KUBECONFIG="+p.Kubeconfig)
-	}
-	if p.ZarfConfig != "" {
-		env = append(env, "ZARF_CONFIG="+p.ZarfConfig)
-	}
-	// The wrapper is the thing writing heartbeats, not zarf, so the child is told nothing about
-	// the status file. It is unset in the child precisely so a future zarf that writes heartbeats
-	// of its own does not race the wrapper for the same file.
-	if hb.Path() != "" {
-		env = append(env, EnvStatusFile+"=")
-	}
-	// A module is not a terminal. Zarf checks for one, and a child whose stdout is a pipe already
-	// renders plainly, but saying so costs nothing and makes the rendering the same under a
-	// playbook as it is under a shell redirect.
-	env = append(env, "NO_COLOR=1")
-	return env
-}
-
 // buildInitArgs renders the parameters as the zarf command line an operator would have typed.
 func buildInitArgs(p *initParams, source string) []string {
 	// The source is zarf init's positional PACKAGE_SOURCE. Empty leaves zarf to search, which is
@@ -379,25 +309,8 @@ func buildInitArgs(p *initParams, source string) []string {
 		positional = append(positional, source)
 	}
 	c := newCommand("init", positional...)
+	p.applyCommonFlags(c)
 
-	// A module that asked for confirmation would never get it: there is no terminal on the other
-	// end. The playbook task is the confirmation.
-	c.bare(flagConfirm)
-	// Ansible captures stderr as a text blob, and escape sequences in it are noise in every report
-	// that blob ends up in.
-	c.bare(flagNoColor)
-
-	// JSON by default, because the progress the action plugin displays is read back out of this
-	// stream and the console rendering is not a format. An operator who overrides it gets a
-	// coarser display and a run that is otherwise identical.
-	format := p.LogFormat
-	if format == "" {
-		format = "json"
-	}
-	c.flag(flagLogFormat, format)
-	c.flag(flagLogLevel, p.LogLevel)
-
-	c.flag(flagComponents, p.Components)
 	c.flag(flagStorageClass, p.StorageClass)
 
 	c.flag(flagRegistryURL, p.RegistryURL)
@@ -422,25 +335,6 @@ func buildInitArgs(p *initParams, source string) []string {
 	c.flag(flagAgentTLSCA, p.AgentTLSCA)
 	c.flag(flagAgentTLSCert, p.AgentTLSCert)
 	c.flag(flagAgentTLSKey, p.AgentTLSKey)
-
-	c.boolFlag(flagTakeOwnership, p.TakeOwnership)
-	c.boolFlag(flagForceConflicts, p.ForceConflicts)
-	c.boolFlag(flagSkipValuesSchemaValidation, p.SkipValuesSchemaValid)
-	c.boolFlag(flagInsecureSkipTLSVerify, p.InsecureSkipTLSVerify)
-	c.boolFlag(flagPlainHTTP, p.PlainHTTP)
-
-	c.intFlag(flagRetries, p.Retries)
-	c.intFlag(flagOCIConcurrency, p.OCIConcurrency)
-	c.flag(flagArchitecture, p.Architecture)
-	c.flag(flagCache, p.Cache)
-	c.flag(flagTmpdir, p.Tmpdir)
-	c.flag(flagTimeout, p.Timeout)
-	c.flag(flagKey, p.PublicKey)
-	c.valueFlag(flagVerify, p.Verify)
-
-	c.repeated(flagValues, p.Values)
-	c.pairs(flagSetValues, p.SetValues)
-	c.pairs(flagSetVariables, p.SetVariables)
 
 	return c.args()
 }
