@@ -48,6 +48,13 @@ import (
 // another repository can reference one by a path that survives being vendored next to it.
 const Dir = "schema"
 
+// SkillDir gets a second copy of the prerequisites schema, because the skill there has to be
+// self-contained: it is read by an agent working in somebody else's package tree, where no path
+// into this repository resolves. The copy is generated rather than committed by hand for the
+// reason the original is -- see TestCommittedSchemasAreCurrent, which holds both against a fresh
+// render.
+var SkillDir = filepath.Join("skills", "zarf-package-prerequisites")
+
 // ResourcesFile is the schema of a reference package's resources.json, the declaration
 // magefiles/pkg/pkgvendor reads to vendor upstream manifests from a pinned release.
 //
@@ -119,6 +126,11 @@ func Documents() []Document {
 	return []Document{
 		{
 			Dir:    Dir,
+			File:   PrerequisitesFile,
+			Render: RenderPrerequisites,
+		},
+		{
+			Dir:    SkillDir,
 			File:   PrerequisitesFile,
 			Render: RenderPrerequisites,
 		},
