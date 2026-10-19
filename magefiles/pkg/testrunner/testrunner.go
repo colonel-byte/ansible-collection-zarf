@@ -91,23 +91,44 @@ func DeleteK3dClusters() error {
 
 // Unit runs go test over every package except the e2e suites under test/, which need Ansible,
 // k3d and Docker and have runners of their own. Those are driven by Test.EndToEnd* instead.
+//
+// build/ is excluded for the reason .golangci.yaml gives about the same directory: the e2e targets
+// point TMPDIR at build/tmp, so a run that is in flight -- or one that was interrupted -- leaves a
+// go-build tree of generated cgo there. `go list ./...` walks the filesystem rather than the index,
+// so build/.gitignore does not keep it out, and listing it fails the whole command with
+// "use of internal package internal/runtime/sys not allowed" before a single test runs. The
+// failure names the toolchain's own source and reads as a broken checkout rather than as leftovers.
 func Unit() error {
-	out, err := sh.Output("go", "list", "./...")
+	// -e is what makes the build/ exclusion below reachable. Without it `go list` fails on the
+	// first unbuildable directory it walks into and returns nothing, so there is no list left to
+	// filter -- the leftovers would take the command down before it could skip them.
+	out, err := sh.Output("go", "list", "-e", "./...")
 	if err != nil {
 		return err
 	}
 
-	const e2ePrefix = modulePath + "/test/"
-	var pkgs []string
-	for _, pkg := range strings.Fields(out) {
-		if strings.HasPrefix(pkg, e2ePrefix) {
-			continue
-		}
-		pkgs = append(pkgs, pkg)
-	}
+	pkgs := unitPackages(out)
 	if len(pkgs) == 0 {
 		return fmt.Errorf("go list ./... returned no packages to test")
 	}
 
 	return sh.RunV("go", append([]string{"test", "-count=1"}, pkgs...)...)
+}
+
+// unitPackages is the package list `go list -e ./...` printed, minus the two trees Unit does not
+// test: the e2e suites, which have runners of their own, and anything under build/.
+func unitPackages(listed string) []string {
+	const (
+		e2ePrefix   = modulePath + "/test/"
+		buildPrefix = modulePath + "/build/"
+	)
+
+	var pkgs []string
+	for _, pkg := range strings.Fields(listed) {
+		if strings.HasPrefix(pkg, e2ePrefix) || strings.HasPrefix(pkg, buildPrefix) {
+			continue
+		}
+		pkgs = append(pkgs, pkg)
+	}
+	return pkgs
 }
