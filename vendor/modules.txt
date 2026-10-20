@@ -44,7 +44,7 @@ github.com/VividCortex/ewma
 # github.com/bahlo/generic-list-go v0.2.0
 ## explicit; go 1.18
 github.com/bahlo/generic-list-go
-# github.com/buger/jsonparser v1.1.2
+# github.com/buger/jsonparser v1.6.1
 ## explicit; go 1.13
 github.com/buger/jsonparser
 # github.com/cespare/xxhash/v2 v2.3.0
