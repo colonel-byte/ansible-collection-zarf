@@ -348,7 +348,13 @@ github.com/olekukonko/tablewriter/pkg/twwarp
 github.com/olekukonko/tablewriter/pkg/twwidth
 github.com/olekukonko/tablewriter/renderer
 github.com/olekukonko/tablewriter/tw
-# github.com/pb33f/ordered-map/v2 v2.3.1
+# github.com/pb33f/go-yaml v0.1.0
+## explicit; go 1.18
+github.com/pb33f/go-yaml
+github.com/pb33f/go-yaml/internal/libyaml
+github.com/pb33f/go-yaml/internal/plugin
+github.com/pb33f/go-yaml/plugin/limit
+# github.com/pb33f/ordered-map/v2 v2.3.2
 ## explicit; go 1.24
 github.com/pb33f/ordered-map/v2
 # github.com/pelletier/go-toml/v2 v2.4.3
@@ -444,9 +450,6 @@ go.yaml.in/yaml/v2
 # go.yaml.in/yaml/v3 v3.0.5
 ## explicit; go 1.16
 go.yaml.in/yaml/v3
-# go.yaml.in/yaml/v4 v4.0.0-rc.2
-## explicit; go 1.18
-go.yaml.in/yaml/v4
 # golang.org/x/crypto v0.58.0
 ## explicit; go 1.26.0
 golang.org/x/crypto/argon2
