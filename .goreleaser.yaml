@@ -98,9 +98,9 @@ nfpms:
     maintainer: |-
       Allen Conlon <software@conlon.dev>
     description: |-
-      Ansible modules for zarf: initialise an air-gapped cluster, stage packages, deploy and
-      remove them, and reach the cluster with the kubectl zarf carries, from a playbook.
-      A proof of ZEP-0072.
+      Ansible modules for zarf: initialise an air-gapped cluster, stage packages, mirror their
+      resources, deploy and remove them, rotate the cluster's credentials, and reach it with the
+      kubectl zarf carries -- all from a playbook. A proof of ZEP-0072.
     formats:
       - apk
       - deb
@@ -132,10 +132,16 @@ nfpms:
         dst: /usr/bin/zarf_package_deploy
         type: symlink
       - src: /usr/bin/zarfmod
+        dst: /usr/bin/zarf_package_mirror_resources
+        type: symlink
+      - src: /usr/bin/zarfmod
         dst: /usr/bin/zarf_package_pull
         type: symlink
       - src: /usr/bin/zarfmod
         dst: /usr/bin/zarf_package_remove
+        type: symlink
+      - src: /usr/bin/zarfmod
+        dst: /usr/bin/zarf_update_creds
         type: symlink
       # And the same names under the collection, for a conventional Ansible caller that stages a
       # module file. The action plugins do not need them: they invoke /usr/bin/zarf_<module>
@@ -149,11 +155,17 @@ nfpms:
       - src: /usr/bin/zarf_package_deploy
         dst: /usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/plugins/modules/zarf_package_deploy
         type: symlink
+      - src: /usr/bin/zarf_package_mirror_resources
+        dst: /usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/plugins/modules/zarf_package_mirror_resources
+        type: symlink
       - src: /usr/bin/zarf_package_pull
         dst: /usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/plugins/modules/zarf_package_pull
         type: symlink
       - src: /usr/bin/zarf_package_remove
         dst: /usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/plugins/modules/zarf_package_remove
+        type: symlink
+      - src: /usr/bin/zarf_update_creds
+        dst: /usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/plugins/modules/zarf_update_creds
         type: symlink
     rpm:
       compression: gzip

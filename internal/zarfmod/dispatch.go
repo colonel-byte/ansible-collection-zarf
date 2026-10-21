@@ -66,15 +66,23 @@ type action func(ctx context.Context, run Runner, args *Args, resp *Response) er
 // somehow, and on an air-gapped management node that is a staged file rather than a registry the
 // cluster can reach -- so the fetch belongs to the same run as the deploy.
 //
+// package_mirror_resources, because the registry a cluster deploys from has to hold a package's
+// images before a connected deploy can find them, and update_creds, because rotating a cluster's
+// registry or git credentials by hand means doing in several steps what zarf does in one: the
+// zarf-state Secret, the service itself, and every deployed package that pulls through it. The
+// second is the write half of zarf_state_info, which reads that Secret and withholds it.
+//
 // kubectl, because the zarf linked in for those two already vendors it: the command is reachable
 // at no cost beyond its dispatch entry, and a management node driving an air-gapped cluster that
 // has to install kubectl of its own to read one resource is the gap it closes.
 var modules = map[string]action{
-	"init":           runInit,
-	"kubectl":        runKubectl,
-	"package_deploy": runPackageDeploy,
-	"package_pull":   runPackagePull,
-	"package_remove": runPackageRemove,
+	"init":                     runInit,
+	"kubectl":                  runKubectl,
+	"package_deploy":           runPackageDeploy,
+	"package_mirror_resources": runMirrorResources,
+	"package_pull":             runPackagePull,
+	"package_remove":           runPackageRemove,
+	"update_creds":             runUpdateCreds,
 }
 
 // ModuleFiles returns the module file names this binary answers as, sorted: the actions above with

@@ -1,33 +1,37 @@
 # Modules
 
-Ten modules ship. Five of them act, and five read a cluster.
+Twelve modules ship. Seven of them act, and five read a cluster.
 
 `zarf_init` and `zarf_package_deploy` are the converging pair: they are the proof of [ZEP-0072](https://github.com/zarf-dev/proposals/pull/73), each has its parameters and command line in Go, and [choice-zarf-ansible-module](../agent/choice-zarf-ansible-module.md) records how. Package creation is not among them -- it builds an artifact from a definition in a repository, which belongs in a pipeline rather than in a convergence run -- and neither is package removal, which nothing here has needed yet.
 
 `zarf_package_remove` is the other direction of a deploy: it takes a deployed package, or some of its components, off a cluster. ZEP-0072 names it, and a playbook that can only add is not reconciling anything. `zarf_package_pull` acts on a directory rather than a cluster -- it fetches a package to disk, which is how a package reaches an air-gapped management node before a deploy reads it -- and it is the one module here whose `changed` is an observation: it reports the package files that were not in the output directory before the run.
 
-`zarf_kubectl` is the fifth that acts, and it is not a convergence module: it passes an argument vector to the kubectl zarf vendors and hands back what it printed. It exists because that kubectl is already inside the module file, so a management node reading or patching one resource on an air-gapped cluster needs no kubectl of its own. For declarative resource management, `kubernetes.core.k8s` is the module to reach for.
+`zarf_package_mirror_resources` pushes a package's images and git repositories into a registry and a git server without deploying anything, which is the step a `connected: true` deploy needs to have happened first -- and it follows the components the way a deploy does, so it reports the same `partial` signal. `zarf_update_creds` rotates the credentials an initialised cluster holds: it is the write half of `zarf_state_info`, and it is one zarf subcommand per service, so a task names the service it is rotating.
 
-All five are the same binary, invoked under five names. It dispatches on `argv[0]`, which is what ZEP-0072 proposes zarf itself do, so each module file under `plugins/modules/` is a symlink rather than a file of its own.
+`zarf_kubectl` is the last that acts, and it is not a convergence module: it passes an argument vector to the kubectl zarf vendors and hands back what it printed. It exists because that kubectl is already inside the module file, so a management node reading or patching one resource on an air-gapped cluster needs no kubectl of its own. For declarative resource management, `kubernetes.core.k8s` is the module to reach for.
+
+All seven are the same binary, invoked under seven names. It dispatches on `argv[0]`, which is what ZEP-0072 proposes zarf itself do, so each module file under `plugins/modules/` is a symlink rather than a file of its own.
 
 `zarf_cluster_info`, `zarf_package_documentation`, `zarf_package_info`, `zarf_package_inspect` and `zarf_state_info` read. They change nothing, they answer during a check-mode play rather than skipping, and they are plain action plugins with no wrapper binary behind them, for the reasons in [choice-zarf-info-modules](../agent/choice-zarf-info-modules.md) and -- for the two added for the prerequisites format, which are the first to push past the threshold that record names -- in [choice-package-documentation-module](../agent/choice-package-documentation-module.md).
 
-| Module                                                          | What it does                                                                                    |
-| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| [`zarf_init`](module_init.md)                                   | Initialises a cluster: the injector, the seed registry, the registry, the agent.                |
-| [`zarf_package_deploy`](module_package_deploy.md)               | Puts a package on a cluster, from a path, an `oci://` reference, or an `https://` URL.          |
-| [`zarf_package_pull`](module_package_pull.md)                   | Fetches a package to disk from an `oci://` reference or an `https://` URL.                      |
-| [`zarf_package_remove`](module_package_remove.md)               | Removes a deployed package, or some of its components, from a cluster.                          |
-| [`zarf_kubectl`](module_kubectl.md)                             | Runs a kubectl command through the kubectl zarf carries, and returns its output.                |
-| [`zarf_cluster_info`](module_cluster_info.md)                   | Reports the cluster's Kubernetes version, CRDs, StorageClasses and Deployment readiness.        |
-| [`zarf_package_documentation`](module_package_documentation.md) | Extracts the files a package carries in its `documentation:` mapping, and parses the YAML ones. |
-| [`zarf_package_info`](module_package_info.md)                   | Lists the packages deployed to a cluster, via `zarf package list`.                              |
-| [`zarf_package_inspect`](module_package_inspect.md)             | Reads the `zarf.yaml` of a package tarball, an `oci://` reference, or a deployed package.       |
-| [`zarf_state_info`](module_state_info.md)                       | Reads the cluster's `zarf-state` Secret, withholding the credentials in it.                     |
+| Module                                                                | What it does                                                                                    |
+| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| [`zarf_init`](module_init.md)                                         | Initialises a cluster: the injector, the seed registry, the registry, the agent.                |
+| [`zarf_package_deploy`](module_package_deploy.md)                     | Puts a package on a cluster, from a path, an `oci://` reference, or an `https://` URL.          |
+| [`zarf_package_pull`](module_package_pull.md)                         | Fetches a package to disk from an `oci://` reference or an `https://` URL.                      |
+| [`zarf_package_remove`](module_package_remove.md)                     | Removes a deployed package, or some of its components, from a cluster.                          |
+| [`zarf_package_mirror_resources`](module_package_mirror_resources.md) | Pushes a package's images and repositories into a registry and git server.                      |
+| [`zarf_update_creds`](module_update_creds.md)                         | Rotates the registry, git or agent credentials an initialised cluster holds.                    |
+| [`zarf_kubectl`](module_kubectl.md)                                   | Runs a kubectl command through the kubectl zarf carries, and returns its output.                |
+| [`zarf_cluster_info`](module_cluster_info.md)                         | Reports the cluster's Kubernetes version, CRDs, StorageClasses and Deployment readiness.        |
+| [`zarf_package_documentation`](module_package_documentation.md)       | Extracts the files a package carries in its `documentation:` mapping, and parses the YAML ones. |
+| [`zarf_package_info`](module_package_info.md)                         | Lists the packages deployed to a cluster, via `zarf package list`.                              |
+| [`zarf_package_inspect`](module_package_inspect.md)                   | Reads the `zarf.yaml` of a package tarball, an `oci://` reference, or a deployed package.       |
+| [`zarf_state_info`](module_state_info.md)                             | Reads the cluster's `zarf-state` Secret, withholding the credentials in it.                     |
 
 ## The surfaces differ because the commands do
 
-`zarf init` configures the registry and git server the cluster will use, so it takes the registry and git parameters and no package. A removal takes seven flags where a deploy takes twenty-eight, because there is no signature to verify and nothing to push once the thing is being taken away; a pull takes neither a kubeconfig nor `--confirm`, because it reaches no cluster and the command has no such flag. `zarf package deploy` names a package outright and takes none of that configuration, but takes `connected`, `namespace` and `shasum`, which only a deploy has. A parameter offered to the wrong module is an error naming it, rather than a flag quietly dropped.
+`zarf init` configures the registry and git server the cluster will use, so it takes the registry and git parameters and no package. A removal takes seven flags where a deploy takes twenty-eight, because there is no signature to verify and nothing to push once the thing is being taken away; a pull takes neither a kubeconfig nor `--confirm`, because it reaches no cluster and the command has no such flag; and `zarf_update_creds` takes only the credentials of the service it names, because zarf has one subcommand per service and each accepts only its own -- a credential given for another service is an error naming it. `zarf package deploy` names a package outright and takes none of that configuration, but takes `connected`, `namespace` and `shasum`, which only a deploy has. A parameter offered to the wrong module is an error naming it, rather than a flag quietly dropped.
 
 Each module's page lists its full parameter set and the flag each parameter renders. A parameter that renders no flag is listed as `None`: it is either the command's positional argument, something passed to zarf in its environment, or something the action plugin consumes before the command line is built.
 
@@ -42,6 +46,8 @@ Credentials given as parameters are rendered as flags, which puts them in the pr
 ## What the result says
 
 The two converging modules report `changed: true` with `changedSignal: partial` on every successful run, and name every component they deployed in `changedUndeclared`. Zarf reports which components ran and not whether any of them found the cluster already as it wanted, so `partial` is the honest answer rather than an unfinished one. Check mode reports the task as skipped, because neither command has a dry run.
+
+`zarf_package_mirror_resources` reports `changed: true` with `changedSignal: partial` and the components it walked, as the converging pair do and for the same reason. `zarf_update_creds` reports `changed: true` with `changedSignal: unknown`: zarf says it updated the service, not whether it already held what was given, so a credential set twice is reported as changed both times.
 
 `zarf_package_remove` reports `changed: true` with `changedSignal: unknown`: zarf logs a removal as one line and names no component on the way, so there is nothing that distinguishes a package that was there from one that was already gone -- a removal that finds nothing fails in zarf. `zarf_package_pull` is the exception in the collection: it reports `changedSignal: complete`, because the package file either arrived in the output directory or it did not, and the filenames are in `zarf.packagesPulled`.
 
