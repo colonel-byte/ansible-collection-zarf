@@ -8,18 +8,22 @@ The proof began in [colonel-byte/cargoship](https://github.com/colonel-byte/carg
 
 ## Modules
 
-| Module                       | What it does                                                                   | How it is built                 |
-| ---------------------------- | ------------------------------------------------------------------------------ | ------------------------------- |
-| `zarf_init`                  | `zarf init` against the cluster in a kubeconfig                                | Module file, the one binary     |
-| `zarf_package_deploy`        | `zarf package deploy`                                                          | Module file, the one binary     |
-| `zarf_kubectl`               | `zarf tools kubectl` with the arguments given, and its output back             | Module file, the one binary     |
-| `zarf_cluster_info`          | Reports the cluster's Kubernetes version, CRDs, StorageClasses and Deployments | Action plugin                   |
-| `zarf_package_documentation` | Extracts the files a package carries in its `documentation:` mapping           | Action plugin                   |
-| `zarf_package_info`          | Lists the packages deployed to a cluster                                       | Action plugin                   |
-| `zarf_package_inspect`       | Reads and verifies a package without deploying it                              | Action plugin                   |
-| `zarf_state_info`            | Reads the `zarf-state` Secret, withholding its eight credentials by default    | Action plugin                   |
+| Module                       | What it does                                                                   | How it is built             |
+| ---------------------------- | ------------------------------------------------------------------------------ | --------------------------- |
+| `zarf_init`                  | `zarf init` against the cluster in a kubeconfig                                | Module file, the one binary |
+| `zarf_package_deploy`        | `zarf package deploy`                                                          | Module file, the one binary |
+| `zarf_package_pull`          | `zarf package pull`, to stage a package on disk for the airlock                | Module file, the one binary |
+| `zarf_package_remove`        | `zarf package remove`, by deployed name or by package source                   | Module file, the one binary |
+| `zarf_kubectl`               | `zarf tools kubectl` with the arguments given, and its output back             | Module file, the one binary |
+| `zarf_cluster_info`          | Reports the cluster's Kubernetes version, CRDs, StorageClasses and Deployments | Action plugin               |
+| `zarf_package_documentation` | Extracts the files a package carries in its `documentation:` mapping           | Action plugin               |
+| `zarf_package_info`          | Lists the packages deployed to a cluster                                       | Action plugin               |
+| `zarf_package_inspect`       | Reads and verifies a package without deploying it                              | Action plugin               |
+| `zarf_state_info`            | Reads the `zarf-state` Secret, withholding its eight credentials by default    | Action plugin               |
 
-The first two converge a cluster and are the proof. `zarf_kubectl` is a passthrough to the kubectl zarf already vendors, which costs a dispatch entry and saves an air-gapped management node a kubectl of its own. All three are the same binary from `cmd/zarfmod`, invoked under three names -- `argv[0]` is what selects the module, which is the proposal's own design, so each module file is a symlink.
+The first two converge a cluster and are the proof. `zarf_package_remove` is the other direction, which ZEP-0072 names and a playbook that only ever adds does not have; `zarf_package_pull` stages the package a deploy reads, which on an air-gapped node arrives as a file rather than from a registry the cluster can reach; `zarf_kubectl` is a passthrough to the kubectl zarf already vendors, which saves a management node a kubectl of its own. All five are the same binary from `cmd/zarfmod`, invoked under five names -- `argv[0]` is what selects the module, which is the proposal's own design, so each module file is a symlink.
+
+`zarf package create` is deliberately not among them: it builds an artifact from a definition in a repository, which belongs in a pipeline rather than in a convergence run.
 
 The other five read a cluster, are not part of the proof, and are plain action plugins with no binary behind them -- [choice-zarf-info-modules](docs/agent/choice-zarf-info-modules.md) records why, and why `zarf_state_info` redacts.
 
@@ -55,7 +59,7 @@ Build the module wrapper, put it on the path of the node the play runs on, and l
 ```sh
 go run ./magefiles/core build:modules          # build/zarfmod, with the three symlinks beside it
 sudo install -m 0755 build/zarfmod /usr/local/bin/
-for module in zarf_init zarf_package_deploy zarf_kubectl; do
+for module in zarf_init zarf_package_deploy zarf_package_pull zarf_package_remove zarf_kubectl; do
   sudo ln -sf zarfmod "/usr/local/bin/$module"
 done
 ```

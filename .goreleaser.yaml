@@ -98,8 +98,9 @@ nfpms:
     maintainer: |-
       Allen Conlon <software@conlon.dev>
     description: |-
-      Ansible modules for zarf: initialise an air-gapped cluster and deploy zarf packages
-      from a playbook. A proof of ZEP-0072.
+      Ansible modules for zarf: initialise an air-gapped cluster, stage packages, deploy and
+      remove them, and reach the cluster with the kubectl zarf carries, from a playbook.
+      A proof of ZEP-0072.
     formats:
       - apk
       - deb
@@ -130,6 +131,12 @@ nfpms:
       - src: /usr/bin/zarfmod
         dst: /usr/bin/zarf_package_deploy
         type: symlink
+      - src: /usr/bin/zarfmod
+        dst: /usr/bin/zarf_package_pull
+        type: symlink
+      - src: /usr/bin/zarfmod
+        dst: /usr/bin/zarf_package_remove
+        type: symlink
       # And the same names under the collection, for a conventional Ansible caller that stages a
       # module file. The action plugins do not need them: they invoke /usr/bin/zarf_<module>
       # directly.
@@ -141,6 +148,12 @@ nfpms:
         type: symlink
       - src: /usr/bin/zarf_package_deploy
         dst: /usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/plugins/modules/zarf_package_deploy
+        type: symlink
+      - src: /usr/bin/zarf_package_pull
+        dst: /usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/plugins/modules/zarf_package_pull
+        type: symlink
+      - src: /usr/bin/zarf_package_remove
+        dst: /usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/plugins/modules/zarf_package_remove
         type: symlink
     rpm:
       compression: gzip

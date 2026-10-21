@@ -85,7 +85,8 @@ RUN rpm --install --verbose /tmp/rpms/*.rpm \
 # These checks are the ZEP-0072 proof's contract, and each one fails the image build rather than a
 # playbook. Invoked under a zarf_ name that is not an action it answers as, a module file must
 # refuse with a non-zero status rather than emit JSON nobody asked for -- package_remove is such a
-# name, because this binary answers as init, kubectl and package_deploy and nothing else; given parameters
+# name, because this binary answers as init, kubectl, package_deploy, package_pull and
+# package_remove and nothing else -- package_create is deliberately not among them; given parameters
 # it cannot read, a module must still answer with one JSON object and exit 0, because a non-zero
 # status makes Ansible report MODULE FAILURE instead of the message the module wrote; and in check
 # mode it must report the task as skipped, since zarf init has no dry run. Every module file name
@@ -103,9 +104,9 @@ RUN ansible-galaxy collection list >/tmp/collections 2>/dev/null \
   && grep -q 'colonel_byte.zarf' /tmp/collections \
   && rm -f /tmp/collections \
   && test -L /usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/plugins/modules/zarf_init \
-  && ln -s /usr/bin/zarf_init /tmp/zarf_package_remove \
-  && ! /tmp/zarf_package_remove >/dev/null 2>&1 \
-  && rm -f /tmp/zarf_package_remove \
+  && ln -s /usr/bin/zarf_init /tmp/zarf_package_create \
+  && ! /tmp/zarf_package_create >/dev/null 2>&1 \
+  && rm -f /tmp/zarf_package_create \
   && ZARF_ANSIBLE_MODULE=init zarf_init /dev/null \
     | python3 -c 'import json,sys; r=json.load(sys.stdin); sys.exit(0 if r.get("failed") else 1)' \
   && printf '%s' '{"init_package":"/tmp","_ansible_check_mode":true}' \
@@ -121,6 +122,16 @@ RUN ansible-galaxy collection list >/tmp/collections 2>/dev/null \
   && printf '%s' '{"package":"/tmp/pkg.tar.zst","kubeconfig":"/tmp/none"}' \
     | ZARF_ANSIBLE_MODULE=package_deploy zarf_package_deploy \
     | python3 -c 'import json,sys; r=json.load(sys.stdin); d=r.get("zarf",{}); sys.exit(0 if r.get("failed") and d.get("exitCode") else 1)' \
+  && test -L /usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/plugins/modules/zarf_package_pull \
+  && ZARF_ANSIBLE_MODULE=package_pull zarf_package_pull /dev/null \
+    | python3 -c 'import json,sys; r=json.load(sys.stdin); sys.exit(0 if r.get("failed") else 1)' \
+  && printf '%s' '{"package":"/srv/staging/local.tar.zst"}' \
+    | ZARF_ANSIBLE_MODULE=package_pull zarf_package_pull \
+    | python3 -c 'import json,sys; r=json.load(sys.stdin); sys.exit(0 if r.get("failed") and "local path" in r.get("msg","") else 1)' \
+  && test -L /usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/plugins/modules/zarf_package_remove \
+  && printf '%s' '{"package":"monitoring","_ansible_check_mode":true}' \
+    | ZARF_ANSIBLE_MODULE=package_remove zarf_package_remove \
+    | python3 -c 'import json,sys; r=json.load(sys.stdin); sys.exit(0 if r.get("skipped") and not r.get("changed") else 1)' \
   && test -L /usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/plugins/modules/zarf_kubectl \
   && ZARF_ANSIBLE_MODULE=kubectl zarf_kubectl /dev/null \
     | python3 -c 'import json,sys; r=json.load(sys.stdin); sys.exit(0 if r.get("failed") else 1)' \

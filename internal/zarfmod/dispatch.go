@@ -59,8 +59,12 @@ type action func(ctx context.Context, run Runner, args *Args, resp *Response) er
 // init and package_deploy, because neither is useful alone: an init package that disables k3s
 // local-storage has no StorageClass for the registry to claim until a storage provider is
 // deployed, and a provider cannot be deployed onto a cluster that has not been initialised. The
-// two-stage walk in test/e2e/cluster is what proves that pair. ZEP-0072 also names package_remove,
-// which nothing here needs yet.
+// two-stage walk in test/e2e/cluster is what proves that pair.
+//
+// package_remove, because a playbook that can only add is not reconciling anything, and because
+// ZEP-0072 names it. package_pull, because the package a deploy reads has to arrive on the node
+// somehow, and on an air-gapped management node that is a staged file rather than a registry the
+// cluster can reach -- so the fetch belongs to the same run as the deploy.
 //
 // kubectl, because the zarf linked in for those two already vendors it: the command is reachable
 // at no cost beyond its dispatch entry, and a management node driving an air-gapped cluster that
@@ -69,6 +73,8 @@ var modules = map[string]action{
 	"init":           runInit,
 	"kubectl":        runKubectl,
 	"package_deploy": runPackageDeploy,
+	"package_pull":   runPackagePull,
+	"package_remove": runPackageRemove,
 }
 
 // ModuleFiles returns the module file names this binary answers as, sorted: the actions above with

@@ -77,6 +77,11 @@ type Detail struct {
 	// ChangedUndeclared names what did not say. It is what makes a partial signal actionable
 	// rather than a warning with nothing behind it.
 	ChangedUndeclared []string `json:"changedUndeclared,omitempty"`
+	// PackagesPulled names the package files a pull left in its output directory that were not
+	// there before. It is what makes zarf_package_pull's changed field an observation rather than
+	// a convention, and it saves a playbook guessing a filename zarf derives from the package's
+	// own metadata.
+	PackagesPulled []string `json:"packagesPulled,omitempty"`
 	// Output is what the command wrote to standard output, for the modules whose answer is that
 	// output rather than what they did to the cluster. Only zarf_kubectl sets it: the converging
 	// modules report components and a changed signal, and their stdout is a progress stream.
