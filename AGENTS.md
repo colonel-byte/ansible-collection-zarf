@@ -25,6 +25,8 @@ Nothing here runs on the cluster's nodes. The modules run the installed `zarf` o
 | `containers/ansible/`         | The management node image: `ansible-core`, the collection, both module files and a `zarf`. Its build asserts the dispatch contract                                                              |
 | `schema/`                     | The generated JSON Schemas, written by `generate:schema` and committed because other repositories reference them                                                                                |
 | `examples/packages/`          | Reference Zarf packages declaring their cluster prerequisites. Read, linted and inspected; nothing builds one                                                                                   |
+| `flake.nix`, `pkgs/`          | The Nix flake and the one package it builds: the module wrapper and the collection, for a management node that installs them with Nix. See [`docs/dev/nix.md`](docs/dev/nix.md)                 |
+| `modules/home-manager/`       | The home-manager module that installs that package for one user and links the collection where Ansible looks                                                                                    |
 | `skills/`                     | Skills for the two authoring tasks this repository is about: writing a Zarf package, and declaring its prerequisites. Connected-side authoring only. See [`skills/AGENTS.md`](skills/AGENTS.md) |
 
 Several directories carry their own `AGENTS.md` with rules specific to that directory. Check the closest one before editing. Keep this table in sync when adding or removing one.
@@ -180,6 +182,12 @@ Before creating or updating a pull request description, read [`.github/pull_requ
 When a decision looks reversible from the code alone -- a read-only module built as a plain action plugin rather than a wrapper, a redaction that removes keys instead of blanking them, two near-identical k3d configs -- check `docs/agent/` first. These are the record of a tradeoff already made on purpose, not an oversight waiting to be cleaned up.
 
 [`choice-zarf-collection-removal.md`](docs/agent/choice-zarf-collection-removal.md) is the odd one: it was written as a removal plan for cargoship, and reads that way. What survives the move is its account of what this proof is for and when it stops being worth maintaining.
+
+### `go.mod`'s Go version is load-bearing
+
+Nothing in the vendored tree needs more than Go 1.26.9 -- zarf itself asks for exactly that -- so `go 1.27.2` in `go.mod` looks like a free line to lower. It is not. Go 1.27 is the first release that embeds module dependency information for a **vendored** build, and `internal/zarfmod/libraryrunner.go` recovers the linked-in zarf's version from that information: at 1.26 the binary carries no dep list at all, `config.CLIVersion` stays `unset-development-only`, and `zarf init` looks for `zarf-init-<arch>-unset-development-only.tar.zst` rather than the package an operator staged.
+
+`TestLinkedZarfVersionIsFilledBeforeAnythingReadsIt` is what fails when somebody tries, and `pkgs/zarf-ansible-modules/package.nix` pins `go_1_27` for the same reason. Lowering the directive means stamping the version with `-ldflags -X .../config.CLIVersion=...` on every build path, including a bare `go build ./cmd/zarfmod` -- which is the part that cannot be made to work.
 
 ### Relative-path constants don't move themselves
 

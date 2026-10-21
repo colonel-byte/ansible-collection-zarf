@@ -67,6 +67,15 @@ for module in zarf_init zarf_package_deploy zarf_package_pull zarf_package_remov
 done
 ```
 
+With Nix, that is one command and no build steps:
+
+```sh
+nix profile install github:colonel-byte/ansible-collection-zarf
+export ANSIBLE_COLLECTIONS_PATH="$HOME/.nix-profile/share/ansible/collections"
+```
+
+That installs the wrapper under every module name and the collection on a path Ansible can be pointed at. There is a home-manager module as well, which links the collection where Ansible already looks so nothing needs exporting; [the Nix page](docs/dev/nix.md) covers it, along with `nix develop`, direnv and what the package holds.
+
 Then make the collection visible to Ansible:
 
 ```sh
