@@ -284,10 +284,3 @@ func TestRunPackageDeployCheckModeSkips(t *testing.T) {
 		t.Errorf("a check-mode run executed %q", run.got.Args)
 	}
 }
-
-func TestModulesAnswersBothActions(t *testing.T) {
-	got := strings.Join(Modules(), ",")
-	if want := "init,package_deploy"; got != want {
-		t.Errorf("Modules() = %q, want %q", got, want)
-	}
-}

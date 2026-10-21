@@ -2,23 +2,26 @@
 
 An Ansible collection that initialises an air-gapped Kubernetes cluster with [zarf](https://zarf.dev) and deploys zarf packages onto it, from a playbook.
 
-It is a working proof of [ZEP-0072](https://github.com/zarf-dev/proposals/pull/73), which proposes native Ansible module support for zarf: the `zarf` binary dispatches on `argv[0]`, so a `zarf_init` symlink to `/usr/bin/zarf` is an Ansible module, with a thin Python action plugin alongside it. Everything the proposal describes is implemented here -- `argv[0]` dispatch, the WANT_JSON arguments file, the stdout guard, exit 0 with failure reported inside the JSON, the heartbeat status file and its polling monitor. Both modules go further and link zarf in: each builds zarf's own command tree and executes its command in its own process, so it enters the same code path an operator's command line enters rather than shelling out to it. Neither needs a `zarf` on the node. [choice-zarf-ansible-module](docs/agent/choice-zarf-ansible-module.md) records how that works and what it buys.
+It is a working proof of [ZEP-0072](https://github.com/zarf-dev/proposals/pull/73), which proposes native Ansible module support for zarf: the `zarf` binary dispatches on `argv[0]`, so a `zarf_init` symlink to `/usr/bin/zarf` is an Ansible module, with a thin Python action plugin alongside it. Everything the proposal describes is implemented here -- one binary dispatching on `argv[0]` with a symlink per module file, the WANT_JSON arguments file, the stdout guard, exit 0 with failure reported inside the JSON, the heartbeat status file and its polling monitor. The modules go further and link zarf in: the binary builds zarf's own command tree and executes its command in its own process, so it enters the same code path an operator's command line enters rather than shelling out to it. It needs no `zarf` on the node. [choice-zarf-ansible-module](docs/agent/choice-zarf-ansible-module.md) records how that works and what it buys.
 
 The proof began in [colonel-byte/cargoship](https://github.com/colonel-byte/cargoship), beside the `colonel_byte.cargoship` collection whose shape it copies.
 
 ## Modules
 
-| Module                       | What it does                                                                   | How it is built                   |
-| ---------------------------- | ------------------------------------------------------------------------------ | --------------------------------- |
-| `zarf_init`                  | `zarf init` against the cluster in a kubeconfig                                | Wrapper binary, from `cmd/init`   |
-| `zarf_package_deploy`        | `zarf package deploy`                                                          | Wrapper binary, from `cmd/deploy` |
-| `zarf_cluster_info`          | Reports the cluster's Kubernetes version, CRDs, StorageClasses and Deployments | Action plugin                     |
-| `zarf_package_documentation` | Extracts the files a package carries in its `documentation:` mapping           | Action plugin                     |
-| `zarf_package_info`          | Lists the packages deployed to a cluster                                       | Action plugin                     |
-| `zarf_package_inspect`       | Reads and verifies a package without deploying it                              | Action plugin                     |
-| `zarf_state_info`            | Reads the `zarf-state` Secret, withholding its eight credentials by default    | Action plugin                     |
+| Module                       | What it does                                                                   | How it is built                 |
+| ---------------------------- | ------------------------------------------------------------------------------ | ------------------------------- |
+| `zarf_init`                  | `zarf init` against the cluster in a kubeconfig                                | Module file, the one binary     |
+| `zarf_package_deploy`        | `zarf package deploy`                                                          | Module file, the one binary     |
+| `zarf_kubectl`               | `zarf tools kubectl` with the arguments given, and its output back             | Module file, the one binary     |
+| `zarf_cluster_info`          | Reports the cluster's Kubernetes version, CRDs, StorageClasses and Deployments | Action plugin                   |
+| `zarf_package_documentation` | Extracts the files a package carries in its `documentation:` mapping           | Action plugin                   |
+| `zarf_package_info`          | Lists the packages deployed to a cluster                                       | Action plugin                   |
+| `zarf_package_inspect`       | Reads and verifies a package without deploying it                              | Action plugin                   |
+| `zarf_state_info`            | Reads the `zarf-state` Secret, withholding its eight credentials by default    | Action plugin                   |
 
-The first two converge a cluster and are the proof. The other five read one, are not part of the proof, and are plain action plugins with no binary behind them -- [choice-zarf-info-modules](docs/agent/choice-zarf-info-modules.md) records why, and why `zarf_state_info` redacts.
+The first two converge a cluster and are the proof. `zarf_kubectl` is a passthrough to the kubectl zarf already vendors, which costs a dispatch entry and saves an air-gapped management node a kubectl of its own. All three are the same binary from `cmd/zarfmod`, invoked under three names -- `argv[0]` is what selects the module, which is the proposal's own design, so each module file is a symlink.
+
+The other five read a cluster, are not part of the proof, and are plain action plugins with no binary behind them -- [choice-zarf-info-modules](docs/agent/choice-zarf-info-modules.md) records why, and why `zarf_state_info` redacts.
 
 There are four roles: `packages`, `package_inspect` and `state` wrap a read-only module apiece, and [`prerequisites`](docs/ansible/role_prerequisites.md) refuses to deploy a package onto a cluster that cannot run it.
 
@@ -47,12 +50,14 @@ The cluster is read through `zarf tools kubectl`, so this needs no `kubernetes.c
 
 ## Installing
 
-Build the two module binaries and put them on the path of the node the play runs on. Both link zarf in, so they are large binaries and their build pulls zarf's dependency tree from `vendor/`:
+Build the module wrapper, put it on the path of the node the play runs on, and link each module file name to it. Zarf is linked in, so it is a large binary and its build pulls zarf's dependency tree from `vendor/`:
 
 ```sh
-go build -o zarf_init ./cmd/init
-go build -o zarf_package_deploy ./cmd/deploy
-sudo install -m 0755 zarf_init zarf_package_deploy /usr/local/bin/
+go run ./magefiles/core build:modules          # build/zarfmod, with the three symlinks beside it
+sudo install -m 0755 build/zarfmod /usr/local/bin/
+for module in zarf_init zarf_package_deploy zarf_kubectl; do
+  sudo ln -sf zarfmod "/usr/local/bin/$module"
+done
 ```
 
 Then make the collection visible to Ansible:
@@ -61,7 +66,7 @@ Then make the collection visible to Ansible:
 ln -s "$PWD/ansible/colonel_byte/zarf" ~/.ansible/collections/ansible_collections/colonel_byte/zarf
 ```
 
-Zarf itself is a prerequisite: the modules run the installed `zarf`, and nothing is installed on the cluster's nodes. `ghcr.io/colonel-byte/zarf-ansible-modules` comes with all of it -- `ansible-core`, the collection, both module files and a `zarf` -- for a management node that would rather not install any of them:
+Zarf itself is a prerequisite of the read-only modules, which shell out to the installed `zarf`; the three module files need none, and nothing is installed on the cluster's nodes. `ghcr.io/colonel-byte/zarf-ansible-modules` comes with all of it -- `ansible-core`, the collection, the module wrapper with its names linked to it, and a `zarf` -- for a management node that would rather not install any of them:
 
 <!-- x-release-please-start-version -->
 

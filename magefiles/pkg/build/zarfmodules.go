@@ -22,31 +22,51 @@ import (
 	"path/filepath"
 
 	"github.com/magefile/mage/sh"
+
+	"github.com/colonel-byte/ansible-collection-zarf/internal/zarfmod"
 )
 
-// ZarfModules are the Ansible module files of the colonel_byte.zarf collection, keyed by the
-// binary name they are installed under. See docs/agent/choice-zarf-ansible-module.md.
-var ZarfModules = map[string]string{ //nolint:gochecknoglobals
-	"zarf_init":           "./cmd/init",
-	"zarf_package_deploy": "./cmd/deploy",
-}
+// ZarfBinary is the wrapper every zarf module file is a symlink to, and ZarfModulePackage is the
+// main package it is built from. One binary under several names is ZEP-0072's own shape -- see
+// cmd/zarfmod -- and the names are zarfmod.ModuleFiles(), so a module added to the dispatch table
+// gets its symlink here with nothing to keep in step.
+const (
+	ZarfBinary        = "zarfmod"
+	ZarfModulePackage = "./cmd/zarfmod"
+)
 
-// ZarfModuleFiles builds every zarf Ansible module file for this host into build/.
+// ZarfModuleFiles builds the zarf Ansible module wrapper for this host into build/, and links each
+// module file name to it.
 //
-// They are built for the host rather than for a release target list because what drives them is
-// the e2e suite and an operator reproducing a module run; the release builds come from
+// It is built for the host rather than for a release target list because what drives them is the
+// e2e suite and an operator reproducing a module run; the release builds come from
 // .goreleaser.yaml. No version is stamped in: a module file reports what zarf did, and has no
 // version of its own to report.
 func ZarfModuleFiles() error {
-	for name, pkg := range ZarfModules {
-		out := filepath.Join(BuildDir, name)
-		fmt.Println("building: " + out)
+	out := filepath.Join(BuildDir, ZarfBinary)
+	fmt.Println("building: " + out)
 
-		if err := os.Remove(out); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := os.MkdirAll(BuildDir, 0o755); err != nil {
+		return err
+	}
+	if err := os.Remove(out); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	env := map[string]string{"CGO_ENABLED": "0"}
+	if err := sh.RunWithV(env, "go", "build", "-trimpath", "-o", out, ZarfModulePackage); err != nil {
+		return err
+	}
+
+	for _, name := range zarfmod.ModuleFiles() {
+		link := filepath.Join(BuildDir, name)
+		fmt.Println("linking: " + link)
+
+		if err := os.Remove(link); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
-		env := map[string]string{"CGO_ENABLED": "0"}
-		if err := sh.RunWithV(env, "go", "build", "-trimpath", "-o", out, pkg); err != nil {
+		// Relative, so build/ can be moved or mounted elsewhere with the links still resolving --
+		// which is what the container image and the e2e suites do with it.
+		if err := os.Symlink(ZarfBinary, link); err != nil {
 			return err
 		}
 	}

@@ -2,31 +2,34 @@
 
 Initialise an air-gapped cluster with [zarf](https://zarf.dev) from an Ansible playbook. This collection is a proof of [ZEP-0072](https://github.com/zarf-dev/proposals/pull/73). It began in [colonel-byte/cargoship](https://github.com/colonel-byte/cargoship), because the pattern it proposes already runs there as `colonel_byte.cargoship`, and moved here once it had outgrown being a guest in that repository.
 
-`zarf_init` and `zarf_package_deploy` are that proof, and most of this file is about them. Five further modules read a cluster rather than converging it -- `zarf_cluster_info`, `zarf_package_documentation`, `zarf_package_info`, `zarf_package_inspect` and `zarf_state_info` -- and three of them have a role apiece: `packages`, `package_inspect` and `state`. The `prerequisites` role is the one that is not a wrapper around a single module -- it reads a package's `PackagePrerequisites` document and the cluster, and fails the play on what the cluster does not satisfy. They are plain action plugins rather than wrapper binaries, they are not part of the proof, and [choice-zarf-info-modules](../../../docs/agent/choice-zarf-info-modules.md) records why.
+`zarf_init` and `zarf_package_deploy` are that proof, and most of this file is about them. `zarf_kubectl` is the third module that is the same binary: a passthrough to the kubectl zarf vendors, for a management node with no kubectl of its own. Five further modules read a cluster rather than converging it -- `zarf_cluster_info`, `zarf_package_documentation`, `zarf_package_info`, `zarf_package_inspect` and `zarf_state_info` -- and three of them have a role apiece: `packages`, `package_inspect` and `state`. The `prerequisites` role is the one that is not a wrapper around a single module -- it reads a package's `PackagePrerequisites` document and the cluster, and fails the play on what the cluster does not satisfy. They are plain action plugins rather than wrapper binaries, they are not part of the proof, and [choice-zarf-info-modules](../../../docs/agent/choice-zarf-info-modules.md) records why.
 
 ## Architecture
 
 Zarf is not an SSH orchestrator. It talks to one cluster through a kubeconfig, from the node it runs on, so this collection runs `zarf` on the node the task is delegated to and nothing on any managed node. There is no inventory to project and no fleet to connect to: what a task supplies is a kubeconfig, a package, and the parameters the zarf command takes.
 
-Each of the two converging modules is a compiled wrapper binary rather than a Python module:
+The modules that act are one compiled wrapper binary rather than Python modules, invoked under one name per module:
 
-| Layer                                          | What it is                                                                                                                                                    |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `colonel_byte.zarf.zarf_init`                  | A wrapper binary built from `cmd/init`. It renders the `zarf init` command line, runs the installed zarf, follows the deployment, and writes one JSON object. |
-| `colonel_byte.zarf.zarf_package_deploy`        | The same, for `zarf package deploy`, built from `cmd/deploy`.                                                                                                 |
-| `plugins/action/zarf_init.py`, `..._deploy.py` | The documented parameter surfaces, and the delivery and display described below. They hold no translation rules.                                              |
-| `plugins/plugin_utils/projection.py`           | Argument delivery, the heartbeat monitor thread, and result parsing. The whole of the Python in this collection.                                              |
+| Layer                                   | What it is                                                                                                                                                                                     |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `colonel_byte.zarf.zarf_init`           | The wrapper binary built from `cmd/zarfmod`, invoked as `zarf_init`. It renders the `zarf init` command line, executes zarf's own command, follows the deployment, and writes one JSON object. |
+| `colonel_byte.zarf.zarf_package_deploy` | The same binary under its `zarf_package_deploy` name, for `zarf package deploy`.                                                                                                               |
+| `colonel_byte.zarf.zarf_kubectl`        | The same binary again, for `zarf tools kubectl` with the arguments a task gives it.                                                                                                            |
+| `plugins/action/zarf_*.py`              | The documented parameter surfaces, and the delivery and display described below. They hold no translation rules.                                                                               |
+| `plugins/plugin_utils/projection.py`    | Argument delivery, the heartbeat monitor thread, and result parsing. The whole of the Python in this collection.                                                                               |
 
-ZEP-0072 proposes putting the module dispatch inside the `zarf` binary itself, which a proof in this repository cannot do. The wrappers are the one deliberate divergence; everything else -- `argv[0]` dispatch, the WANT_JSON intake, the stdout guard, the single JSON result, the heartbeat side channel -- is the shape the proposal describes.
+ZEP-0072 proposes putting the module dispatch inside the `zarf` binary itself, which a proof in this repository cannot do. The wrapper is the one deliberate divergence, and it is one binary rather than one per module for the reason the proposal gives: the name it is invoked under is what selects the module. Everything else -- `argv[0]` dispatch, the WANT_JSON intake, the stdout guard, the single JSON result, the heartbeat side channel -- is the shape the proposal describes.
 
 ## Installing
 
-Build the wrappers and put them on the path of the node the play runs on:
+Build the wrapper, put it on the path of the node the play runs on, and link each module name to it:
 
 ```sh
-go build -o zarf_init ./cmd/init
-go build -o zarf_package_deploy ./cmd/deploy
-sudo install -m 0755 zarf_init zarf_package_deploy /usr/local/bin/
+go build -o zarfmod ./cmd/zarfmod
+sudo install -m 0755 zarfmod /usr/local/bin/
+for module in zarf_init zarf_package_deploy zarf_kubectl; do
+  sudo ln -sf zarfmod "/usr/local/bin/$module"
+done
 ```
 
 Then make the collection visible to Ansible, by copying or symlinking this directory to `~/.ansible/collections/ansible_collections/colonel_byte/zarf`.

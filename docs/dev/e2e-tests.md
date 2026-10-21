@@ -25,7 +25,7 @@ Two things about these tests are deliberate rather than incidental, and both are
 
 ## `test/e2e/cluster`
 
-Needs `k3d`, a `zarf` on `PATH`, `ansible-playbook`, Docker, and the network to pull three packages on the first run. It builds both module files first, stands up two k3d clusters, and walks `zarf_init` and `zarf_package_deploy` across each.
+Needs `k3d`, a `zarf` on `PATH`, `ansible-playbook`, Docker, and the network to pull three packages on the first run. It builds the module wrapper first, stands up two k3d clusters, and walks `zarf_init` and `zarf_package_deploy` across each.
 
 ```sh
 go run ./magefiles/core test:endToEndCluster

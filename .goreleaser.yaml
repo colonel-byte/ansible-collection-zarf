@@ -24,44 +24,24 @@ before:
     - hack/ansible-build-collection.sh bin/ansible {{ if .IsSnapshot }}""{{ else }}{{ .Version }}{{ end }} ansible/colonel_byte/zarf
 
 builds:
-  # The two Ansible module files. Each is a module file rather than a CLI: it reads JSON
-  # parameters, has zarf do the work, and writes one JSON object, so it is only ever invoked by
-  # Ansible or by an operator reproducing such a run. Both have zarf linked in and execute its own
-  # command tree, so neither needs a zarf on the node. See
-  # docs/agent/choice-zarf-ansible-module.md.
+  # The Ansible module wrapper. It is a module file rather than a CLI: it reads JSON parameters,
+  # has zarf do the work, and writes one JSON object, so it is only ever invoked by Ansible or by
+  # an operator reproducing such a run. Zarf is linked in and its own command tree is what
+  # executes, so no zarf is needed on the node. See docs/agent/choice-zarf-ansible-module.md.
   #
-  # Both are large -- zarf's dependency tree is most of each one. riscv64 is in the list and does
-  # build; it is checked by cross-compiling, not assumed.
+  # One build for every module, not one per module. The binary answers as whichever zarf_ name it
+  # was invoked under -- which is ZEP-0072's own design -- so the packages below install it once
+  # and symlink each module file name to it. Built per module it would ship a copy of zarf's
+  # dependency tree per module, which is most of the 269MB each.
+  #
+  # It is large for that reason. riscv64 is in the list and does build; it is checked by
+  # cross-compiling, not assumed.
   #
   # Linux only: Ansible runs the module file on the management node, and the management nodes this
-  # is for run Linux. The packages below carry a symlink to each binary, so a package built for an
-  # architecture the binary was not built for would install a dangling one -- which is why both
-  # builds carry the same architecture list.
-  - id: zarf_init
-    main: ./cmd/init
-    binary: zarf_init
-    ldflags:
-      - -s
-      - -w
-    gcflags:
-      - all=-l
-    env:
-      - CGO_ENABLED=0
-    goos:
-      - linux
-    goarch:
-      - arm64
-      - amd64
-      - riscv64
-    goamd64:
-      - v1
-    flags:
-      - -trimpath
-    mod_timestamp: "{{ .CommitTimestamp }}"
-
-  - id: zarf_package_deploy
-    main: ./cmd/deploy
-    binary: zarf_package_deploy
+  # is for run Linux.
+  - id: zarfmod
+    main: ./cmd/zarfmod
+    binary: zarfmod
     ldflags:
       - -s
       - -w
@@ -82,12 +62,14 @@ builds:
     mod_timestamp: "{{ .CommitTimestamp }}"
 
 archives:
-  # Both module files, archived together. ids is explicit rather than omitted: without it a third
-  # build added later would land in this archive silently.
+  # The wrapper, archived on its own. A tar.gz cannot carry the module file symlinks the packages
+  # install, so whoever unpacks this links the names themselves -- `ln -s zarfmod zarf_init` and
+  # so on, which ansible/colonel_byte/zarf/plugins/modules/README.md spells out. ids is explicit
+  # rather than omitted: without it a second build added later would land in this archive
+  # silently.
   - id: zarf_modules
     ids:
-      - zarf_init
-      - zarf_package_deploy
+      - zarfmod
     formats:
       - tar.gz
     name_template: >-
@@ -108,11 +90,10 @@ snapshot:
 nfpms:
   - id: packagers
     package_name: zarf-ansible-modules
-    # Both module files, listed explicitly so that adding a third build does not silently add a
-    # third binary to this package.
+    # The wrapper, listed explicitly so that adding a second build does not silently add a second
+    # binary to this package.
     ids:
-      - zarf_init
-      - zarf_package_deploy
+      - zarfmod
     license: Apache 2.0
     maintainer: |-
       Allen Conlon <software@conlon.dev>
@@ -136,13 +117,27 @@ nfpms:
         # Explicit, and not a tidiness preference.
         file_info:
           mode: 0755
-      # The module files. The collection's action plugins invoke /usr/bin/zarf_init and
-      # /usr/bin/zarf_package_deploy directly rather than staging a module file, so these
-      # symlinks are for a conventional Ansible caller that does stage one. There is no Python
-      # module behind either name: the binary answers Ansible when it is invoked under a zarf_
-      # name. See docs/agent/choice-zarf-ansible-module.md.
+      # One module file name per module, each a symlink to the one wrapper. The name is how the
+      # binary knows which module to answer as -- it dispatches on argv[0] -- so these are the
+      # module files rather than a convenience. There is no Python module behind any of them.
+      # See docs/agent/choice-zarf-ansible-module.md.
+      - src: /usr/bin/zarfmod
+        dst: /usr/bin/zarf_init
+        type: symlink
+      - src: /usr/bin/zarfmod
+        dst: /usr/bin/zarf_kubectl
+        type: symlink
+      - src: /usr/bin/zarfmod
+        dst: /usr/bin/zarf_package_deploy
+        type: symlink
+      # And the same names under the collection, for a conventional Ansible caller that stages a
+      # module file. The action plugins do not need them: they invoke /usr/bin/zarf_<module>
+      # directly.
       - src: /usr/bin/zarf_init
         dst: /usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/plugins/modules/zarf_init
+        type: symlink
+      - src: /usr/bin/zarf_kubectl
+        dst: /usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/plugins/modules/zarf_kubectl
         type: symlink
       - src: /usr/bin/zarf_package_deploy
         dst: /usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/plugins/modules/zarf_package_deploy
@@ -151,11 +146,11 @@ nfpms:
       compression: gzip
 
 dockers_v2:
-  # A management node image: ansible-core, the collection, both module files, and a zarf for
-  # them to drive. It pulls in the nfpms artifacts rather than the raw binaries because
+  # A management node image: ansible-core, the collection, the module wrapper with its module
+  # file names linked to it, and a zarf for the read-only modules to drive. It pulls in the nfpms artifacts rather than the raw binaries because
   # containers/ansible/Dockerfile installs the rpm, which is what puts the collection on
-  # ansible-core's collections path and both symlinks under plugins/modules -- the layout its
-  # smoke checks assert.
+  # ansible-core's collections path and every module file symlink under plugins/modules -- the
+  # layout its smoke checks assert.
   - id: zarf-ansible
     ids:
       - packagers

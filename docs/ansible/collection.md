@@ -1,24 +1,24 @@
 # The `colonel_byte.zarf` collection
 
-Zarf runs inside a playbook as an Ansible collection: `zarf init` initialises a cluster and `zarf package deploy` puts a package on it, both driven from the node the task is delegated to. Those two modules are compiled wrapper binaries named `zarf_<action>`, and the name selects the action. There is no Python module behind either, and nothing is installed on the cluster's nodes.
+Zarf runs inside a playbook as an Ansible collection: `zarf init` initialises a cluster and `zarf package deploy` puts a package on it, both driven from the node the task is delegated to. Those two modules are one compiled wrapper binary invoked under the names `zarf_<action>`, and the name selects the action. `zarf_kubectl` is a third name on the same binary, passing an argument vector to the kubectl zarf vendors. There is no Python module behind any of them, and nothing is installed on the cluster's nodes.
 
-Three further modules read a cluster rather than converging it -- the deployed packages, a package definition, and zarf's own state -- and three roles wrap them. Those are plain action plugins rather than wrapper binaries, and [choice-zarf-info-modules](../agent/choice-zarf-info-modules.md) is the record of why a read-only command earns no binary.
+Five further modules read a cluster rather than converging it -- the cluster's own facts, a package's documentation, the deployed packages, a package definition, and zarf's own state -- and three roles wrap three of them. Those are plain action plugins rather than wrapper binaries, and [choice-zarf-info-modules](../agent/choice-zarf-info-modules.md) is the record of why a read-only command earns no binary.
 
 This collection is a proof of [ZEP-0072](https://github.com/zarf-dev/proposals/pull/73), which proposes this pattern for zarf itself. It began in [colonel-byte/cargoship](https://github.com/colonel-byte/cargoship), because the pattern it copies is the one `colonel_byte.cargoship` already runs there. What becomes of it is tied to that proposal's outcome -- see [choice-zarf-collection-removal](../agent/choice-zarf-collection-removal.md).
 
-Zarf is not an SSH orchestrator. It reaches one cluster through a kubeconfig, so Ansible supplies no inventory here: a task supplies a kubeconfig, a package, and the parameters the zarf command takes. The zarf that does the work is the one on the node's path, which is what keeps the module and the tool in step.
+Zarf is not an SSH orchestrator. It reaches one cluster through a kubeconfig, so Ansible supplies no inventory here: a task supplies a kubeconfig, a package, and the parameters the zarf command takes. For the three modules that act, the zarf that does the work is the one linked into the binary; the read-only modules run the zarf on the node's path.
 
 ## What is here
 
 | Page                                                | What it covers                                                               |
 | --------------------------------------------------- | ---------------------------------------------------------------------------- |
-| [Modules](modules.md)                               | The two modules that converge a cluster, and the three that read it.         |
+| [Modules](modules.md)                               | The three modules that act on a cluster, and the five that read it.          |
 | [Roles](roles.md)                                   | The roles that wrap the read-only modules and set what they return as facts. |
 | [Module guide](../guides/zarf-ansible-module.md)    | Installing the modules, the two-module walk, check mode, and the result.     |
 
 ## Which to reach for
 
-No module picks another's work up. A playbook writes the action it wants: `zarf_init` for the cluster itself, `zarf_package_deploy` for anything deployed onto it afterwards.
+No module picks another's work up. A playbook writes the action it wants: `zarf_init` for the cluster itself, `zarf_package_deploy` for anything deployed onto it afterwards, and `zarf_kubectl` for the one resource a playbook has to read or patch directly.
 
 The two are usually written together rather than separately. A cluster whose distribution ships no storage provider cannot be initialised until one is deployed -- zarf's registry claims a volume during the seed phase -- and a package cannot normally be deployed until the cluster is initialised. The way out is a connected deploy, which pushes no images and so needs no registry; the [module guide](../guides/zarf-ansible-module.md) covers the ordering.
 

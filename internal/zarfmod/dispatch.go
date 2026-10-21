@@ -17,9 +17,9 @@
 // This is a proof of ZEP-0072 (https://github.com/zarf-dev/proposals/pull/73) built where the
 // pattern it copies already exists. It differs from that proposal in one way that matters: the
 // module here is not the zarf binary. ZEP-0072 proposes putting module dispatch inside zarf
-// itself, which this repository cannot do, so each module file is a separate wrapper binary
-// (cmd/init, cmd/deploy) that renders the zarf command line, runs the installed zarf,
-// and reports the run. Everything else -- argv[0] dispatch, the WANT_JSON intake, the stdout guard, the single
+// itself, which this repository cannot do, so the module files are symlinks to a wrapper binary of
+// their own (cmd/zarfmod) that renders the zarf command line, executes zarf's own command tree in
+// its process, and reports the run. Everything else -- argv[0] dispatch, the WANT_JSON intake, the stdout guard, the single
 // JSON response, the heartbeat side channel -- is the shape the proposal describes, and is modeled
 // on internal/ansiblemod. See docs/agent/choice-zarf-ansible-module.md.
 //
@@ -61,9 +61,25 @@ type action func(ctx context.Context, run Runner, args *Args, resp *Response) er
 // deployed, and a provider cannot be deployed onto a cluster that has not been initialised. The
 // two-stage walk in test/e2e/cluster is what proves that pair. ZEP-0072 also names package_remove,
 // which nothing here needs yet.
+//
+// kubectl, because the zarf linked in for those two already vendors it: the command is reachable
+// at no cost beyond its dispatch entry, and a management node driving an air-gapped cluster that
+// has to install kubectl of its own to read one resource is the gap it closes.
 var modules = map[string]action{
 	"init":           runInit,
+	"kubectl":        runKubectl,
 	"package_deploy": runPackageDeploy,
+}
+
+// ModuleFiles returns the module file names this binary answers as, sorted: the actions above with
+// the zarf_ prefix on them. They are the symlinks that have to exist beside the binary, so the
+// build target and the packaging read them from here rather than keeping a list of their own.
+func ModuleFiles() []string {
+	out := make([]string, 0, len(modules))
+	for _, name := range Modules() {
+		out = append(out, Prefix+name)
+	}
+	return out
 }
 
 // Modules returns the actions this wrapper answers as, sorted.

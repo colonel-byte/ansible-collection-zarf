@@ -1,8 +1,12 @@
 # Modules
 
-Seven modules ship. Two of them converge a cluster, and five read it.
+Eight modules ship. Three of them act on a cluster, and five read it.
 
-`zarf_init` and `zarf_package_deploy` are the converging pair: they are the proof of [ZEP-0072](https://github.com/zarf-dev/proposals/pull/73), each is a compiled binary with its parameters and command line in Go and zarf's own command tree linked in, and [choice-zarf-ansible-module](../agent/choice-zarf-ansible-module.md) records how. Package creation is not among them -- it builds an artifact from a definition in a repository, which belongs in a pipeline rather than in a convergence run -- and neither is package removal, which nothing here has needed yet.
+`zarf_init` and `zarf_package_deploy` are the converging pair: they are the proof of [ZEP-0072](https://github.com/zarf-dev/proposals/pull/73), each has its parameters and command line in Go, and [choice-zarf-ansible-module](../agent/choice-zarf-ansible-module.md) records how. Package creation is not among them -- it builds an artifact from a definition in a repository, which belongs in a pipeline rather than in a convergence run -- and neither is package removal, which nothing here has needed yet.
+
+`zarf_kubectl` is the third that acts, and it is not a convergence module: it passes an argument vector to the kubectl zarf vendors and hands back what it printed. It exists because that kubectl is already inside the module file, so a management node reading or patching one resource on an air-gapped cluster needs no kubectl of its own. For declarative resource management, `kubernetes.core.k8s` is the module to reach for.
+
+All three are the same binary, invoked under three names. It dispatches on `argv[0]`, which is what ZEP-0072 proposes zarf itself do, so each module file under `plugins/modules/` is a symlink rather than a file of its own.
 
 `zarf_cluster_info`, `zarf_package_documentation`, `zarf_package_info`, `zarf_package_inspect` and `zarf_state_info` read. They change nothing, they answer during a check-mode play rather than skipping, and they are plain action plugins with no wrapper binary behind them, for the reasons in [choice-zarf-info-modules](../agent/choice-zarf-info-modules.md) and -- for the two added for the prerequisites format, which are the first to push past the threshold that record names -- in [choice-package-documentation-module](../agent/choice-package-documentation-module.md).
 
@@ -10,6 +14,7 @@ Seven modules ship. Two of them converge a cluster, and five read it.
 | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | [`zarf_init`](module_init.md)                                   | Initialises a cluster: the injector, the seed registry, the registry, the agent.                |
 | [`zarf_package_deploy`](module_package_deploy.md)               | Puts a package on a cluster, from a path, an `oci://` reference, or an `https://` URL.          |
+| [`zarf_kubectl`](module_kubectl.md)                             | Runs a kubectl command through the kubectl zarf carries, and returns its output.                |
 | [`zarf_cluster_info`](module_cluster_info.md)                   | Reports the cluster's Kubernetes version, CRDs, StorageClasses and Deployment readiness.        |
 | [`zarf_package_documentation`](module_package_documentation.md) | Extracts the files a package carries in its `documentation:` mapping, and parses the YAML ones. |
 | [`zarf_package_info`](module_package_info.md)                   | Lists the packages deployed to a cluster, via `zarf package list`.                              |
@@ -33,6 +38,8 @@ Credentials given as parameters are rendered as flags, which puts them in the pr
 ## What the result says
 
 The two converging modules report `changed: true` with `changedSignal: partial` on every successful run, and name every component they deployed in `changedUndeclared`. Zarf reports which components ran and not whether any of them found the cluster already as it wanted, so `partial` is the honest answer rather than an unfinished one. Check mode reports the task as skipped, because neither command has a dry run.
+
+`zarf_kubectl` reports `changed: true` with `changedSignal: unknown`, because the argument vector is kubectl's and nothing in the module reads it: a successful run says the command worked and nothing about whether the cluster moved. A read wants `changed_when: false` on the task. Check mode skips it for the same reason -- nothing there can tell a `get` from an `apply`.
 
 The five read-only modules report `changed: false`, which is not an approximation, and they run in check mode rather than skipping: answering a question during a run an operator asked to be told about is the honest thing to do.
 

@@ -77,6 +77,10 @@ type Detail struct {
 	// ChangedUndeclared names what did not say. It is what makes a partial signal actionable
 	// rather than a warning with nothing behind it.
 	ChangedUndeclared []string `json:"changedUndeclared,omitempty"`
+	// Output is what the command wrote to standard output, for the modules whose answer is that
+	// output rather than what they did to the cluster. Only zarf_kubectl sets it: the converging
+	// modules report components and a changed signal, and their stdout is a progress stream.
+	Output string `json:"output,omitempty"`
 	// Version is the zarf that did the work, which is the one linked into the module rather than
 	// anything found on the machine. It is reported so a result says which zarf it describes.
 	Version string `json:"version,omitempty"`
