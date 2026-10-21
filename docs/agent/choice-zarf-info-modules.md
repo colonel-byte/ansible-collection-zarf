@@ -1,6 +1,6 @@
 # Why the read-only zarf modules are Python rather than wrapper binaries
 
-Every other module in `colonel_byte.zarf` is a wrapper binary. `plugins/plugin_utils/projection.py` opens by saying its Python is "deliberately the whole of" the collection's Python, and [choice-zarf-ansible-module](choice-zarf-ansible-module.md) records why: the parameters are a Go struct in `internal/zarfmod`, the command line is rendered by a Go function, and `plugindocs_test.go` holds the Python `DOCUMENTATION` block against both.
+Every other module in `colonel_byte.zarf` is a compiled Go binary. `plugins/plugin_utils/projection.py` opens by saying its Python is "deliberately the whole of" the collection's Python, and [choice-zarf-ansible-module](choice-zarf-ansible-module.md) records why: the parameters are a Go struct in `internal/zarfmod`, the command line is rendered by a Go function, and `plugindocs_test.go` holds the Python `DOCUMENTATION` block against both.
 
 `zarf_cluster_info`, `zarf_package_documentation`, `zarf_package_info`, `zarf_package_inspect`, and `zarf_state_info` are not built that way. Their whole implementation is the action plugin, sharing `ZarfInfoActionBase` in `plugins/plugin_utils/info.py`. This is the record of that decision, and of what it costs.
 
@@ -10,7 +10,7 @@ It was written when there were three of them and one flag between them. Two were
 
 The wrapper exists for three reasons, and a read-only command has none of them.
 
-**There is no flag surface worth projecting.** `zarf init` renders more than thirty flags, which is why spelling them out in Go and checking them against a recorded list earns its keep. The most any of these renders is three -- `--keys`, `--key` and `--verify=` on `zarf_package_documentation` -- and `zarf_cluster_info` renders none that a parameter controls at all. The rest of each command line is fixed words.
+**There is no flag surface worth projecting.** `zarf init` renders more than thirty flags, which is why spelling them out in Go and parsing them against zarf's own command tree earns its keep. The most any of these renders is three -- `--keys`, `--key` and `--verify=` on `zarf_package_documentation` -- and `zarf_cluster_info` renders none that a parameter controls at all. The rest of each command line is fixed words.
 
 When this was written the claim was "one flag between them, `--key` on `zarf_package_inspect`", and it was already out of date: `verify` had been added to that module. See the correction in [choice-package-documentation-module](choice-package-documentation-module.md).
 

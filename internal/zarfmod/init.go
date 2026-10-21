@@ -21,14 +21,19 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/zarf-dev/zarf/src/config"
 )
 
-// The flags of zarf init the module renders. They are spelled out here because the wrapper runs
-// zarf as a child process and has no command tree to read them from, which is the one honest
-// difference from internal/ansiblemod: cargoship's modules are checked against the real cobra
-// command by a test, and these can only be checked against the zarf release they were written
-// for. TestInitArgsAreKnownFlags holds them against a recorded flag list, and a zarf upgrade that
-// renames one fails that test rather than a playbook.
+// The flags of zarf init the module renders. They are spelled out here because a module parameter
+// is not a flag -- the names differ, several parameters render nothing, and verify has to be
+// rendered in the equals form -- so the rendering is this module's job either way.
+//
+// What they are no longer is unverifiable. zarf's command tree is linked in, so
+// TestInitArgsAreKnownFlags parses what this renders against the real init command and pflag is
+// what decides whether a flag exists. A zarf release that renames one fails that test rather than
+// a playbook, which is what the recorded list this replaced could never manage. See
+// LibraryRunner.
 const (
 	flagAgentMutationPolicy        = "agent-mutation-policy"
 	flagAgentTLSCA                 = "agent-tls-ca"
@@ -84,13 +89,10 @@ var credentialFlags = map[string]bool{
 	flagRegistrySecret:       true,
 }
 
-// defaultBinary is the zarf the wrapper runs when the operator named none. It is resolved on PATH,
-// which on an air-gapped management node is the zarf the operator installed.
-const defaultBinary = "zarf"
-
-// EnvBinary names the zarf to run, for an operator who keeps more than one version staged and does
-// not want to repeat the path in every task.
-const EnvBinary = "ZARF_ANSIBLE_BINARY"
+// commandName is the first word of the command a result reports. Nothing is executed by that
+// name -- zarf is linked in -- so it exists to give an operator reading a failed task a command
+// line they could run by hand.
+const commandName = "zarf"
 
 // initParams is the zarf_init module's parameter surface: everything both wrappers take, plus the
 // init package and everything that configures the registry and git server the init package deploys.
@@ -104,8 +106,8 @@ type initParams struct {
 
 	// InitPackage is the init package to deploy: a path to a staged tarball, an oci:// reference,
 	// or an https:// URL. It is the positional argument of the command, which zarf init has taken
-	// since v0.72.0 -- see MinZarfVersion. The file needs no particular name, because nothing
-	// looks it up by name any more.
+	// since v0.72.0. The file needs no particular name, because nothing looks it up by name any
+	// more.
 	//
 	// Directory, in commonParams, is where relative paths resolve from -- both a relative init
 	// package and a relative path inside an operator-supplied zarf config. Giving a directory and
@@ -165,14 +167,10 @@ func runInit(ctx context.Context, run Runner, args *Args, resp *Response) error 
 		return err
 	}
 
-	// The version is read before the init runs, because an older zarf rejects the positional
-	// package source as a usage error about having too many arguments, which names neither the
-	// parameter nor the version that would accept it. What it finds is reported either way.
-	version, err := requireZarfVersion(ctx, run, p.binary())
-	resp.Zarf.Version = version
-	if err != nil {
-		return err
-	}
+	// The zarf that does the work is the one linked into this binary, so the version is a
+	// constant rather than something to go and ask for. There used to be a floor checked against
+	// the installed zarf here; go.mod is the floor now.
+	resp.Zarf.Version = config.CLIVersion
 
 	hb := NewHeartbeat(p.StatusFile)
 	defer hb.Clear()
@@ -181,11 +179,10 @@ func runInit(ctx context.Context, run Runner, args *Args, resp *Response) error 
 	prog := newProgress(hb, componentCount(p.Components))
 	argv := buildInitArgs(&p, source)
 
-	resp.Zarf.Command = append([]string{p.binary()}, redact(argv)...)
+	resp.Zarf.Command = append([]string{commandName}, redact(argv)...)
 	resp.Zarf.Directory = dir
 
 	res, runErr := run.Run(ctx, Invocation{
-		Binary: p.binary(),
 		Args:   argv,
 		Dir:    dir,
 		Env:    p.childEnv(hb),

@@ -14,10 +14,7 @@
 
 package zarfmod
 
-import (
-	"os"
-	"strings"
-)
+import "strings"
 
 // commonParams are the parameters both wrapper modules take, and the flags both render from them.
 //
@@ -38,8 +35,6 @@ import (
 // directory from the init package and a deploy has nothing to infer. A field belongs here when
 // both modules mean the same thing by it, not when both happen to have one.
 type commonParams struct {
-	// Binary is the zarf to run. The wrapper is a module file, not zarf.
-	Binary string `json:"zarf_binary"`
 	// Directory is the working directory to run zarf in. What each module does with it differs;
 	// see workingDir and deployWorkingDir.
 	Directory string `json:"directory"`
@@ -78,17 +73,6 @@ type commonParams struct {
 
 	LogLevel  string `json:"log_level"`
 	LogFormat string `json:"log_format"`
-}
-
-// binary is the zarf to run: the parameter, then the environment, then PATH.
-func (p *commonParams) binary() string {
-	if p.Binary != "" {
-		return p.Binary
-	}
-	if env := os.Getenv(EnvBinary); env != "" {
-		return env
-	}
-	return defaultBinary
 }
 
 // childEnv is what the wrapper adds to zarf's environment.

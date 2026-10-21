@@ -20,10 +20,17 @@ jobs:
       #   docs-generator - a `repo: local` hook that shells out to mage and
       #     regenerates files; it needs the full dev toolchain.
       #   golangci-lint - already covered by the Validate Lint workflow.
+      #
+      # -c names the config instead of letting prek discover them. prek runs
+      # every nested .pre-commit-config.yaml as its own project, and two
+      # vendored dependencies ship one, so without it this job runs other
+      # projects' hooks over vendored code and fails on their toolchain rather
+      # than on anything in this repository. See the root AGENTS.md.
       - name: Run hooks
         uses: j178/prek-action@1382ad72dea72f9d53832f2bcb65b3e87a947204 # v3.0.1
         with:
           extra-args: >-
             --all-files
+            --config .pre-commit-config.yaml
             --skip docs-generator
             --skip golangci-lint

@@ -8,7 +8,7 @@ Three languages are analysed in a matrix:
 
 | Language  | Build mode | Why it is scanned                                                                               |
 | --------- | ---------- | ----------------------------------------------------------------------------------------------- |
-| `go`      | `manual`   | The wrapper binaries and the module logic. The build step decides which packages get extracted. |
+| `go`      | `manual`   | The module binaries and the module logic. The build step decides which packages get extracted.  |
 | `python`  | `none`     | The action plugins, where parameters are delivered and `zarf_state_info`'s redaction lives.     |
 | `actions` | `none`     | The workflows in this directory.                                                                |
 

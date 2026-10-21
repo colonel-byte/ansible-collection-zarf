@@ -8,20 +8,19 @@ The top level of `magefiles/` is strictly for Mage namespace declarations and ta
 
 All implementation logic belongs in modular Go packages under `magefiles/pkg/`:
 
-| Path                           | Purpose                                                                                                                         |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| `magefiles/build.go`           | Mage entrypoint for the `Build` namespace (`build:modules`)                                                                     |
-| `magefiles/examples.go`        | Mage entrypoint for the `Examples` namespace (`examples:vendor`, `examples:images`, `examples:lint`)                            |
-| `magefiles/generate.go`        | Mage entrypoint for the `Generate` namespace (`generate:document`, `generate:schema`, `generate:zarfFlags`, `generate:dnfPins`) |
-| `magefiles/test.go`            | Mage entrypoint for the `Test` namespace (`test:unit`, `test:endToEnd*`, `test:cleanClusters`)                                  |
-| `magefiles/core/core.go`       | Bootstrapping main package for `go run ./magefiles/core`                                                                        |
-| `magefiles/pkg/build/`         | Compiling the two Ansible module files                                                                                          |
-| `magefiles/pkg/gen/docs/`      | The book's generators: the collection reference, the Go reference, the two copied-in pages, and `SUMMARY.md`                    |
-| `magefiles/pkg/gen/schema/`    | Reflecting the published JSON Schemas out of the Go types that define them                                                      |
-| `magefiles/pkg/gen/zarfflags/` | Recording the flag surface of the zarf commands the modules wrap                                                                |
-| `magefiles/pkg/devtools/`      | Developer tooling: AlmaLinux repodata parsing and the dnf pin rewriters (`dnfpins`)                                             |
-| `magefiles/pkg/pkgvendor/`     | Vendoring the pinned upstream manifests a reference package deploys, and the parts of it that follow the pin                    |
-| `magefiles/pkg/testrunner/`    | Unit and end-to-end test runners                                                                                                |
+| Path                        | Purpose                                                                                                      |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `magefiles/build.go`        | Mage entrypoint for the `Build` namespace (`build:modules`)                                                  |
+| `magefiles/examples.go`     | Mage entrypoint for the `Examples` namespace (`examples:vendor`, `examples:images`, `examples:lint`)         |
+| `magefiles/generate.go`     | Mage entrypoint for the `Generate` namespace (`generate:document`, `generate:schema`, `generate:dnfPins`)    |
+| `magefiles/test.go`         | Mage entrypoint for the `Test` namespace (`test:unit`, `test:endToEnd*`, `test:cleanClusters`)               |
+| `magefiles/core/core.go`    | Bootstrapping main package for `go run ./magefiles/core`                                                     |
+| `magefiles/pkg/build/`      | Compiling the two Ansible module files                                                                       |
+| `magefiles/pkg/gen/docs/`   | The book's generators: the collection reference, the Go reference, the two copied-in pages, and `SUMMARY.md` |
+| `magefiles/pkg/gen/schema/` | Reflecting the published JSON Schemas out of the Go types that define them                                   |
+| `magefiles/pkg/devtools/`   | Developer tooling: AlmaLinux repodata parsing and the dnf pin rewriters (`dnfpins`)                          |
+| `magefiles/pkg/pkgvendor/`  | Vendoring the pinned upstream manifests a reference package deploys, and the parts of it that follow the pin |
+| `magefiles/pkg/testrunner/` | Unit and end-to-end test runners                                                                             |
 
 ## Target structure rules
 
@@ -38,7 +37,7 @@ A pinned value is a version, tag, digest, or checksum written into the tree that
 
 So a new pin is not done when it is written. It is done when something can move it. Pick one of two owners and wire it up in the same change:
 
-- **A mage target that rewrites the pin in place**, when the current value has to be discovered and written back. `generate:zarfFlags` is the model: it reads the installed zarf's command tree and rewrites the recorded flag lists under `internal/zarfmod/testdata/`. `generate:dnfPins` is the other one: it queries AlmaLinux 10 repodata and rewrites the `ansible-core` and `bash-completion` versions across `containers/ansible/Dockerfile` and `.goreleaser.yaml`.
+- **A mage target that rewrites the pin in place**, when the current value has to be discovered and written back. `generate:dnfPins` is the model: it queries AlmaLinux 10 repodata and rewrites the `ansible-core` and `bash-completion` versions across `containers/ansible/Dockerfile` and `.goreleaser.yaml`.
 - **A [`.github/dependabot.yaml`](../.github/dependabot.yaml) entry**, when the pin sits in a file format Dependabot already parses. Prefer this when it fits: it is a few lines, it opens the PR unprompted, and it needs nobody to remember.
 
 If neither fits, say so where the pin is. A documented manual bump is an acceptable third answer; an undocumented one is not, because a reader who finds a bare hash and no way to move it cannot tell a deliberate pin from an abandoned one.

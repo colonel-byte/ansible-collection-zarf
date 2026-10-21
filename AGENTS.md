@@ -93,7 +93,7 @@ A test file in `internal/zarfmod` is named for the source file it covers -- `ini
 | `TestActionPluginDocsMatchModuleParams`                    | A parameter added to a wrapper module's Go struct and not to its Python `DOCUMENTATION`, or the reverse         |
 | `TestInfoPluginDocsMatchRenderedFlags`                     | A read-only module's documented `cli_flag` values disagreeing with the flags its `command_parts` function names |
 | `TestEveryActionPluginIsCovered`                           | A new action plugin that no test looks at, and a test list naming a plugin that no longer exists                |
-| `TestInitArgsAreKnownFlags`, `TestDeployArgsAreKnownFlags` | A flag the module renders that the recorded zarf does not accept                                                |
+| `TestInitArgsAreKnownFlags`, `TestDeployArgsAreKnownFlags` | A flag the module renders that the linked-in zarf does not accept, including one zarf renamed                   |
 
 Three more, in `magefiles/pkg/gen/schema`, hold the `PackagePrerequisites` format together the same way:
 
@@ -104,7 +104,7 @@ Three more, in `magefiles/pkg/gen/schema`, hold the `PackagePrerequisites` forma
 | `TestEveryRequirementIsNamedByTheRole` | A field added under `requires` that no task in the `prerequisites` role mentions -- a prerequisite a package declares and the role silently ignores |
 | `TestRenderedSchemaRefusesBothEngines` | The mutual exclusivity of `requires.fluxcd` and `requires.argocd` going missing from the generated schema                                           |
 
-`TestInitArgsAreKnownFlags` and `TestDeployArgsAreKnownFlags` check against a recorded list, not against zarf's own command tree, so they cannot catch a zarf release that renamed a flag. Refresh the lists with `generate:zarfFlags` when the zarf the modules run moves, and read the diff.
+`TestInitArgsAreKnownFlags` and `TestDeployArgsAreKnownFlags` parse what the modules render against zarf's own command tree, which is linked in, so pflag decides whether a flag exists and a zarf release that renamed one fails them. There is nothing to refresh by hand: the zarf they check against is the `github.com/zarf-dev/zarf` version in `go.mod`.
 
 Those are Go tests over the Go types. The generated schema itself is held by a pre-commit hook: `check-jsonschema` validates every reference package's `docs/prerequisites.yaml` and `resources.json` against the schema generated from `api/`. That is a different check from the Go ones, and the difference is the point -- they hold a document against the *types*, and the hook holds it against the *schema a consumer actually validates with*. A `jsonschema` tag that rendered wrong would leave the two disagreeing, and nothing reflecting over the types could see it.
 
@@ -160,7 +160,13 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
 
 ## Committing changes
 
-Run the hooks over the whole tree before every commit and fix anything they flag. Prefer [`prek`](https://github.com/j178/prek) - `prek run --all-files` - if it is on `PATH`; it reads the same [`.pre-commit-config.yaml`](.pre-commit-config.yaml) and runs the same hooks, just faster. Fall back to `pre-commit run --all-files` when it isn't. Several hooks rewrite files - re-stage after the run. Don't skip hooks with `--no-verify` or `SKIP=`.
+Run the hooks over the whole tree before every commit and fix anything they flag. Prefer [`prek`](https://github.com/j178/prek) if it is on `PATH`; it reads the same [`.pre-commit-config.yaml`](.pre-commit-config.yaml) and runs the same hooks, just faster. Fall back to `pre-commit run --all-files` when it isn't. Several hooks rewrite files - re-stage after the run. Don't skip hooks with `--no-verify` or `SKIP=`.
+
+```sh
+prek run --all-files -c .pre-commit-config.yaml
+```
+
+**The `-c` is load-bearing, and only for prek.** Unlike pre-commit, prek discovers nested `.pre-commit-config.yaml` files and runs each as its own project - and two vendored dependencies ship one, so a bare `prek run --all-files` runs *their* hooks over *their* code. It fails on things that are none of this repository's business: a `shellcheck` it does not have installed, a `golangci-lint` whose Go version does not match, typecheck errors inside a dependency. Naming the config explicitly turns workspace discovery off, so only this repository's hooks run. The per-hook `exclude: vendor/.*` entries do not help here - they filter the files a hook walks, not which configs prek finds - and neither does a top-level `exclude`.
 
 ## Pull requests
 

@@ -24,21 +24,24 @@ import (
 	"strings"
 
 	goyaml "github.com/goccy/go-yaml"
-
-	"github.com/colonel-byte/ansible-collection-zarf/magefiles/pkg/gen/zarfflags"
 )
+
+// envZarfBinary names the zarf these targets run, for a machine where it is not on PATH or where
+// two versions are installed side by side. It used to live in the zarfflags generator, which went
+// when the modules stopped reading the installed zarf's flag surface.
+const envZarfBinary = "ZARF_ANSIBLE_FLAGS_BINARY"
 
 // zarfBinary returns the zarf to run, and says what wanted it when there is none. Both callers
 // that shell out to zarf -- image discovery and linting -- resolve it the same way, and a message
 // that names neither the variable nor the operation is one an operator cannot act on.
 func zarfBinary(operation string) (string, error) {
-	binary := os.Getenv(zarfflags.EnvBinary)
+	binary := os.Getenv(envZarfBinary)
 	if binary == "" {
 		binary = "zarf"
 	}
 	if _, err := exec.LookPath(binary); err != nil {
 		return "", fmt.Errorf("%s is not on PATH: %s runs the installed zarf. Set %s to name one "+
-			"elsewhere", binary, operation, zarfflags.EnvBinary)
+			"elsewhere", binary, operation, envZarfBinary)
 	}
 	return binary, nil
 }

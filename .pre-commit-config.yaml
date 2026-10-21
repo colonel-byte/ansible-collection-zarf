@@ -1,9 +1,15 @@
 ---
-# Every hook that walks files excludes vendor/. The tree is 5,000-odd files of other people's
-# code: addlicense would stamp a copyright header onto it, the whitespace and smartquote fixers
-# would rewrite it, and ruff and golangci-lint would report on it. All of that is noise, and some
-# of it would make the vendored tree differ from what `go mod vendor` produces -- which is the one
-# property the directory has to keep.
+# Every hook that walks files excludes vendor/. The tree is tens of thousands of files of other
+# people's code: addlicense would stamp a copyright header onto it, the whitespace and smartquote
+# fixers would rewrite it, and ruff and golangci-lint would report on it. All of that is noise, and
+# some of it would make the vendored tree differ from what `go mod vendor` produces -- which is the
+# one property the directory has to keep.
+#
+# These excludes are not the whole story for prek. prek also discovers nested config files and runs
+# each as its own project, and two vendored dependencies ship a .pre-commit-config.yaml of their
+# own -- github.com/bodgit/sevenzip and github.com/fairwindsops/pluto/v5. An exclude cannot reach
+# that, because it filters the files a hook walks rather than which configs prek finds. Run prek
+# with `-c .pre-commit-config.yaml`, which turns discovery off. See AGENTS.md.
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0

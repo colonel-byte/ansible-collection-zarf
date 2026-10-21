@@ -10,7 +10,7 @@ Two reasons, and the first is not negotiable.
 
 **0.32.1 is already published.** Cargoship's `v0.32.1` release ships `colonel_byte-zarf-0.32.1.tar.gz` and the `zarf_ansible_modules_Linux_*` archives. Those are in the wild under this collection's name. A first release here at `0.1.1` would be a *lower* version of the same collection: `ansible-galaxy` resolves semver, so the new line would read as older than what has already shipped, and a `>=0.32.0` pin would never pick it up. Any starting point has to be above `0.32.1`.
 
-**A number that means nothing is worse than no number.** Having to pick something above `0.32.1` anyway, the choice was between an arbitrary `0.33.0` and a number that answers the question an operator actually has: which zarf does this work with? The modules render a zarf command line and are checked against a recorded list of that zarf's flags -- see [choice-zarf-ansible-module](choice-zarf-ansible-module.md) -- so "which zarf" is the single most load-bearing fact about a given release.
+**A number that means nothing is worse than no number.** Having to pick something above `0.32.1` anyway, the choice was between an arbitrary `0.33.0` and a number that answers the question an operator actually has: which zarf does this work with? `zarf_init` links a specific zarf in and `zarf_package_deploy` renders a command line for the zarf it finds -- see [choice-zarf-ansible-module](choice-zarf-ansible-module.md) -- so "which zarf" is the single most load-bearing fact about a given release. For `zarf_init` it is not even a statement of intent: the zarf in `go.mod` is the zarf that runs.
 
 ## What "loosely" means
 
@@ -18,16 +18,22 @@ Loosely, because the two cannot be locked together:
 
 - **Not every zarf release needs one here.** A zarf release that changes nothing this collection renders produces no release, and the version simply lags. A lag is honest: it says the last zarf this was checked against.
 - **This collection can release without zarf doing so.** A fix to a role, an action plugin, or the redaction is a patch bump on the current line. That is why the patch component is this collection's to spend, and why `0.87.1` means "the first fix against zarf 0.87", not "zarf 0.87.1".
-- **Nothing enforces it.** Release-please computes the next version from conventional commits, so a `feat:` on the `0.87.x` line produces `0.88.0` whether or not zarf 0.88 exists. Moving the line to a new zarf release is a manual edit to `.release-please-manifest.json` and `galaxy.yml`, made deliberately when the recorded flag lists are refreshed with `generate:zarfFlags`.
+- **Nothing enforces it.** Release-please computes the next version from conventional commits, so a `feat:` on the `0.87.x` line produces `0.88.0` whether or not zarf 0.88 exists. Moving the line to a new zarf release is a manual edit to `.release-please-manifest.json` and `galaxy.yml`, made deliberately when the zarf dependency is bumped.
 
-So the version is a statement of intent rather than a guarantee, and the guarantee lives where it can be checked: `internal/zarfmod/testdata/zarf-*-flags.txt` records the flag surface actually tested against.
+So the collection's own version is a statement of intent rather than a guarantee, and the guarantee lives where it can be checked: the `github.com/zarf-dev/zarf` version in `go.mod` is the zarf both modules execute. That is not a claim about compatibility -- it is the code that runs.
 
 ## What has to move together
 
-Bumping the line to a new zarf is more than the two version strings. Refresh the recorded flag lists against the new zarf, and read the diff -- a flag that disappeared is a module parameter that no longer works:
+Bumping the line to a new zarf is more than the two version strings.
+
+**The dependency moves first, and it is the one that cannot be forgotten.** `zarf_init` links zarf in, so the zarf it runs is whatever `go.mod` names. Nothing about the collection's own version number changes it:
 
 ```sh
-go run ./magefiles/core generate:zarfFlags
+go get github.com/zarf-dev/zarf@vX.Y.Z
+go mod vendor
+go run ./magefiles/core test:unit
 ```
+
+`vendor/` is committed and is the dependency list rather than a cache, so the `go mod vendor` is part of the change and not a follow-up -- see `CLAUDE.md`. `TestInitArgsAreKnownFlags` then parses what the module renders against the new zarf's own `init` command, so a flag the new release renamed or moved fails that run. Read the failure rather than working around it: it is naming a module parameter that no longer reaches zarf.
 
 The state fixture in `test/e2e/noncluster/testdata/zarf-state.json` is a recording of the shape zarf writes, and it goes stale the same way. It is the thing most likely to drift without failing anything, because the non-cluster suite checks the module against the recording rather than against zarf.

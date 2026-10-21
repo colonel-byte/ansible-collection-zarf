@@ -25,8 +25,13 @@ before:
 
 builds:
   # The two Ansible module files. Each is a module file rather than a CLI: it reads JSON
-  # parameters, runs the installed zarf, and writes one JSON object, so it is only ever invoked by
-  # Ansible or by an operator reproducing such a run. See docs/agent/choice-zarf-ansible-module.md.
+  # parameters, has zarf do the work, and writes one JSON object, so it is only ever invoked by
+  # Ansible or by an operator reproducing such a run. Both have zarf linked in and execute its own
+  # command tree, so neither needs a zarf on the node. See
+  # docs/agent/choice-zarf-ansible-module.md.
+  #
+  # Both are large -- zarf's dependency tree is most of each one. riscv64 is in the list and does
+  # build; it is checked by cross-compiling, not assumed.
   #
   # Linux only: Ansible runs the module file on the management node, and the management nodes this
   # is for run Linux. The packages below carry a symlink to each binary, so a package built for an

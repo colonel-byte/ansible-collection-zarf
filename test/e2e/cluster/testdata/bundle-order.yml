@@ -1,17 +1,33 @@
 ---
-# The uds-bundle's four packages, in its order, driven by the two zarf modules.
+# The uds-bundle's four packages, in its order, driven by the two zarf modules, plus a fifth step
+# this suite adds.
 #
-# It is modeled on
+# It follows
 # https://github.com/colonel-byte/uds-bundles/blob/main/upstream/init-local-path/uds-bundle.yaml,
-# which lists the init package and the local-path storage provider twice each, alternating. A
-# bundle deploys all four as packages; this playbook keeps the alternation and runs the two init
-# halves through M(colonel_byte.zarf.zarf_init) instead, because the init half is what the module
-# exists for -- `zarf init` sets up the cluster's state and the seed registry, and a deploy of the
-# init package would prove the deploy module twice rather than the pair.
+# which lists the init package and the local-path storage provider twice each, alternating -- and
+# which picks different optional components each time. That component split is the bundle, not a
+# detail of it: the slim init's five components are all optional, so the first init deploys the
+# seed phase and the second deploys the rest. A bundle deploys all four as packages; this playbook
+# keeps the alternation and runs the two init halves through
+# M(colonel_byte.zarf.zarf_init) instead, because the init half is what the module exists for --
+# `zarf init` sets up the cluster's state and the seed registry, and a deploy of the init package
+# would prove the deploy module twice rather than the pair.
+#
+# The fifth step is not in the bundle. It repeats the second init exactly, because converging
+# something already converged is the property an Ansible module lives or dies by and the bundle's
+# four disjoint steps never ask for it.
+#
+# Every init step pins the git server credentials, including the first, and the order matters in a
+# way that is easy to get wrong. Zarf's init writes a gitServer block into cluster state whether or
+# not the git-server component was asked for. Its guard then refuses any later init whose git
+# input is non-empty and disagrees with what is stored -- so an init that passes nothing is always
+# allowed, and the first init that passes something after one that did not is always refused. The
+# first init is therefore where the credentials have to be set: state carries them from then on and
+# every later init agrees with it. See docs/agent/choice-zarf-ansible-module.md.
 #
 # The cluster this runs on is k3d-config-local-storage.yaml, which keeps k3s's StorageClass. That
 # is what lets init come first and so lets the bundle's own order be followed. The sibling
-# provider-first.yml runs the same four steps on a cluster with no StorageClass, where the provider
+# provider-first.yml runs the same packages on a cluster with no StorageClass, where the provider
 # has to be deployed before anything can be initialised.
 #
 # Registry proxy mode is used throughout. Zarf's nodeport mode publishes the registry on a node
@@ -22,15 +38,26 @@
   connection: local
   gather_facts: false
   vars:
-    zarf_init_components: "" # every required component; the standard init package has no optional ones to pick
+    # The bundle's two component sets. The seed phase stands up the registry the rest of init
+    # needs; the second half is what claims a volume and so needs a StorageClass to exist.
+    zarf_init_seed_components: zarf-injector,zarf-seed-registry
+    zarf_init_rest_components: zarf-registry,zarf-agent,git-server
+    zarf_storage_components: local-path-images,local-path-chart
   tasks:
-    # Package 1 of the bundle: the init package.
+    # Package 1 of the bundle: the init package, seed phase only.
     - name: Initialise the cluster
       colonel_byte.zarf.zarf_init:
         wrapper_binary: "{{ zarf_init_wrapper }}"
         init_package: "{{ zarf_init_package }}"
+        components: "{{ zarf_init_seed_components }}"
         kubeconfig: "{{ zarf_kubeconfig }}"
+        public_key: "{{ zarf_public_key }}"
+        verify: always
         registry_mode: proxy
+        git_push_username: "{{ zarf_git_push_username }}"
+        git_push_password: "{{ zarf_git_push_password }}"
+        git_pull_username: "{{ zarf_git_pull_username }}"
+        git_pull_password: "{{ zarf_git_pull_password }}"
         timeout: "{{ zarf_timeout | default('15m') }}"
       delegate_to: localhost
       run_once: true
@@ -42,8 +69,8 @@
         dest: "{{ zarf_result_dir }}/1-init.json"
         mode: "0600"
 
-    # Package 2 of the bundle: the local-path storage provider, deployed through the registry the
-    # initialisation just stood up.
+    # Package 2 of the bundle: the local-path storage provider, deployed through the seed registry
+    # the initialisation above stood up.
     #
     # take_ownership and force_conflicts are needed here and not in provider-first.yml: this
     # cluster keeps k3s's own local-storage, so a StorageClass named local-path already exists.
@@ -54,7 +81,7 @@
       colonel_byte.zarf.zarf_package_deploy:
         wrapper_binary: "{{ zarf_deploy_wrapper }}"
         package: "{{ zarf_storage_package }}"
-        components: local-path-images,local-path-chart
+        components: "{{ zarf_storage_components }}"
         kubeconfig: "{{ zarf_kubeconfig }}"
         public_key: "{{ zarf_public_key }}"
         verify: always
@@ -71,16 +98,21 @@
         dest: "{{ zarf_result_dir }}/2-storage.json"
         mode: "0600"
 
-    # Package 3 of the bundle: the init package again. On a cluster that is already initialised
-    # this is the reconcile a second bundle deploy performs, and it is why the module needs
-    # take_ownership: the Helm releases it meets are the ones step 1 created.
+    # Package 3 of the bundle: the init package again, this time the rest of it. The registry it
+    # stands up claims a 20Gi volume, which is why it follows the storage provider.
     - name: Initialise the cluster again
       colonel_byte.zarf.zarf_init:
         wrapper_binary: "{{ zarf_init_wrapper }}"
         init_package: "{{ zarf_init_package }}"
+        components: "{{ zarf_init_rest_components }}"
         kubeconfig: "{{ zarf_kubeconfig }}"
+        public_key: "{{ zarf_public_key }}"
+        verify: always
         registry_mode: proxy
-        take_ownership: true
+        git_push_username: "{{ zarf_git_push_username }}"
+        git_push_password: "{{ zarf_git_push_password }}"
+        git_pull_username: "{{ zarf_git_pull_username }}"
+        git_pull_password: "{{ zarf_git_pull_password }}"
         timeout: "{{ zarf_timeout | default('15m') }}"
       delegate_to: localhost
       run_once: true
@@ -92,12 +124,12 @@
         dest: "{{ zarf_result_dir }}/3-reinit.json"
         mode: "0600"
 
-    # Package 4 of the bundle: the storage provider again.
+    # Package 4 of the bundle: the storage provider again, now through the full registry.
     - name: Deploy the storage provider again
       colonel_byte.zarf.zarf_package_deploy:
         wrapper_binary: "{{ zarf_deploy_wrapper }}"
         package: "{{ zarf_storage_package }}"
-        components: local-path-images,local-path-chart
+        components: "{{ zarf_storage_components }}"
         kubeconfig: "{{ zarf_kubeconfig }}"
         public_key: "{{ zarf_public_key }}"
         verify: always
@@ -112,4 +144,33 @@
       ansible.builtin.copy:
         content: "{{ step_restorage | to_json }}"
         dest: "{{ zarf_result_dir }}/4-restorage.json"
+        mode: "0600"
+
+    # Not in the bundle: the same init as step 3, with the same parameters. A playbook is expected
+    # to be re-runnable, so the interesting answer is that this succeeds rather than what it
+    # changes -- zarf reports which components it deployed, never that one was already as it
+    # wanted, so the module cannot honestly say "unchanged" here. See
+    # docs/agent/choice-zarf-ansible-module.md.
+    - name: Initialise the cluster a third time, unchanged
+      colonel_byte.zarf.zarf_init:
+        wrapper_binary: "{{ zarf_init_wrapper }}"
+        init_package: "{{ zarf_init_package }}"
+        components: "{{ zarf_init_rest_components }}"
+        kubeconfig: "{{ zarf_kubeconfig }}"
+        public_key: "{{ zarf_public_key }}"
+        verify: always
+        registry_mode: proxy
+        git_push_username: "{{ zarf_git_push_username }}"
+        git_push_password: "{{ zarf_git_push_password }}"
+        git_pull_username: "{{ zarf_git_pull_username }}"
+        git_pull_password: "{{ zarf_git_pull_password }}"
+        timeout: "{{ zarf_timeout | default('15m') }}"
+      delegate_to: localhost
+      run_once: true
+      register: step_idempotent
+
+    - name: Record what the idempotence check reported
+      ansible.builtin.copy:
+        content: "{{ step_idempotent | to_json }}"
+        dest: "{{ zarf_result_dir }}/5-idempotent.json"
         mode: "0600"

@@ -251,7 +251,6 @@ func fullInitParams() *initParams {
 		AgentTLSCert:         "/etc/zarf/tls.pem",
 		AgentTLSKey:          "/etc/zarf/tls.key",
 		commonParams: commonParams{
-			Binary:                "/usr/bin/zarf",
 			Directory:             "/srv/staging",
 			Kubeconfig:            "/etc/rancher/rke2/rke2.yaml",
 			ZarfConfig:            "/etc/zarf/zarf-config.yaml",
@@ -288,7 +287,6 @@ func fullDeployParams() *deployParams {
 		Shasum:    "0000000000000000000000000000000000000000000000000000000000000000",
 		Connected: &yes,
 		commonParams: commonParams{
-			Binary:                "/usr/bin/zarf",
 			Directory:             "/srv/staging",
 			Kubeconfig:            "/etc/rancher/rke2/rke2.yaml",
 			ZarfConfig:            "/etc/zarf/zarf-config.yaml",

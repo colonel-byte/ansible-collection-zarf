@@ -4,7 +4,7 @@
 
 Report the cluster facts a package's prerequisites are checked against.
 
-Write it as `colonel_byte.zarf.zarf_cluster_info`. It runs the installed zarf on the node the task is delegated to; nothing is installed on the cluster's nodes.
+Write it as `colonel_byte.zarf.zarf_cluster_info`. It runs zarf on the node the task is delegated to; nothing is installed on the cluster's nodes.
 
 Added in `colonel_byte.zarf` 0.33.0.
 

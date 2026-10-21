@@ -2,7 +2,7 @@
 
 Seven modules ship. Two of them converge a cluster, and five read it.
 
-`zarf_init` and `zarf_package_deploy` are the converging pair: they are the proof of [ZEP-0072](https://github.com/zarf-dev/proposals/pull/73), each is a compiled wrapper binary with its parameters and command line in Go, and [choice-zarf-ansible-module](../agent/choice-zarf-ansible-module.md) records how. Package creation is not among them -- it builds an artifact from a definition in a repository, which belongs in a pipeline rather than in a convergence run -- and neither is package removal, which nothing here has needed yet.
+`zarf_init` and `zarf_package_deploy` are the converging pair: they are the proof of [ZEP-0072](https://github.com/zarf-dev/proposals/pull/73), each is a compiled binary with its parameters and command line in Go and zarf's own command tree linked in, and [choice-zarf-ansible-module](../agent/choice-zarf-ansible-module.md) records how. Package creation is not among them -- it builds an artifact from a definition in a repository, which belongs in a pipeline rather than in a convergence run -- and neither is package removal, which nothing here has needed yet.
 
 `zarf_cluster_info`, `zarf_package_documentation`, `zarf_package_info`, `zarf_package_inspect` and `zarf_state_info` read. They change nothing, they answer during a check-mode play rather than skipping, and they are plain action plugins with no wrapper binary behind them, for the reasons in [choice-zarf-info-modules](../agent/choice-zarf-info-modules.md) and -- for the two added for the prerequisites format, which are the first to push past the threshold that record names -- in [choice-package-documentation-module](../agent/choice-package-documentation-module.md).
 

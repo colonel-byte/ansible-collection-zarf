@@ -2,7 +2,7 @@
 
 An Ansible collection that initialises an air-gapped Kubernetes cluster with [zarf](https://zarf.dev) and deploys zarf packages onto it, from a playbook.
 
-It is a working proof of [ZEP-0072](https://github.com/zarf-dev/proposals/pull/73), which proposes native Ansible module support for zarf: the `zarf` binary dispatches on `argv[0]`, so a `zarf_init` symlink to `/usr/bin/zarf` is an Ansible module, with a thin Python action plugin alongside it. Everything the proposal describes is implemented here -- `argv[0]` dispatch, the WANT_JSON arguments file, the stdout guard, exit 0 with failure reported inside the JSON, the heartbeat status file and its polling monitor -- with exactly one deliberate divergence, recorded in [choice-zarf-ansible-module](docs/agent/choice-zarf-ansible-module.md): the modules are wrapper binaries that run the installed zarf as a child process, because a proof built outside the zarf tree cannot put dispatch inside the zarf binary.
+It is a working proof of [ZEP-0072](https://github.com/zarf-dev/proposals/pull/73), which proposes native Ansible module support for zarf: the `zarf` binary dispatches on `argv[0]`, so a `zarf_init` symlink to `/usr/bin/zarf` is an Ansible module, with a thin Python action plugin alongside it. Everything the proposal describes is implemented here -- `argv[0]` dispatch, the WANT_JSON arguments file, the stdout guard, exit 0 with failure reported inside the JSON, the heartbeat status file and its polling monitor. Both modules go further and link zarf in: each builds zarf's own command tree and executes its command in its own process, so it enters the same code path an operator's command line enters rather than shelling out to it. Neither needs a `zarf` on the node. [choice-zarf-ansible-module](docs/agent/choice-zarf-ansible-module.md) records how that works and what it buys.
 
 The proof began in [colonel-byte/cargoship](https://github.com/colonel-byte/cargoship), beside the `colonel_byte.cargoship` collection whose shape it copies.
 
@@ -47,7 +47,7 @@ The cluster is read through `zarf tools kubectl`, so this needs no `kubernetes.c
 
 ## Installing
 
-Build the two wrapper binaries and put them on the path of the node the play runs on:
+Build the two module binaries and put them on the path of the node the play runs on. Both link zarf in, so they are large binaries and their build pulls zarf's dependency tree from `vendor/`:
 
 ```sh
 go build -o zarf_init ./cmd/init
@@ -129,16 +129,15 @@ go run ./magefiles/core generate:schema          # regenerate schema/ from the G
 go run ./magefiles/core examples:lint            # zarf dev lint over the reference packages
 ```
 
-The unit tests are where the collection and the Go code are held against each other: `TestActionPluginDocsMatchModuleParams` holds each action plugin's `DOCUMENTATION` block against the Go parameter struct, `TestInfoPluginDocsMatchRenderedFlags` does the same for the read-only modules against the flags their `command_parts` functions name, and `TestEveryActionPluginIsCovered` fails on a plugin that neither test looks at. `TestInitArgsAreKnownFlags` holds every flag the wrappers can render against a recorded list; refresh it with `generate:zarfFlags` when the zarf they run moves. On the prerequisites side, `TestCommittedSchemasAreCurrent` fails when a committed schema stops matching the Go type it is reflected from, and `TestExampleDocumentsMatchTheTypes` decodes each reference package's document into those types with unknown fields rejected.
+The unit tests are where the collection and the Go code are held against each other: `TestActionPluginDocsMatchModuleParams` holds each action plugin's `DOCUMENTATION` block against the Go parameter struct, `TestInfoPluginDocsMatchRenderedFlags` does the same for the read-only modules against the flags their `command_parts` functions name, and `TestEveryActionPluginIsCovered` fails on a plugin that neither test looks at. `TestInitArgsAreKnownFlags` and `TestDeployArgsAreKnownFlags` parse every flag each module can render against zarf's own `init` and `package deploy` commands, so pflag decides what exists -- a renamed flag fails them, and nothing has to be refreshed by hand. On the prerequisites side, `TestCommittedSchemasAreCurrent` fails when a committed schema stops matching the Go type it is reflected from, and `TestExampleDocumentsMatchTheTypes` decodes each reference package's document into those types with unknown fields rejected.
 
 ## Known limits of the proof
 
-- The flag surface is a recorded list rather than a read of zarf's own command tree. It catches a flag zarf does not accept; it cannot catch a zarf release that renamed one without the list being refreshed.
 - Component progress is read back out of zarf's log stream, so the modules render `--log-format json` by default and report a total component count of `0` unless `components` was named.
-- `changedSignal` is `partial` on every successful run. Zarf reports which components it deployed, not whether a component found the cluster already in the state it wanted, so a wrapper reading that stream cannot honestly report `complete`.
+- `changedSignal` is `partial` on every successful run. Zarf reports which components it deployed, not whether a component found the cluster already in the state it wanted, and the command tree hands back an error rather than a deployment result, so neither module can honestly report `complete`. This one needs the module to live inside zarf, beside the deployer.
 - Check mode reports the converging tasks as skipped: neither `zarf init` nor `zarf package deploy` has a dry run. The read-only modules answer in check mode, because reading a cluster changes nothing.
 
-All four collapse if dispatch moves inside zarf, which is the point of the proposal.
+The rest collapse if dispatch moves inside zarf, which is the point of the proposal.
 
 ## License
 

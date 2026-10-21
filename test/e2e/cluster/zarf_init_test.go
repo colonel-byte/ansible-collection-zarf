@@ -27,15 +27,21 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// initComponents are the components the standard init package deploys. All four are required in
-// that package -- only the slim init the uds-bundle uses makes them optional -- so every
-// initialisation reports all four, and the suite names them rather than counting them.
-var initComponents = []string{ //nolint:gochecknoglobals
-	"zarf-injector",
-	"zarf-seed-registry",
-	"zarf-registry",
-	"zarf-agent",
-}
+// The init package is the uds-bundle's slim one, whose five components are all optional, and the
+// bundle picks a different set each time it deploys it. These are those two sets: the seed phase
+// stands up the registry the rest of init pushes through, and the rest is what claims a volume.
+// A walk therefore reports the set its step asked for, not every component in the package.
+var (
+	initSeedComponents = []string{ //nolint:gochecknoglobals
+		"zarf-injector",
+		"zarf-seed-registry",
+	}
+	initRestComponents = []string{ //nolint:gochecknoglobals
+		"zarf-registry",
+		"zarf-agent",
+		"git-server",
+	}
+)
 
 // storageComponents are the components of the uds-bundle's local-path provider package.
 var storageComponents = []string{ //nolint:gochecknoglobals
@@ -46,31 +52,40 @@ var storageComponents = []string{ //nolint:gochecknoglobals
 // TestBundleOrderWalk runs the uds-bundle's four packages in the bundle's own order, on a cluster
 // that has k3s's StorageClass: init, storage provider, init, storage provider.
 //
-// This is the walk that proves the pair of modules alternates the way a bundle deploy does, and
-// that a second init over an already-initialised cluster reconciles rather than fails.
+// This is the walk that proves the pair of modules alternates the way a bundle deploy does. Its
+// fifth step, which the bundle does not have, repeats the second init to prove that converging an
+// already-converged cluster reconciles rather than fails.
 func TestBundleOrderWalk(t *testing.T) {
 	requireSuite(t)
 
 	cluster := withCluster(t, storedConfig, storedCluster)
 
-	// The contracts that need a cluster nothing has touched run first, on this cluster, rather
-	// than paying for one of their own: check mode has to be able to assert that nothing ran.
-	t.Run("module contracts", func(t *testing.T) { testModuleContracts(t, cluster) })
+	// Check mode has to be able to assert that nothing ran, so it needs a cluster nothing has
+	// touched and runs before the walk. The rest of the contracts need the opposite and run after
+	// it -- see testModuleContracts.
+	t.Run("check mode contracts", func(t *testing.T) { testCheckModeContracts(t, cluster) })
 
 	out, results := cluster.walk(t, bundleOrderPlaybook)
 
-	assertInitStep(t, readStep(t, results, "1-init.json"), out)
+	assertInitStep(t, readStep(t, results, "1-init.json"), initSeedComponents, out)
 	assertDeployStep(t, readStep(t, results, "2-storage.json"), out)
-	assertInitStep(t, readStep(t, results, "3-reinit.json"), out)
+	assertInitStep(t, readStep(t, results, "3-reinit.json"), initRestComponents, out)
 	assertDeployStep(t, readStep(t, results, "4-restorage.json"), out)
+
+	// The fifth step is the same init as the third. It is not in the bundle; it is here because a
+	// playbook that cannot be run twice is not a playbook, and the bundle's four steps are all
+	// disjoint so none of them asks the question. Succeeding is the whole assertion -- the signal
+	// is still partial, because zarf never reports that a component was already as it wanted.
+	assertInitStep(t, readStep(t, results, "5-idempotent.json"), initRestComponents, out)
 
 	assertClusterInitialised(t, cluster)
 	assertStorageClass(t, cluster)
 	assertRegistryPVCBound(t, cluster)
 	assertRegistryProxyMode(t, cluster)
 
-	// The read-only modules read what this walk produced, so they run here rather than paying for
-	// a cluster of their own. See testInfoModules.
+	// These need the initialised cluster the walk just produced, so they run here rather than
+	// paying for one of their own. See testModuleContracts and testInfoModules.
+	t.Run("module contracts", func(t *testing.T) { testModuleContracts(t, cluster) })
 	t.Run("read-only modules", func(t *testing.T) { testInfoModules(t, cluster) })
 }
 
@@ -92,9 +107,9 @@ func TestProviderFirstWalk(t *testing.T) {
 	out, results := cluster.walk(t, providerFirstPlaybook)
 
 	assertDeployStep(t, readStep(t, results, "1-storage.json"), out)
-	assertInitStep(t, readStep(t, results, "2-init.json"), out)
+	assertInitStep(t, readStep(t, results, "2-init.json"), initSeedComponents, out)
 	assertDeployStep(t, readStep(t, results, "3-restorage.json"), out)
-	assertInitStep(t, readStep(t, results, "4-reinit.json"), out)
+	assertInitStep(t, readStep(t, results, "4-reinit.json"), initRestComponents, out)
 
 	assertClusterInitialised(t, cluster)
 	assertStorageClass(t, cluster)
@@ -102,13 +117,13 @@ func TestProviderFirstWalk(t *testing.T) {
 	assertRegistryProxyMode(t, cluster)
 }
 
-// testModuleContracts holds the contracts a playbook author depends on and that need no walk: a
-// check-mode task is skipped without touching the cluster, and a failure is a module result rather
-// than a crash.
+// testCheckModeContracts holds the one contract that needs a cluster nothing has touched: a
+// check-mode task is skipped without touching it. Asserting that means being able to look for the
+// zarf namespace and not find it, which is only true before the walk.
 //
-// It drives the wrappers directly, which is the path a third-party caller of the module symlinks
-// takes, and the one the walks do not cover.
-func testModuleContracts(t *testing.T, cluster *cluster) {
+// It drives the module files directly, which is the path a third-party caller of the module
+// symlinks takes, and the one the walks do not cover.
+func testCheckModeContracts(t *testing.T, cluster *cluster) {
 	t.Run("init check mode changes nothing", func(t *testing.T) {
 		result, _ := runWrapper(t, suite.initWrapper, "init", map[string]any{
 			"init_package":        suite.initPackage,
@@ -122,42 +137,6 @@ func testModuleContracts(t *testing.T, cluster *cluster) {
 		defer cancel()
 		if _, err := clientset.CoreV1().Namespaces().Get(ctx, "zarf", metav1.GetOptions{}); err == nil {
 			t.Error("check mode created the zarf namespace, so something ran")
-		}
-	})
-
-	t.Run("a custom init package is deployed by path", func(t *testing.T) {
-		// Zarf's own lookup finds a package named after zarf's version in a directory it chooses.
-		// A copy under a name that lookup cannot find is what proves the module names the package
-		// rather than relying on it: the only way this run reaches a package at all is the
-		// positional source zarf init has taken since v0.72.0.
-		custom := filepath.Join(t.TempDir(), "our-init-package.tar.zst")
-		staged, err := os.ReadFile(suite.initPackage)
-		if err != nil {
-			t.Fatalf("unable to read the staged init package: %v", err)
-		}
-		if err := os.WriteFile(custom, staged, 0o600); err != nil {
-			t.Fatalf("unable to stage the renamed init package: %v", err)
-		}
-
-		// The cluster is already initialised by the walk that ran before this, so the run is a
-		// re-init: it reaches zarf, loads the package, and leaves the cluster as it found it.
-		result, out := runWrapper(t, suite.initWrapper, "init", map[string]any{
-			"init_package": custom,
-			"kubeconfig":   cluster.kubeconfig,
-			"components":   "zarf-agent",
-			"timeout":      "10m",
-		})
-		if boolField(result, "failed") {
-			t.Fatalf("the module failed against a renamed init package: %v; output %s", result, out)
-		}
-
-		detail := zarfDetail(t, result)
-		command := stringsOf(t, detail["command"])
-		if len(command) < 3 || command[1] != "init" || command[2] != custom {
-			t.Errorf("the command line was %v, want the renamed package as zarf init's positional source", command)
-		}
-		if version := stringField(detail, "version"); version == "" {
-			t.Error("the result carried no zarf version, so the floor check did not run")
 		}
 	})
 
@@ -181,6 +160,52 @@ func testModuleContracts(t *testing.T, cluster *cluster) {
 				continue // k3s's own, which this cluster ships with
 			}
 			t.Errorf("check mode left a storage class behind: %s", class.Name)
+		}
+	})
+}
+
+// testModuleContracts holds the contracts that need the initialised cluster the walk produced: a
+// package named by path reaches zarf, and a failure is a module result rather than a crash.
+//
+// These used to run before the walk alongside the check-mode ones, which was wrong in a way that
+// only the bundle's slim init exposed. Deploying one component of a slim init onto a cluster
+// nothing has initialised fails -- there is no registry to push to yet -- and it left state the
+// walk's own first step then disagreed with. The subtest's comment always said it expected an
+// initialised cluster; now it gets one.
+func testModuleContracts(t *testing.T, cluster *cluster) {
+	t.Run("a custom init package is deployed by path", func(t *testing.T) {
+		// Zarf's own lookup finds a package named after zarf's version in a directory it chooses.
+		// A copy under a name that lookup cannot find is what proves the module names the package
+		// rather than relying on it: the only way this run reaches a package at all is the
+		// positional source zarf init has taken since v0.72.0.
+		custom := filepath.Join(t.TempDir(), "our-init-package.tar.zst")
+		staged, err := os.ReadFile(suite.initPackage)
+		if err != nil {
+			t.Fatalf("unable to read the staged init package: %v", err)
+		}
+		if err := os.WriteFile(custom, staged, 0o600); err != nil {
+			t.Fatalf("unable to stage the renamed init package: %v", err)
+		}
+
+		// The walk that ran before this initialised the cluster, so the run is a re-init: it
+		// reaches zarf, loads the package, and leaves the cluster as it found it.
+		result, out := runWrapper(t, suite.initWrapper, "init", map[string]any{
+			"init_package": custom,
+			"kubeconfig":   cluster.kubeconfig,
+			"components":   "zarf-agent",
+			"timeout":      "10m",
+		})
+		if boolField(result, "failed") {
+			t.Fatalf("the module failed against a renamed init package: %v; output %s", result, out)
+		}
+
+		detail := zarfDetail(t, result)
+		command := stringsOf(t, detail["command"])
+		if len(command) < 3 || command[1] != "init" || command[2] != custom {
+			t.Errorf("the command line was %v, want the renamed package as zarf init's positional source", command)
+		}
+		if version := stringField(detail, "version"); version == "" {
+			t.Error("the result carried no zarf version, so the floor check did not run")
 		}
 	})
 
@@ -217,9 +242,9 @@ func testModuleContracts(t *testing.T, cluster *cluster) {
 
 // assertInitStep holds what an initialisation step reported: that it ran, that it named every
 // component of the init package, and that the operator saw each one go by while it was running.
-func assertInitStep(t *testing.T, result map[string]any, output string) {
+func assertInitStep(t *testing.T, result map[string]any, want []string, output string) {
 	t.Helper()
-	assertStepRan(t, result, initComponents, output)
+	assertStepRan(t, result, want, output)
 
 	command := stringsOf(t, zarfDetail(t, result)["command"])
 	// The three flags the module adds on its own behalf rather than from a parameter, plus the

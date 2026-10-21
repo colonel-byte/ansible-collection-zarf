@@ -4,13 +4,13 @@
 
 Deploy a zarf package onto an initialised cluster.
 
-Write it as `colonel_byte.zarf.zarf_package_deploy`. It runs the installed zarf on the node the task is delegated to; nothing is installed on the cluster's nodes.
+Write it as `colonel_byte.zarf.zarf_package_deploy`. It runs zarf on the node the task is delegated to; nothing is installed on the cluster's nodes.
 
 Added in `colonel_byte.zarf` 0.0.1.
 
 Runs `zarf package deploy` against the cluster a kubeconfig names, and follows the deployment component by component.
 
-The module is a small wrapper binary, not zarf. It renders the command line from these parameters, runs the installed zarf, reads the component boundaries back out of zarf's log stream, and reports one JSON result.
+The module is a compiled binary with zarf linked into it. It renders the `zarf package deploy` command line from these parameters, executes zarf's own command in its own process, reads the component boundaries back out of zarf's log stream, and reports one JSON result. It needs no `zarf` on the node.
 
 It is the companion of `colonel_byte.zarf.zarf_init`. A cluster whose init package has no StorageClass to claim cannot finish initialising until a storage provider is deployed, and the provider cannot be deployed until the cluster is initialised far enough to hold it, so a playbook alternates between the two.
 
@@ -22,7 +22,6 @@ It is the companion of `colonel_byte.zarf.zarf_init`. A cluster whose init packa
 | `directory`                     | `str`           | no       | None                              | The working directory to run zarf in. A relative `package` is resolved against it.                                                                                                                                                                                                                                                                 |
 | `kubeconfig`                    | `str`           | no       | None                              | The kubeconfig of the cluster to deploy onto. Zarf has no `--kubeconfig` flag, so it is passed as `KUBECONFIG` in zarf's environment.                                                                                                                                                                                                              |
 | `zarf_config`                   | `str`           | no       | None                              | A zarf config file, passed as `ZARF_CONFIG`. It is how a playbook keeps credentials out of the argument vector.                                                                                                                                                                                                                                    |
-| `zarf_binary`                   | `str`           | no       | None                              | The zarf to run. Resolved on the path of the node the task runs on when unset.                                                                                                                                                                                                                                                                     |
 | `wrapper_binary`                | `str`           | no       | None                              | The module wrapper to run, resolved on the path when it holds no separator. The action plugin consumes this parameter; the wrapper never sees it.                                                                                                                                                                                                  |
 | `status_file`                   | `str`           | no       | None                              | Where the wrapper writes live component progress. The action plugin creates a private temporary file and overrides this.                                                                                                                                                                                                                           |
 | `parameters`                    | `dict`          | no       | None                              | Further module parameters, merged into the ones given directly. A parameter given both directly and inside `parameters` is an error naming it. The action plugin consumes this key; the wrapper never sees it.                                                                                                                                     |

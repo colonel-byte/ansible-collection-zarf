@@ -19,10 +19,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-)
 
-// deployFlagList is the recorded zarf package deploy flag surface.
-const deployFlagList = "testdata/zarf-package-deploy-flags.txt"
+	"github.com/zarf-dev/zarf/src/cmd"
+	"github.com/zarf-dev/zarf/src/config"
+)
 
 func TestBuildDeployArgs(t *testing.T) {
 	yes := true
@@ -149,9 +149,12 @@ func TestDeployPackageResolvesALocalPath(t *testing.T) {
 	}
 }
 
+// TestDeployArgsAreKnownFlags parses every flag the module can render against zarf's own
+// `package deploy` command, so pflag is the thing that decides whether a flag exists.
+//
+// The init side of this is TestInitArgsAreKnownFlags, and the reasoning is there. Both modules now
+// execute zarf's command tree, so neither renders against a recorded list any more.
 func TestDeployArgsAreKnownFlags(t *testing.T) {
-	known := readKnownFlags(t, deployFlagList)
-
 	yes := true
 	number := 1
 	widest := deployParams{
@@ -182,15 +185,27 @@ func TestDeployArgsAreKnownFlags(t *testing.T) {
 		},
 	}
 
-	for _, arg := range buildDeployArgs(&widest) {
-		name, ok := strings.CutPrefix(arg, "--")
-		if !ok {
-			continue
-		}
-		name, _, _ = strings.Cut(name, "=")
-		if !known[name] {
-			t.Errorf("the module renders --%s, which %s does not list", name, deployFlagList)
-		}
+	argv := buildDeployArgs(&widest)
+
+	// Find resolves the nested subcommand the way an invocation would, so a flag the module puts
+	// on `package deploy` that zarf keeps on the root or on `package` is still parsed through the
+	// inherited set rather than missed.
+	deployCmd, flags, err := cmd.NewZarfCommand().Find(argv)
+	if err != nil {
+		t.Fatalf("zarf has no command for %q: %v", argv, err)
+	}
+	if deployCmd.CommandPath() != "zarf package deploy" {
+		t.Fatalf("the module renders %q, which zarf resolves to %q", argv, deployCmd.CommandPath())
+	}
+
+	if err := deployCmd.ParseFlags(flags); err != nil {
+		t.Fatalf("the module renders something zarf package deploy does not accept: %v", err)
+	}
+
+	// The package is deploy's positional PACKAGE_SOURCE, so prove it survived as one argument
+	// rather than being eaten as some flag's value -- the mistake --verify=always exists to avoid.
+	if got := deployCmd.Flags().Args(); len(got) != 1 || got[0] != widest.Package {
+		t.Errorf("zarf reads the positional arguments as %q, want exactly [%s]", got, widest.Package)
 	}
 }
 
@@ -214,7 +229,6 @@ func TestRunPackageDeployReportsTheRun(t *testing.T) {
 
 	args := argsFor(t, map[string]any{
 		"package":     "oci://ghcr.io/colonel-byte/zarf/csi-local-path-provider:0.0.37-upstream",
-		"zarf_binary": "/usr/bin/zarf",
 		"kubeconfig":  "/etc/rancher/rke2/rke2.yaml",
 		"components":  "local-path-images,local-path-chart",
 		"status_file": filepath.Join(dir, "status.json"),
@@ -245,30 +259,10 @@ func TestRunPackageDeployReportsTheRun(t *testing.T) {
 		t.Errorf("zarf ran in %q, want the directory Ansible chose", run.got.Dir)
 	}
 	// Reported for the same reason init reports it: a result an operator reads after a failure
-	// should say which zarf produced it.
-	if resp.Zarf.Version != "v"+MinZarfVersion {
-		t.Errorf("the reported zarf version was %q", resp.Zarf.Version)
-	}
-}
-
-// TestRunPackageDeployReportsAnUnreadableVersion pins the half of that which must not fail the run.
-//
-// A deploy has no version floor to enforce -- unlike init, nothing it renders needs a zarf newer
-// than any in use -- so a version string it cannot parse, or a `zarf version` that exits non-zero,
-// is a missing field in the result and nothing more. Refusing to deploy over it would be a worse
-// failure than the one being reported.
-func TestRunPackageDeployReportsAnUnreadableVersion(t *testing.T) {
-	args := argsFor(t, map[string]any{
-		"package": "/srv/staging/zarf-package-monitoring-amd64.tar.zst",
-	})
-	resp := &Response{Zarf: &Detail{Module: "package_deploy"}}
-	run := &fakeRunner{version: "built from source"}
-
-	if err := runPackageDeploy(context.Background(), run, args, resp); err != nil {
-		t.Fatalf("runPackageDeploy reported %v", err)
-	}
-	if resp.Zarf.Version != "built from source" {
-		t.Errorf("the version it found was not reported: %q", resp.Zarf.Version)
+	// should say which zarf produced it. Linked in, that is a constant.
+	if resp.Zarf.Version != config.CLIVersion {
+		t.Errorf("the reported zarf version was %q, want the linked-in %q",
+			resp.Zarf.Version, config.CLIVersion)
 	}
 }
 
@@ -286,8 +280,8 @@ func TestRunPackageDeployCheckModeSkips(t *testing.T) {
 	if !resp.Skipped || resp.Changed {
 		t.Errorf("a check-mode run reported skipped=%v changed=%v", resp.Skipped, resp.Changed)
 	}
-	if run.got.Binary != "" {
-		t.Errorf("a check-mode run executed %q", run.got.Binary)
+	if run.got.Args != nil {
+		t.Errorf("a check-mode run executed %q", run.got.Args)
 	}
 }
 

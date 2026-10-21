@@ -168,17 +168,16 @@
     - name: Opting in returns the credentials zarf generated
       # Not recorded anywhere: the assertion is that they are non-empty, which needs no transcript.
       #
-      # Only the credentials this init actually generates are asserted non-empty. This walk sets
-      # zarf_init_components to the empty string, which deploys the required components and no
-      # others, and the git server is optional -- so zarf writes the gitServer block with empty
-      # push and pull passwords. Requiring those to be non-empty asserts which components zarf
-      # chose to deploy, not whether the module returned what it was given, and it failed here for
-      # exactly that reason.
+      # The git credentials are asserted non-empty, which they could not be before: the walk used
+      # to deploy only the standard init package's required components, and the git server was not
+      # among them, so zarf wrote a gitServer block with empty push and pull passwords and all
+      # this could check was that the keys existed. The walk now follows the uds-bundle, whose
+      # second init deploys git-server with the credentials the playbook pins -- so there is
+      # something real to return, and returning it is the assertion.
       #
-      # The git server is still covered, by the assertion that matters for this module: that
-      # opting in puts the key back. A redacted run removes the key entirely -- see
-      # choice-zarf-info-modules.md on why it is removed rather than blanked -- so its presence,
-      # empty or not, is what distinguishes an opted-in result from a redacted one.
+      # A redacted run removes these keys entirely rather than blanking them -- see
+      # choice-zarf-info-modules.md on why -- so a non-empty value here is what distinguishes an
+      # opted-in result from a redacted one.
       #
       # This task deliberately carries no no_log, unlike the module call above it. An assert
       # prints its success_msg on a pass and the text of the failed expression on a failure, and
@@ -193,8 +192,8 @@
           - full_state.state.registryInfo.pullPassword | length > 0
           - full_state.state.registryInfo.secret | length > 0
           - full_state.state.agentInfo.tls.key | length > 0
-          - "'pushPassword' in full_state.state.gitServer"
-          - "'pullPassword' in full_state.state.gitServer"
+          - full_state.state.gitServer.pushPassword | length > 0
+          - full_state.state.gitServer.pullPassword | length > 0
         success_msg: ASSERTED include_credentials returns what zarf generated
         fail_msg: include_credentials did not return the credentials zarf wrote
 
