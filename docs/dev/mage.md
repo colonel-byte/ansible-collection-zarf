@@ -49,11 +49,11 @@ Read the diff rather than committing it unseen: a pin that jumped a minor line i
 
 The reference packages under `examples/packages` are illustrative, and the parts of them that track an upstream release are machine-maintained. These are the targets that maintain them. Nothing in CI runs them: `examples:vendor` reaches the network, and `examples:images` and `examples:lint` need a zarf.
 
-| Target            | What it needs | What it does                                                                                                |
-| ----------------- | ------------- | ----------------------------------------------------------------------------------------------------------- |
+| Target            | What it needs | What it does                                                                                                     |
+| ----------------- | ------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `examples:vendor` | The network   | Fetches each package's manifests at its pinned tag and rewrites its `upstream/` tree, kustomizations and version |
-| `examples:images` | `zarf`        | Rewrites each component's `images:` list from what `zarf dev find-images` discovers                         |
-| `examples:lint`   | `zarf`        | Runs `zarf dev lint` over every example package                                                             |
+| `examples:images` | `zarf`        | Rewrites each component's `images:` list from what `zarf dev find-images` discovers                              |
+| `examples:lint`   | `zarf`        | Runs `zarf dev lint` over every example package                                                                  |
 
 A package opts in by holding a `resources.json`, which declares the upstream repository, the pinned tag, where to read the manifests from, and which files go into which subdirectory and zarf component. `app-fluxcd` and `app-argocd` hold one; `operator-external-secrets` ships its own manifests and vendors nothing.
 

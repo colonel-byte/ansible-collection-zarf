@@ -4,11 +4,11 @@ Argo CD, packaged from the upstream manifests, as the GitOps engine the rest of 
 
 It is the sibling of [`app-fluxcd`](../app-fluxcd), and it exists because the two engines are not the same shape. Three differences, each of which the format had to grow something to survive:
 
-| Argo CD does this                                             | The format answers with                                     |
-| ------------------------------------------------------------- | ----------------------------------------------------------- |
-| Runs `argocd-application-controller` as a **StatefulSet**     | `requires.controllers[].kind`                               |
+| Argo CD does this                                             | The format answers with                                            |
+| ------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Runs `argocd-application-controller` as a **StatefulSet**     | `requires.controllers[].kind`                                      |
 | Installs into **`argocd`**, not `flux-system`                 | `requires.argocd`, the engine key that picks the default namespace |
-| Ships manifests with **no `app.kubernetes.io/version` label** | The generated kustomization stamps the pinned tag on        |
+| Ships manifests with **no `app.kubernetes.io/version` label** | The generated kustomization stamps the pinned tag on               |
 
 The third is the one worth dwelling on. `kubectl apply -f manifests/install.yaml` gives you an Argo CD whose version no cluster query can report, so a document requiring `>=3.5.0` would be checked against nothing. That is why `upstream/*/kustomization.yaml` is generated rather than vendored -- it adds the label, and the label is what makes the constraint answerable. Flux has the same problem and `flux install` solves it the same way.
 
