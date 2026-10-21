@@ -50,10 +50,6 @@ type mirrorParams struct {
 	// ZarfConfig is an operator-supplied zarf config file, passed as ZARF_CONFIG. It is how a
 	// playbook keeps the push credentials out of the argument vector.
 	ZarfConfig string `json:"zarf_config"`
-	// StatusFile overrides the heartbeat file, as it does on the converging modules: the action
-	// plugin creates a private temporary file and names it, and an operator reproducing a run by
-	// hand can name one.
-	StatusFile string `json:"status_file"`
 
 	// Images and Repos narrow the mirror to one kind of resource. Zarf marks them mutually
 	// exclusive, so the module refuses both rather than letting zarf reject the command after the
@@ -61,6 +57,8 @@ type mirrorParams struct {
 	Images *bool `json:"images"`
 	Repos  *bool `json:"repos"`
 
+	// Components narrows the mirror to some of the package's. It no longer feeds a progress
+	// display, because there is none: see runMirrorResources.
 	Components string `json:"components"`
 
 	RegistryURL          string `json:"registry_url"`
@@ -113,32 +111,27 @@ func runMirrorResources(ctx context.Context, run Runner, args *Args, resp *Respo
 
 	resp.Zarf.Version = config.CLIVersion
 
-	hb := NewHeartbeat(p.StatusFile)
-	defer hb.Clear()
-	resp.Zarf.StatusFile = hb.Path()
-
-	// A mirror walks the package component by component the way a deploy does, and announces each
-	// one the same way, so the progress reader reads it with nothing added.
-	prog := newProgress(hb, componentCount(p.Components))
 	argv := buildMirrorArgs(&p)
 	resp.Zarf.Command = append([]string{commandName}, redact(argv)...)
 
 	res, runErr := run.Run(ctx, Invocation{
-		Args:   argv,
-		Env:    p.env(hb),
-		OnLine: prog.line,
+		Args: argv,
+		Env:  p.env(),
 	})
 	resp.Zarf.ExitCode = res.ExitCode
-	resp.Zarf.ComponentsRan = prog.components
 
 	if runErr != nil {
-		prog.finish("failed", runErr)
-		reportChanged(resp, prog)
 		return fmt.Errorf("zarf package mirror-resources failed: %w", runErr)
 	}
-	prog.finish("completed", nil)
 
-	reportChanged(resp, prog)
+	// Unknown, and this one was measured rather than assumed. A mirror was expected to announce
+	// its components the way a deploy does, so that the progress reader could follow it; it does
+	// not. What zarf logs on the way through is `mirroring images`, `pushing image` and `done
+	// pushing images` -- the resources, never the component they came from -- so there is no
+	// component list behind a signal and nothing that says whether the registry already held
+	// what was pushed. The e2e suite found this: see docs/dev/e2e-tests.md.
+	resp.Changed = true
+	resp.Zarf.ChangedSignal = SignalUnknown
 	resp.Msg = "mirrored " + p.Package
 	return nil
 }
@@ -184,17 +177,13 @@ func buildMirrorArgs(p *mirrorParams) []string {
 }
 
 // env is what the module adds to the environment zarf runs in.
-func (p *mirrorParams) env(hb *Heartbeat) []string {
+func (p *mirrorParams) env() []string {
 	var env []string
 	if p.Kubeconfig != "" {
 		env = append(env, "KUBECONFIG="+p.Kubeconfig)
 	}
 	if p.ZarfConfig != "" {
 		env = append(env, "ZARF_CONFIG="+p.ZarfConfig)
-	}
-	if hb.Path() != "" {
-		// The wrapper writes the heartbeats, not zarf. See childEnv.
-		env = append(env, EnvStatusFile+"=")
 	}
 	env = append(env, "NO_COLOR=1")
 	return env

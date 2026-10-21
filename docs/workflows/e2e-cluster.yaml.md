@@ -1,8 +1,8 @@
 # E2E cluster
 
-Runs [`test/e2e/cluster`](../dev/e2e-tests.md) -- the suite that walks both module binaries across two real k3d clusters.
+Runs [`test/e2e/cluster`](../dev/e2e-tests.md) -- the suite that walks the converging modules across two real k3d clusters, then runs the other five acting modules against the cluster the first walk initialised.
 
-It is **not** a check on every push. It stands up two clusters, pulls three zarf packages, and runs a real `zarf init` against each, which makes it the slowest and least hermetic thing in this repository; the first run on a cold cache pays for the package pulls. Everything it covers that can be covered without a cluster already is, by the unit tests and by [`e2e.yaml`](e2e.yaml.md).
+It is **not** a check on every push. It stands up two clusters, pulls three zarf packages, and runs a real `zarf init` against each, which makes it the slowest and least hermetic thing in this repository; the first run on a cold cache pays for the package pulls. Everything it covers that can be covered without a cluster already is, by the unit tests and by [`e2e.yaml`](e2e.yaml.md) -- which includes every acting module's refusals and check-mode answers, so what is left here is the half that needs a registry, a cluster state or something deployed to take away.
 
 So it runs in two cases only: on demand from the Actions tab (`workflow_dispatch`), and on a pull request carrying the `e2e-cluster` label. The job's `if:` condition enforces both, which is why adding the label to an open pull request is enough to start a run.
 

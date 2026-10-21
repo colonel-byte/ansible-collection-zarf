@@ -407,7 +407,6 @@ func fullMirrorParams() *mirrorParams {
 		Package:                 "/srv/staging/zarf-package-monitoring-amd64.tar.zst",
 		Kubeconfig:              "/etc/rancher/rke2/rke2.yaml",
 		ZarfConfig:              "/etc/zarf/zarf-config.yaml",
-		StatusFile:              "/run/zarf/status.json",
 		Images:                  &yes,
 		Components:              "monitoring-images",
 		RegistryURL:             "registry.bubbles.test",

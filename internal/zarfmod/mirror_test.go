@@ -16,7 +16,6 @@ package zarfmod
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -207,23 +206,23 @@ func TestRunMirrorResourcesCheckModeSkips(t *testing.T) {
 	}
 }
 
-// TestRunMirrorResourcesFollowsTheComponents is what the heartbeat and the progress reader are for:
-// a mirror announces its components the way a deploy does, so the same reader reports them.
-func TestRunMirrorResourcesFollowsTheComponents(t *testing.T) {
-	dir := t.TempDir()
+// TestRunMirrorResourcesReportsTheRun covers what a mirror can say: that it ran, with the push
+// credential kept out of the result. What it cannot say is which components it walked -- zarf
+// announces the images rather than the component they came from -- so the signal is unknown and
+// there is no component list. See runMirrorResources.
+func TestRunMirrorResourcesReportsTheRun(t *testing.T) {
 	args := argsFor(t, map[string]any{
 		"package":                "/srv/staging/zarf-package-monitoring-amd64.tar.zst",
 		"kubeconfig":             "/etc/rancher/rke2/rke2.yaml",
 		"registry_push_password": "hunter2",
-		"components":             "monitoring-images,monitoring-repos",
-		"status_file":            filepath.Join(dir, "status.json"),
+		"components":             "monitoring-images",
 	})
 	resp := &Response{Zarf: &Detail{Module: "package_mirror_resources"}}
 	run := &fakeRunner{
 		lines: []string{
-			`{"msg":"Loading Zarf Package"}`,
-			`{"msg":"Deploying component","name":"monitoring-images"}`,
-			`{"msg":"Deploying component","name":"monitoring-repos"}`,
+			`{"msg":"mirroring images"}`,
+			`{"msg":"pushing image","image":"ghcr.io/colonel-byte/monitoring:1.0.0"}`,
+			`{"msg":"done pushing images"}`,
 		},
 	}
 
@@ -231,20 +230,17 @@ func TestRunMirrorResourcesFollowsTheComponents(t *testing.T) {
 		t.Fatalf("runMirrorResources reported %v", err)
 	}
 
-	if got, want := strings.Join(resp.Zarf.ComponentsRan, ","),
-		"monitoring-images,monitoring-repos"; got != want {
-		t.Errorf("componentsRan was %q, want %q", got, want)
-	}
-	if !resp.Changed || resp.Zarf.ChangedSignal != SignalPartial {
+	if !resp.Changed || resp.Zarf.ChangedSignal != SignalUnknown {
 		t.Errorf("the run reported changed=%v signal=%q", resp.Changed, resp.Zarf.ChangedSignal)
+	}
+	if len(resp.Zarf.ComponentsRan) != 0 {
+		t.Errorf("the run named the components %v, which a mirror does not announce",
+			resp.Zarf.ComponentsRan)
 	}
 	if strings.Contains(strings.Join(resp.Zarf.Command, " "), "hunter2") {
 		t.Errorf("the reported command carries the push credential: %v", resp.Zarf.Command)
 	}
 	if !containsEnv(run.got.Env, "KUBECONFIG=/etc/rancher/rke2/rke2.yaml") {
 		t.Errorf("the environment was %v, want it to carry KUBECONFIG", run.got.Env)
-	}
-	if resp.Zarf.StatusFile != filepath.Join(dir, "status.json") {
-		t.Errorf("the heartbeat file was %q", resp.Zarf.StatusFile)
 	}
 }

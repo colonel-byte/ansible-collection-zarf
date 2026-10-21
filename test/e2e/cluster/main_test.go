@@ -63,14 +63,20 @@ const (
 	providerFirstPlaybook = "test/e2e/cluster/testdata/provider-first.yml"
 	bundleOrderPlaybook   = "test/e2e/cluster/testdata/bundle-order.yml"
 	infoModulesPlaybook   = "test/e2e/cluster/testdata/info-modules.yml"
+	actingModulesPlaybook = "test/e2e/cluster/testdata/acting-modules.yml"
 	packagePublicKey      = "test/e2e/cluster/testdata/colonel-byte-zarf-packages.pub"
 )
 
 // The module files the suite drives. mage test:endToEndCluster builds them; see
-// magefiles/pkg/build.ZarfModules.
+// magefiles/pkg/build.ZarfModuleFiles.
+//
+// wrapperDir is what the playbooks covering the other modules are given instead of a path apiece:
+// every module file is a symlink to one binary in that directory, named after the module, so a
+// playbook that names `{{ zarf_wrapper_dir }}/zarf_package_pull` needs nothing added here.
 const (
 	initWrapper   = "build/zarf_init"
 	deployWrapper = "build/zarf_package_deploy"
+	wrapperDir    = "build"
 )
 
 const (
@@ -429,20 +435,20 @@ func (c *cluster) walk(t *testing.T, playbook string) (string, string) {
 		"-i", "localhost,",
 		"-e", "zarf_init_wrapper="+suite.initWrapper,
 		"-e", "zarf_deploy_wrapper="+suite.deployWrapper,
+		"-e", "zarf_wrapper_dir="+filepath.Join(suite.root, wrapperDir),
 		"-e", "zarf_init_package="+suite.initPackage,
 		"-e", "zarf_storage_package="+suite.storagePackage,
+		// The reference as well as the staged file: zarf_package_pull fetches from a registry, so
+		// it is the one module here that needs the thing the file was pulled from.
+		"-e", "zarf_storage_package_ref="+storagePackage,
 		"-e", "zarf_public_key="+suite.publicKey,
 		"-e", "zarf_kubeconfig="+c.kubeconfig,
 		"-e", "zarf_result_dir="+results,
 		"-e", "zarf_timeout=15m",
-		// Pinned so that an init can be run twice. With no git credentials given zarf generates
-		// them, and a second init then disagrees with the state the first one wrote -- which is
-		// zarf's `cannot change git server information` guard, not a fault in the module. These
-		// are test credentials for a git server that never leaves the k3d cluster.
-		"-e", "zarf_git_push_username=zarf-git-user",
-		"-e", "zarf_git_push_password=bubbles-push-0",
-		"-e", "zarf_git_pull_username=zarf-git-read-user",
-		"-e", "zarf_git_pull_password=bubbles-pull-0",
+		// No git credentials are passed to anything. The headers of bundle-order.yml and
+		// provider-first.yml say why the walks do not give them to an init, and the one in
+		// acting-modules.yml says why the rotation there is the registry's rather than the git
+		// server's.
 		// The read-only modules run the installed zarf rather than a wrapper binary, so they are
 		// given its path rather than resolving it on the PATH of a test process.
 		"-e", "zarf_binary="+suite.zarf,

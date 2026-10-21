@@ -13,11 +13,11 @@ Nothing here runs on the cluster's nodes. The modules run the installed `zarf` o
 | `api/colonel-byte.dev/`       | The `colonel-byte.dev/v1alpha1` `PackagePrerequisites` Go types, which the published JSON Schema is reflected from                                                                              |
 | `cmd/zarfmod/`                | The one `main` package behind every module file. A thirty-line entry point; everything it does is in `internal/zarfmod`                                                                         |
 | `internal/zarfmod/`           | The module logic: `argv[0]` dispatch, the WANT_JSON intake, the command-line rendering, the progress reader, the stdout guard, the heartbeat, the response                                      |
-| `internal/testenv/`           | Scaffolding the end-to-end suites share: the repo-root chdir, the per-run `TMPDIR`, and waiting on a cluster                                                                                                          |
+| `internal/testenv/`           | Scaffolding the end-to-end suites share: the repo-root chdir, the per-run `TMPDIR`, and waiting on a cluster                                                                                    |
 | `ansible/colonel_byte/zarf/`  | The collection: action plugins, the shared Python, roles. See [`ansible/colonel_byte/zarf/AGENTS.md`](ansible/colonel_byte/zarf/AGENTS.md)                                                      |
 | `ansible/examples/playbooks/` | Runnable example playbooks                                                                                                                                                                      |
-| `test/e2e/noncluster/`        | The suite that needs no cluster: the read-only modules and the state redaction, against a stub zarf                                                                                             |
-| `test/e2e/cluster/`           | The suite that needs k3d, zarf and Docker: both wrappers walked across two real clusters                                                                                                        |
+| `test/e2e/noncluster/`        | The suite that needs no cluster: the read-only modules and the state redaction against a stub zarf, and every acting module's refusals and check-mode answers                                   |
+| `test/e2e/cluster/`           | The suite that needs k3d, zarf and Docker: the converging modules walked across two real clusters, then the other five acting modules against what the walk left                                |
 | `magefiles/`                  | The task runner's source: build, test and generate targets. See [`magefiles/AGENTS.md`](magefiles/AGENTS.md)                                                                                    |
 | `docs/`                       | The mdBook source. Several subpaths are generated and must not be hand-edited -- see [`docs/AGENTS.md`](docs/AGENTS.md)                                                                         |
 | `docs/workflows/`             | One page per file under `.github/workflows/`, named after it with a `.md` extension -- required by [`.github/AGENTS.md`](.github/AGENTS.md)                                                     |
@@ -84,16 +84,17 @@ The `tool` directives in `go.mod` are vendored too, so `generate:document` runs 
 
 ## The tests that hold the two halves together
 
-Most of what is worth knowing about this repository is enforced by four tests in `internal/zarfmod`, and it is worth knowing which one catches what:
+Most of what is worth knowing about this repository is enforced by five tests in `internal/zarfmod`, and it is worth knowing which one catches what. A module that acts on a cluster has one `*ArgsAreKnownFlags` test apiece, each parsing what it renders against zarf's own command for it:
 
-A test file in `internal/zarfmod` is named for the source file it covers -- `init_test.go` beside `init.go`, `progress_test.go` beside `progress.go` -- with three exceptions, each named for what it holds rather than what it is beside: `helpers_test.go` is the scaffolding the package shares, and `plugindocs_test.go` and `infoplugins_test.go` are the two contract tests that reach into `ansible/`. Put a new test beside its subject; a file that collects whatever was written most recently is how the four tests below stop being findable.
+A test file in `internal/zarfmod` is named for the source file it covers -- `init_test.go` beside `init.go`, `progress_test.go` beside `progress.go` -- with three exceptions, each named for what it holds rather than what it is beside: `helpers_test.go` is the scaffolding the package shares, and `plugindocs_test.go` and `infoplugins_test.go` are the two contract tests that reach into `ansible/`. Put a new test beside its subject; a file that collects whatever was written most recently is how the tests below stop being findable.
 
-| Test                                                       | What it would catch                                                                                             |
-| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `TestActionPluginDocsMatchModuleParams`                    | A parameter added to a wrapper module's Go struct and not to its Python `DOCUMENTATION`, or the reverse         |
-| `TestInfoPluginDocsMatchRenderedFlags`                     | A read-only module's documented `cli_flag` values disagreeing with the flags its `command_parts` function names |
-| `TestEveryActionPluginIsCovered`                           | A new action plugin that no test looks at, and a test list naming a plugin that no longer exists                |
-| `TestInitArgsAreKnownFlags`, `TestDeployArgsAreKnownFlags` | A flag the module renders that the linked-in zarf does not accept, including one zarf renamed                   |
+| Test                                                           | What it would catch                                                                                             |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `TestActionPluginDocsMatchModuleParams`                        | A parameter added to a wrapper module's Go struct and not to its Python `DOCUMENTATION`, or the reverse         |
+| `TestInfoPluginDocsMatchRenderedFlags`                         | A read-only module's documented `cli_flag` values disagreeing with the flags its `command_parts` function names |
+| `TestEveryActionPluginIsCovered`                               | A new action plugin that no test looks at, and a test list naming a plugin that no longer exists                |
+| `TestInitArgsAreKnownFlags` and the other `*ArgsAreKnownFlags` | A flag the module renders that the linked-in zarf does not accept, including one zarf renamed                   |
+| `TestModulesAnswersEveryAction`                                | A module added to the dispatch table without the symlink names, packaging and docs that go with it              |
 
 Three more, in `magefiles/pkg/gen/schema`, hold the `PackagePrerequisites` format together the same way:
 

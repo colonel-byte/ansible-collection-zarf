@@ -14,8 +14,8 @@
 
 """Action plugin for the zarf_package_mirror_resources module.
 
-It exists to deliver the task's parameters to the wrapper binary and to display the progress the
-wrapper reports. Everything it does is in ZarfActionBase; see plugins/plugin_utils/projection.py.
+It exists to deliver the task's parameters to the wrapper binary. Everything it does is in
+ZarfActionBase; see plugins/plugin_utils/projection.py.
 """
 
 from __future__ import absolute_import, division, print_function
@@ -29,7 +29,7 @@ module: zarf_package_mirror_resources
 short_description: Push a package's images and repositories into a registry and git server
 description:
   - "Runs C(zarf package mirror-resources), which pushes the images and git repositories a package carries into a registry and a git server without deploying anything."
-  - "The module is a compiled binary with zarf linked into it. It renders the C(zarf package mirror-resources) command line from these parameters, executes zarf's own command in its own process, reads the component boundaries back out of zarf's log stream, and reports one JSON result. It needs no C(zarf) on the node."
+  - "The module is a compiled binary with zarf linked into it. It renders the C(zarf package mirror-resources) command line from these parameters, executes zarf's own command in its own process, and reports one JSON result. It needs no C(zarf) on the node."
   - "It is the air-gap seeding step. A cluster that deploys with C(connected: true) pulls the images itself, which means its registry has to hold them first, and before this module a playbook had no way to say so."
 version_added: "0.88.0"
 author:
@@ -37,7 +37,7 @@ author:
 notes:
   - "Set C(run_once: true) and C(delegate_to) on the task. One mirror fills the registry the whole cluster pulls from."
   - "Set C(no_log: true) on the task when any push credential is given as a parameter, or name a zarf config file with C(zarf_config) and keep them out of the argument vector."
-  - "The task reports C(changed: true) with C(zarf.changedSignal) set to C(partial) and the components it mirrored in C(zarf.componentsRan), the same way the converging modules do and for the same reason: zarf reports which components it walked, not whether the registry already held what was pushed."
+  - "The task reports C(changed: true) with C(zarf.changedSignal) set to C(unknown), and names no components. Unlike a deploy, a mirror announces the resources it pushes rather than the component they came from -- C(mirroring images), C(pushing image) -- so there is no component list to report and nothing that says whether the registry already held what was pushed."
   - "Check mode reports the task as skipped. The command has no dry run."
   - "C(images) and C(repos) are mutually exclusive, as they are in zarf. Setting both is an error naming them; leaving both unset mirrors everything."
   - "A parameter left unset renders no flag, so whatever zarf's own config file sets still applies."
@@ -62,12 +62,6 @@ options:
     type: str
     required: false
     cli_flag: None
-  status_file:
-    description:
-      - "Where the wrapper writes live component progress. The action plugin creates a private temporary file and overrides this."
-    type: str
-    required: false
-    cli_flag: None
   wrapper_binary:
     description:
       - "The module wrapper to run, resolved on the path when it holds no separator."
@@ -87,7 +81,6 @@ options:
   images:
     description:
       - "Mirror only the images. Mutually exclusive with C(repos)."
-      - "It is also what lets the progress display report a total, the way C(components) does: see C(components)."
     type: bool
     required: false
     cli_flag: "--images"
@@ -100,7 +93,6 @@ options:
   components:
     description:
       - "Which of the package's components to mirror, as a comma-separated list."
-      - "It is also what lets the progress display report C(component 2/4) rather than C(component 2): the wrapper cannot otherwise know how many components the package holds."
     type: str
     required: false
     cli_flag: "--components"
@@ -231,9 +223,9 @@ EXAMPLES = r"""
   run_once: true
   no_log: true
 
-- name: Report which components were mirrored
+- name: Report the command the mirror ran
   ansible.builtin.debug:
-    var: mirror_result.zarf.componentsRan
+    var: mirror_result.zarf.command
 """
 
 from ansible_collections.colonel_byte.zarf.plugins.plugin_utils.projection import (

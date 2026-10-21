@@ -1,0 +1,267 @@
+---
+# Every module that acts on a cluster, driven through the paths that need no cluster: what each one
+# refuses before it runs anything, what each one does in check mode, and the one command among them
+# that answers for real without a cluster.
+#
+# The seven acting modules are one wrapper binary invoked under seven names, so this play is also
+# what holds argv[0] dispatch together outside the container image's smoke checks: each task names
+# a different module file, and a dispatch entry that went missing fails here as a module that
+# cannot be found.
+#
+# What is deliberately not here is a successful init, deploy, mirror, remove or pull. Those need a
+# cluster or a registry, and test/e2e/cluster is where they are walked. What is left -- the refusals
+# and the check-mode answers -- is most of what an operator hits while writing a playbook, and it
+# needs neither.
+#
+# zarf_kubectl is the exception that does run: `kubectl version --client` reads nothing but the
+# binary it is in, so the one module whose answer is the output of a vendored tool is covered end to
+# end here rather than only against a cluster.
+#
+# Assertions live in this file wherever they are about what a module returned. The Go side counts
+# the tasks that reported passing; every assert task says ASSERTED on success.
+#
+# Nothing here is contacted: no cluster, no registry, and no network.
+- name: The acting zarf modules refuse what they cannot do, and skip in check mode
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    # ---------------------------------------------------------------- zarf_init
+    - name: zarf_init in check mode
+      colonel_byte.zarf.zarf_init:
+        init_package: /srv/staging/zarf-init-amd64-v0.88.0.tar.zst
+        wrapper_binary: "{{ zarf_wrapper_dir }}/zarf_init"
+      delegate_to: localhost
+      run_once: true
+      check_mode: true
+      register: init_check
+
+    - name: zarf_init reports a check-mode run as skipped and changes nothing
+      ansible.builtin.assert:
+        that:
+          - init_check.skipped | default(false)
+          - not (init_check.changed | default(true))
+          - init_check.zarf.changedSignal == "unknown"
+          - init_check.zarf.module == "init"
+        success_msg: ASSERTED zarf_init skips in check mode
+        fail_msg: "zarf_init check mode returned {{ init_check }}"
+
+    # ---------------------------------------------------------------- zarf_package_deploy
+    - name: zarf_package_deploy in check mode
+      colonel_byte.zarf.zarf_package_deploy:
+        package: /srv/staging/zarf-package-monitoring-amd64.tar.zst
+        wrapper_binary: "{{ zarf_wrapper_dir }}/zarf_package_deploy"
+      delegate_to: localhost
+      run_once: true
+      check_mode: true
+      register: deploy_check
+
+    - name: zarf_package_deploy reports a check-mode run as skipped
+      ansible.builtin.assert:
+        that:
+          - deploy_check.skipped | default(false)
+          - not (deploy_check.changed | default(true))
+          - deploy_check.zarf.module == "package_deploy"
+        success_msg: ASSERTED zarf_package_deploy skips in check mode
+        fail_msg: "zarf_package_deploy check mode returned {{ deploy_check }}"
+
+    # ---------------------------------------------------------------- zarf_package_pull
+    - name: zarf_package_pull given a local path
+      colonel_byte.zarf.zarf_package_pull:
+        package: /srv/staging/zarf-package-monitoring-amd64.tar.zst
+        wrapper_binary: "{{ zarf_wrapper_dir }}/zarf_package_pull"
+      delegate_to: localhost
+      run_once: true
+      register: pull_local
+      ignore_errors: true
+
+    - name: zarf_package_pull refuses a local path, because there is nothing to fetch
+      ansible.builtin.assert:
+        that:
+          - pull_local.failed
+          - "'local path' in pull_local.msg"
+          - not (pull_local.changed | default(true))
+        success_msg: ASSERTED zarf_package_pull refuses a local path
+        fail_msg: "zarf_package_pull returned {{ pull_local }}"
+
+    - name: zarf_package_pull in check mode
+      colonel_byte.zarf.zarf_package_pull:
+        package: oci://ghcr.io/colonel-byte/zarf/monitoring:1.0.0
+        output_directory: "{{ zarf_result_dir }}"
+        wrapper_binary: "{{ zarf_wrapper_dir }}/zarf_package_pull"
+      delegate_to: localhost
+      run_once: true
+      check_mode: true
+      register: pull_check
+
+    - name: zarf_package_pull reports a check-mode run as skipped and fetches nothing
+      ansible.builtin.assert:
+        that:
+          - pull_check.skipped | default(false)
+          - not (pull_check.changed | default(true))
+          - pull_check.zarf.packagesPulled | default([]) | length == 0
+        success_msg: ASSERTED zarf_package_pull skips in check mode
+        fail_msg: "zarf_package_pull check mode returned {{ pull_check }}"
+
+    # ---------------------------------------------------------------- zarf_package_remove
+    - name: zarf_package_remove in check mode
+      colonel_byte.zarf.zarf_package_remove:
+        package: monitoring
+        wrapper_binary: "{{ zarf_wrapper_dir }}/zarf_package_remove"
+      delegate_to: localhost
+      run_once: true
+      check_mode: true
+      register: remove_check
+
+    - name: zarf_package_remove reports a check-mode run as skipped and removes nothing
+      ansible.builtin.assert:
+        that:
+          - remove_check.skipped | default(false)
+          - not (remove_check.changed | default(true))
+          - remove_check.zarf.module == "package_remove"
+        success_msg: ASSERTED zarf_package_remove skips in check mode
+        fail_msg: "zarf_package_remove check mode returned {{ remove_check }}"
+
+    # ---------------------------------------------------- zarf_package_mirror_resources
+    - name: zarf_package_mirror_resources given both kinds of resource
+      colonel_byte.zarf.zarf_package_mirror_resources:
+        package: /srv/staging/zarf-package-monitoring-amd64.tar.zst
+        images: true
+        repos: true
+        wrapper_binary: "{{ zarf_wrapper_dir }}/zarf_package_mirror_resources"
+      delegate_to: localhost
+      run_once: true
+      register: mirror_both
+      ignore_errors: true
+
+    - name: zarf_package_mirror_resources refuses images and repos together, as zarf does
+      ansible.builtin.assert:
+        that:
+          - mirror_both.failed
+          - "'mutually exclusive' in mirror_both.msg"
+        success_msg: ASSERTED zarf_package_mirror_resources refuses both kinds at once
+        fail_msg: "zarf_package_mirror_resources returned {{ mirror_both }}"
+
+    - name: zarf_package_mirror_resources in check mode
+      colonel_byte.zarf.zarf_package_mirror_resources:
+        package: /srv/staging/zarf-package-monitoring-amd64.tar.zst
+        wrapper_binary: "{{ zarf_wrapper_dir }}/zarf_package_mirror_resources"
+      delegate_to: localhost
+      run_once: true
+      check_mode: true
+      register: mirror_check
+
+    - name: zarf_package_mirror_resources reports a check-mode run as skipped
+      ansible.builtin.assert:
+        that:
+          - mirror_check.skipped | default(false)
+          - not (mirror_check.changed | default(true))
+        success_msg: ASSERTED zarf_package_mirror_resources skips in check mode
+        fail_msg: "zarf_package_mirror_resources check mode returned {{ mirror_check }}"
+
+    # ---------------------------------------------------------------- zarf_update_creds
+    - name: zarf_update_creds given another service's credential
+      colonel_byte.zarf.zarf_update_creds:
+        service: registry
+        git_push_password: FIXTURE-not-a-real-password
+        wrapper_binary: "{{ zarf_wrapper_dir }}/zarf_update_creds"
+      delegate_to: localhost
+      run_once: true
+      register: creds_wrong_service
+      ignore_errors: true
+      no_log: true
+
+    - name: zarf_update_creds refuses a credential the named subcommand does not take
+      ansible.builtin.assert:
+        that:
+          - creds_wrong_service.failed
+          - "'git_push_password' in creds_wrong_service.msg"
+          - "'FIXTURE-not-a-real-password' not in creds_wrong_service.msg"
+        success_msg: ASSERTED zarf_update_creds refuses another service's credential by name
+        fail_msg: "zarf_update_creds returned a message naming the wrong thing"
+
+    - name: zarf_update_creds given force_conflicts with the git subcommand
+      colonel_byte.zarf.zarf_update_creds:
+        service: git
+        force_conflicts: true
+        wrapper_binary: "{{ zarf_wrapper_dir }}/zarf_update_creds"
+      delegate_to: localhost
+      run_once: true
+      register: creds_force
+      ignore_errors: true
+
+    - name: zarf_update_creds refuses force_conflicts where zarf has no such flag
+      ansible.builtin.assert:
+        that:
+          - creds_force.failed
+          - "'force_conflicts' in creds_force.msg"
+        success_msg: ASSERTED zarf_update_creds refuses force_conflicts on the git subcommand
+        fail_msg: "zarf_update_creds returned {{ creds_force }}"
+
+    - name: zarf_update_creds in check mode
+      colonel_byte.zarf.zarf_update_creds:
+        service: registry
+        registry_push_password: FIXTURE-not-a-real-password
+        wrapper_binary: "{{ zarf_wrapper_dir }}/zarf_update_creds"
+      delegate_to: localhost
+      run_once: true
+      check_mode: true
+      register: creds_check
+      no_log: true
+
+    - name: zarf_update_creds reports a check-mode run as skipped and rotates nothing
+      ansible.builtin.assert:
+        that:
+          - creds_check.skipped | default(false)
+          - not (creds_check.changed | default(true))
+          - creds_check.zarf.module == "update_creds"
+        success_msg: ASSERTED zarf_update_creds skips in check mode
+        fail_msg: "zarf_update_creds check mode did not report a skip"
+
+    # ---------------------------------------------------------------- zarf_kubectl
+    - name: zarf_kubectl given a command kubectl does not have
+      colonel_byte.zarf.zarf_kubectl:
+        args:
+          - frobnicate
+        wrapper_binary: "{{ zarf_wrapper_dir }}/zarf_kubectl"
+      delegate_to: localhost
+      run_once: true
+      register: kubectl_unknown
+      ignore_errors: true
+
+    - name: zarf_kubectl refuses an unknown command by name rather than printing help
+      ansible.builtin.assert:
+        that:
+          - kubectl_unknown.failed
+          - "'frobnicate' in kubectl_unknown.msg"
+        success_msg: ASSERTED zarf_kubectl refuses a command kubectl does not have
+        fail_msg: "zarf_kubectl returned {{ kubectl_unknown }}"
+
+    - name: zarf_kubectl asks the kubectl inside the module for its version
+      colonel_byte.zarf.zarf_kubectl:
+        args:
+          - version
+          - --client
+          - -o
+          - json
+        wrapper_binary: "{{ zarf_wrapper_dir }}/zarf_kubectl"
+      delegate_to: localhost
+      run_once: true
+      changed_when: false
+      register: kubectl_version
+
+    - name: Record what the vendored kubectl answered
+      ansible.builtin.copy:
+        content: "{{ kubectl_version | to_json }}"
+        dest: "{{ zarf_result_dir }}/kubectl-version.json"
+        mode: "0600"
+
+    - name: zarf_kubectl returns the vendored kubectl's own output, needing no cluster
+      ansible.builtin.assert:
+        that:
+          - not kubectl_version.failed | default(false)
+          - (kubectl_version.zarf.output | from_json)['clientVersion']['gitVersion'] | length > 0
+          - kubectl_version.zarf.command[0:3] == ["zarf", "tools", "kubectl"]
+        success_msg: ASSERTED zarf_kubectl answers from the kubectl zarf vendors
+        fail_msg: "zarf_kubectl returned {{ kubectl_version }}"

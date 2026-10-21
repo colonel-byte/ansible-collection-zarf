@@ -68,6 +68,22 @@ Its failures are reported rather than exited on. kubectl reports a fatal error t
 
 Its output comes back as `zarf.output`. kubectl writes to `os.Stdout`, which it takes when the command tree is built -- inside the runner, by which point the stdout guard has pointed `os.Stdout` at stderr -- so `runKubectl` points it at a temporary file for the length of the run. A file rather than a pipe: nothing drains a pipe while the command runs, and `get -o yaml` over a large cluster would fill one and hang.
 
+## What the five modules beyond the converging pair decided
+
+Each of them had one thing worth recording, and all five are the same binary under another name.
+
+**`zarf_package_pull` is the only module here whose `changed` is an observation.** Everything else in the collection reports `changed: true` with a signal saying how little that is worth, because zarf reports what it did and not whether the cluster already agreed. A pull writes a file, so the module lists the package files in the output directory before and after and reports the arrivals in `zarf.packagesPulled`, with `changedSignal: complete`. That list is also the only way a playbook learns the filename, which zarf derives from the package's own metadata rather than from anything the task said.
+
+**`zarf_package_remove` reports `unknown` rather than `partial`.** The converging pair report `partial` because zarf announces each component as it deploys it, and `internal/zarfmod/progress.go` reads those announcements. A removal announces nothing until it is over -- `l.Info("package successfully removed", ...)` is the whole of it -- so there is no component list behind a signal, and nothing distinguishes a package that was there from one that was already gone. The cluster is what the e2e suite asks instead.
+
+**`zarf_update_creds` renders the subcommand and refuses a mismatched credential.** Zarf has `update-creds registry`, `git` and `agent`, each accepting only its own service's credentials, and the bare `zarf tools update-creds` that accepts all of them warns that it is deprecated. So `service` is required, and a credential belonging to another service is refused by name rather than rendered as a flag that subcommand has never heard of. `force_conflicts` is refused for `git` for the same reason: zarf puts it on the other two only. The artifact server is the fourth service zarf keeps credentials for, has no subcommand, and is deprecated upstream -- so this module does not update it.
+
+**`zarf_package_mirror_resources` reports no components, which was found by running it.** It was built with the progress reader wired to it, on the assumption that a mirror walks components the way a deploy does and announces them the same way. The cluster suite showed otherwise: zarf logs `mirroring images`, `pushing image` and `done pushing images` -- the resources, never the component they came from. So the module reports `changed: true` with `changedSignal: unknown`, carries no heartbeat and takes no `status_file`, and the assertion in the suite is that the component list is empty.
+
+**`zarf_package_mirror_resources` refuses `images` and `repos` together.** Zarf marks the two mutually exclusive with `MarkFlagsMutuallyExclusive`, which is checked when the command runs -- after the module has already reported the command it was about to run. Refusing the pair up front makes the message name the parameters rather than the flags. `TestMirrorExclusivityIsZarfsOwn` holds that refusal against zarf's own declaration, so a release that stopped marking them exclusive shows up as the module inventing a rule.
+
+**`zarf_kubectl` is covered in its own section above.**
+
 ## What the proof does keep
 
 Everything else in the proposal is implemented as described: `argv[0]` dispatch with a `ZARF_ANSIBLE_MODULE` override, the WANT_JSON arguments file, the stdout guard that duplicates fd 1 and points `os.Stdout` at stderr, exit 0 with failure reported inside the JSON, check mode answered as `skipped` because `zarf init` has no dry run, and the heartbeat status file with a polling monitor thread in the action plugin.

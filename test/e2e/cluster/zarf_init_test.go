@@ -35,11 +35,13 @@ var (
 	initSeedComponents = []string{ //nolint:gochecknoglobals
 		"zarf-injector",
 		"zarf-seed-registry",
+		// Not the bundle's seed set: git-server is here because a later init is refused unless
+		// the first one recorded a git server. The playbooks' headers have the whole of it.
+		"git-server",
 	}
 	initRestComponents = []string{ //nolint:gochecknoglobals
 		"zarf-registry",
 		"zarf-agent",
-		"git-server",
 	}
 )
 
@@ -87,6 +89,11 @@ func TestBundleOrderWalk(t *testing.T) {
 	// paying for one of their own. See testModuleContracts and testInfoModules.
 	t.Run("module contracts", func(t *testing.T) { testModuleContracts(t, cluster) })
 	t.Run("read-only modules", func(t *testing.T) { testInfoModules(t, cluster) })
+
+	// Last on this cluster, and nothing may follow it: the rotation in there replaces the
+	// credentials this walk pinned and the removal takes away a package the read-only modules
+	// above expect to find. See testActingModules.
+	t.Run("acting modules", func(t *testing.T) { testActingModules(t, cluster) })
 }
 
 // TestProviderFirstWalk runs the same four packages on the uds-bundles k3d config as it is

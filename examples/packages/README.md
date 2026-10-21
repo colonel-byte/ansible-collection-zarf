@@ -2,11 +2,11 @@
 
 Three Zarf packages that declare their cluster prerequisites in the [`colonel-byte.dev/v1alpha1` `PackagePrerequisites`](../../docs/guides/package-prerequisites.md) format: two providers of the same capability, and a consumer of it.
 
-| Package                                                  | Role     | What it shows                                                                                        |
-| -------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------- |
-| [`app-fluxcd`](app-fluxcd)                               | Provider | A `provides:` section, and the generated kustomization that makes its version readable off a cluster |
+| Package                                                  | Role     | What it shows                                                                                                                                                      |
+| -------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`app-fluxcd`](app-fluxcd)                               | Provider | A `provides:` section, and the generated kustomization that makes its version readable off a cluster                                                               |
 | [`app-argocd`](app-argocd)                               | Provider | The same capability from the other engine: a `StatefulSet` controller, its own namespace, and a vendoring source that is a tagged tree rather than a release asset |
-| [`operator-external-secrets`](operator-external-secrets) | Consumer | A `requires:` section with the engine version, controllers and CRDs a HelmRelease needs reconciled   |
+| [`operator-external-secrets`](operator-external-secrets) | Consumer | A `requires:` section with the engine version, controllers and CRDs a HelmRelease needs reconciled                                                                 |
 
 None of them is built or deployed by anything in this repository -- `zarf package create` on any of them reaches the network. They are here to be read, linted and inspected:
 
