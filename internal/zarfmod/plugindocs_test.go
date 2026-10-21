@@ -103,6 +103,14 @@ func wrapperModuleCases() []wrapperModuleCase {
 			params: &deployParams{},
 			argv:   buildDeployArgs(fullDeployParams()),
 		},
+		{
+			module: "zarf_kubectl",
+			params: &kubectlParams{},
+			// A passthrough renders no flags at all: args is kubectl's own argument vector and
+			// kubeconfig is an environment variable. The case is here for the other direction --
+			// a parameter added to the Go struct and not to the documentation.
+			argv: nil,
+		},
 	}
 }
 

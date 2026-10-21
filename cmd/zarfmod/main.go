@@ -12,18 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Command zarf_init answers Ansible as the zarf_init module.
+// Command zarfmod answers Ansible as whichever zarf module it was invoked as.
 //
-// It is the entry point the colonel_byte.zarf collection invokes. It is deliberately this small:
-// it takes over standard output, reads the module's JSON parameters, renders the zarf command line,
-// executes zarf's own init command in this process, follows the init package's deployment, and
-// writes one JSON object. Everything it does is in internal/zarfmod.
+// It is the entry point the colonel_byte.zarf collection invokes, under one of the zarf_ names
+// that symlink to it: zarf_init, zarf_package_deploy, zarf_kubectl. It is deliberately this small:
+// it takes over standard output, reads the module's JSON parameters, renders the zarf command
+// line, executes zarf's own command in this process, follows what it does, and writes one JSON
+// object. Everything it does is in internal/zarfmod.
 //
-// Zarf is linked in rather than run as a child, so this binary enters the same init that an
+// One binary under several names is what ZEP-0072 describes: the proposal has the zarf binary
+// itself dispatch on argv[0], so that a zarf_init symlink to /usr/bin/zarf is an Ansible module.
+// This was a main package per module until the modules linked zarf in, at which point each
+// binary carried its own copy of zarf's dependency tree -- 269MB apiece -- to reach dispatch code
+// that was already shared. The symlinks are the proposal's own shape and cost one copy, which is
+// also the answer to what a third module would have cost.
+//
+// Zarf is linked in rather than run as a child, so this binary enters the same commands an
 // operator's command line enters. That is what makes it a proof of ZEP-0072 rather than a
 // demonstration that zarf can be driven from outside: what the proposal asks for is this with the
-// dispatch hook in zarf's own main, and zarf's main is already shaped to take one. The sibling
-// zarf_package_deploy still runs a child, so the two designs sit side by side in one tree. See
+// dispatch hook in zarf's own main, and zarf's main is already shaped to take one. See
 // docs/agent/choice-zarf-ansible-module.md.
 package main
 
@@ -32,6 +39,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/colonel-byte/ansible-collection-zarf/internal/zarfmod"
@@ -61,11 +69,13 @@ func main() {
 
 	name, ok := zarfmod.ModuleName(os.Args[0])
 	if !ok {
-		// Invoked under a name that is not a module. Say what the binary is for on stderr rather
-		// than emitting a JSON object a human did not ask for.
+		// Invoked under a name that is not a module -- which includes this binary's own name, so
+		// that running it by hand says what it is for. Say so on stderr rather than emitting a
+		// JSON object a human did not ask for.
 		fmt.Fprintf(os.Stderr,
-			"%s is an Ansible module file for zarf. Invoke it as %s%s, or set %s.\n",
-			os.Args[0], zarfmod.Prefix, zarfmod.Modules()[0], zarfmod.EnvModule)
+			"%s is an Ansible module file for zarf. Invoke it through one of its %s symlinks (%s), "+
+				"or set %s.\n",
+			os.Args[0], zarfmod.Prefix, strings.Join(zarfmod.ModuleFiles(), ", "), zarfmod.EnvModule)
 		os.Exit(2)
 	}
 

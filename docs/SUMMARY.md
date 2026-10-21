@@ -19,6 +19,7 @@
 - [zarf modules](ansible/modules.md)
   - [cluster_info](ansible/module_cluster_info.md)
   - [init](ansible/module_init.md)
+  - [kubectl](ansible/module_kubectl.md)
   - [package_deploy](ansible/module_package_deploy.md)
   - [package_documentation](ansible/module_package_documentation.md)
   - [package_info](ansible/module_package_info.md)

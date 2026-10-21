@@ -14,8 +14,8 @@
 
 # syntax=docker/dockerfile:1
 
-# The zarf binary the collection's read-only modules drive. zarf_init and zarf_package_deploy have
-# zarf linked into them and need none, but zarf_package_info, zarf_package_inspect and
+# The zarf binary the collection's read-only modules drive. The module wrapper has zarf linked
+# into it and needs none, but zarf_package_info, zarf_package_inspect and
 # zarf_state_info are plain action plugins that shell out to the installed zarf -- see
 # docs/agent/choice-zarf-info-modules.md -- so without one in the image every task using those
 # three fails on a binary it cannot find. `zarf completion bash` below also comes from it.
@@ -85,11 +85,16 @@ RUN rpm --install --verbose /tmp/rpms/*.rpm \
 # These checks are the ZEP-0072 proof's contract, and each one fails the image build rather than a
 # playbook. Invoked under a zarf_ name that is not an action it answers as, a module file must
 # refuse with a non-zero status rather than emit JSON nobody asked for -- package_remove is such a
-# name, because these binaries answer as init and package_deploy and nothing else; given parameters
+# name, because this binary answers as init, kubectl and package_deploy and nothing else; given parameters
 # it cannot read, a module must still answer with one JSON object and exit 0, because a non-zero
 # status makes Ansible report MODULE FAILURE instead of the message the module wrote; and in check
-# mode it must report the task as skipped, since zarf init has no dry run. The last one reads its
-# parameters on stdin, which is the path this collection's action plugin uses.
+# mode it must report the task as skipped, since zarf init has no dry run. Every module file name
+# is checked to be a link to the same binary, because that is what makes argv[0] dispatch the
+# thing being proved rather than an implementation detail. zarf_kubectl is checked three ways: a
+# command kubectl does not have must be refused by name rather than printing help and reporting
+# success, and `kubectl version --client` must come back in zarf.output, which needs no cluster and
+# is the whole of what that module is. The checks that pipe read
+# their parameters on stdin, which is the path this collection's action plugin uses.
 # The checks below pipe the module's output into a parser, and a wrapper that crashed mid-pipe
 # must fail the build rather than be covered by the parser's exit status.
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -107,6 +112,7 @@ RUN ansible-galaxy collection list >/tmp/collections 2>/dev/null \
     | ZARF_ANSIBLE_MODULE=init zarf_init \
     | python3 -c 'import json,sys; r=json.load(sys.stdin); sys.exit(0 if r.get("skipped") else 1)' \
   && test -L /usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/plugins/modules/zarf_package_deploy \
+  && test "$(readlink -f /usr/bin/zarf_init)" = "$(readlink -f /usr/bin/zarf_package_deploy)" \
   && ZARF_ANSIBLE_MODULE=package_deploy zarf_package_deploy /dev/null \
     | python3 -c 'import json,sys; r=json.load(sys.stdin); sys.exit(0 if r.get("failed") else 1)' \
   && printf '%s' '{"package":"/tmp/pkg.tar.zst","_ansible_check_mode":true}' \
@@ -115,6 +121,18 @@ RUN ansible-galaxy collection list >/tmp/collections 2>/dev/null \
   && printf '%s' '{"package":"/tmp/pkg.tar.zst","kubeconfig":"/tmp/none"}' \
     | ZARF_ANSIBLE_MODULE=package_deploy zarf_package_deploy \
     | python3 -c 'import json,sys; r=json.load(sys.stdin); d=r.get("zarf",{}); sys.exit(0 if r.get("failed") and d.get("exitCode") else 1)' \
+  && test -L /usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/plugins/modules/zarf_kubectl \
+  && ZARF_ANSIBLE_MODULE=kubectl zarf_kubectl /dev/null \
+    | python3 -c 'import json,sys; r=json.load(sys.stdin); sys.exit(0 if r.get("failed") else 1)' \
+  && printf '%s' '{"args":["apply","-f","/tmp/none.yaml"],"_ansible_check_mode":true}' \
+    | ZARF_ANSIBLE_MODULE=kubectl zarf_kubectl \
+    | python3 -c 'import json,sys; r=json.load(sys.stdin); sys.exit(0 if r.get("skipped") else 1)' \
+  && printf '%s' '{"args":["frobnicate"]}' \
+    | ZARF_ANSIBLE_MODULE=kubectl zarf_kubectl \
+    | python3 -c 'import json,sys; r=json.load(sys.stdin); sys.exit(0 if r.get("failed") and "frobnicate" in r.get("msg","") else 1)' \
+  && printf '%s' '{"args":["version","--client","-o","json"]}' \
+    | ZARF_ANSIBLE_MODULE=kubectl zarf_kubectl \
+    | python3 -c 'import json,sys; r=json.load(sys.stdin); d=r.get("zarf",{}); sys.exit(0 if not r.get("failed") and json.loads(d.get("output",""))  else 1)' \
   && zarf completion bash |  tee /etc/bash_completion.d/zarf > /dev/null
 
 ENV HOME=/home/nonroot

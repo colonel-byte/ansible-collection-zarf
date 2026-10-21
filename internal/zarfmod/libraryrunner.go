@@ -24,6 +24,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/zarf-dev/zarf/src/cmd"
 	"github.com/zarf-dev/zarf/src/config"
 	"github.com/zarf-dev/zarf/src/pkg/logger"
@@ -94,6 +96,7 @@ func (LibraryRunner) Run(ctx context.Context, in Invocation) (Result, error) {
 	}
 
 	root := cmd.NewZarfCommand()
+	pruneRootShorthands(root)
 	root.SetArgs(in.Args)
 	root.SetOut(lines)
 	root.SetErr(lines)
@@ -141,6 +144,31 @@ func init() {
 			return
 		}
 	}
+}
+
+// pruneRootShorthands drops the single-letter form of every flag on zarf's root command.
+//
+// Cobra merges a parent's persistent flags into the command it is about to run, and the vendored
+// kubectl under `zarf tools kubectl` brings flag sets of its own: `-l` is zarf's --log-level and
+// kubectl's --selector, so merging the two panics -- `unable to redefine "l" shorthand`. Nothing
+// here renders a shorthand, so the long forms are the whole of what a module needs, and dropping
+// the letters is what makes the two sets mergeable. Duplicate long names need no handling:
+// pflag's AddFlagSet skips a name the child already has.
+//
+// Zarf's own CLI avoids this by not installing root flags at all for a vendored command, which it
+// decides by reading os.Args. Presenting the rendered command line there would work and is what an
+// earlier version of this did -- but it also makes kubectl install its plugin handler, which
+// os.Exit(1)s on an unknown subcommand and execs a plugin it does find. Either one leaves the
+// module process without writing the JSON object Ansible is waiting for, which is a worse failure
+// than the one being avoided: see docs/agent/choice-zarf-ansible-module.md.
+//
+// It is every shorthand rather than just `-l` because the next collision is the same bug: a zarf
+// release that gives a root flag a letter kubectl already uses would panic in a playbook, and
+// nothing in this repository would have seen it coming.
+func pruneRootShorthands(root *cobra.Command) {
+	root.PersistentFlags().VisitAll(func(f *pflag.Flag) {
+		f.Shorthand = ""
+	})
 }
 
 // lineWriter splits what zarf writes into lines and reports each one.

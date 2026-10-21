@@ -213,6 +213,19 @@ func (p *printingRunner) Run(_ context.Context, _ Invocation) (Result, error) {
 	return Result{}, nil
 }
 
+// TestModulesAnswersEveryAction pins the dispatch table and the module file names derived from it.
+// The names are what the build target links, what the packages install and what the action plugins
+// invoke, so a module added without its symlink is caught here rather than by a playbook.
+func TestModulesAnswersEveryAction(t *testing.T) {
+	if got, want := strings.Join(Modules(), ","), "init,kubectl,package_deploy"; got != want {
+		t.Errorf("Modules() = %q, want %q", got, want)
+	}
+	if got, want := strings.Join(ModuleFiles(), ","),
+		"zarf_init,zarf_kubectl,zarf_package_deploy"; got != want {
+		t.Errorf("ModuleFiles() = %q, want %q", got, want)
+	}
+}
+
 func TestModuleName(t *testing.T) {
 	tests := []struct {
 		name  string

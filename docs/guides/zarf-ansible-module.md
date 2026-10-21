@@ -17,18 +17,17 @@ Neither module is a Python module. Each is a compiled binary that renders the za
 
 ## Installing
 
-The release `.rpm`, `.deb`, and `.apk` install the collection to `/usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/` -- on Ansible's default collections path -- along with `/usr/bin/zarf_init` and `/usr/bin/zarf_package_deploy` and the module symlinks that point at them. Installing the package is all a management node needs, beyond a zarf of its own.
+The release `.rpm`, `.deb`, and `.apk` install the collection to `/usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/` -- on Ansible's default collections path -- along with `/usr/bin/zarfmod`, a `/usr/bin/zarf_<module>` symlink per module, and the same names under the collection's `plugins/modules/`. One binary answers as all of them: the name it is invoked under is what selects the module. Installing the package is all a management node needs, beyond a zarf of its own for the read-only modules.
 
 From a checkout, build the module files and put them on the path:
 
 ```sh
-go run ./magefiles/core test:endToEndCluster   # builds both, then runs the e2e suite
-# or just the binaries:
-go build -o build/zarf_init ./cmd/init
-go build -o build/zarf_package_deploy ./cmd/deploy
+go run ./magefiles/core test:endToEndCluster   # builds the wrapper, then runs the e2e suite
+# or just the module files:
+go run ./magefiles/core build:modules          # build/zarfmod, with a symlink per module name
 ```
 
-A management node needs `ansible-core`, the collection on Ansible's collections path, the two module files, and a `zarf` of its own. `ghcr.io/colonel-byte/zarf-ansible-modules` is all four: it installs the release `.rpm` on top of `ansible-core` and carries the `zarf` binary out of zarf's own agent image. One tag per release, and no `latest` -- a management node is meant to pin the image it runs, the way it pins everything else it carries through the airlock.
+A management node needs `ansible-core`, the collection on Ansible's collections path, the module wrapper with its names linked to it, and a `zarf` of its own for the read-only modules. `ghcr.io/colonel-byte/zarf-ansible-modules` is all four: it installs the release `.rpm` on top of `ansible-core` and carries the `zarf` binary out of zarf's own agent image. One tag per release, and no `latest` -- a management node is meant to pin the image it runs, the way it pins everything else it carries through the airlock.
 
 <!-- x-release-please-start-version -->
 

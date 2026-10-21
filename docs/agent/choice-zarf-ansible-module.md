@@ -2,7 +2,7 @@
 
 [ZEP-0072](https://github.com/zarf-dev/proposals/pull/73) proposes native Ansible module support for zarf: the `zarf` binary dispatches on `argv[0]`, so a `zarf_init` symlink to `/usr/bin/zarf` is an Ansible module, with a thin Python action plugin alongside it. That is the design `colonel_byte.cargoship` already runs, and [choice-ansible-module](https://github.com/colonel-byte/cargoship/blob/main/docs/agent/choice-ansible-module.md) is the record of why.
 
-This repository holds a proof of that proposal for the two commands that converge a cluster, `zarf init` and `zarf package deploy`: the collection in `ansible/colonel_byte/zarf/`, the module logic in `internal/zarfmod/`, and the module files built from `cmd/init/` and `cmd/deploy/`. The collection also ships read-only modules, which are built as plain action plugins rather than as wrapper binaries and are not part of this proof -- see [choice-zarf-info-modules](choice-zarf-info-modules.md). It is a proof of concept and is meant to be removed once the proposal is resolved -- see [choice-zarf-collection-removal](choice-zarf-collection-removal.md).
+This repository holds a proof of that proposal for the two commands that converge a cluster, `zarf init` and `zarf package deploy`, plus `zarf tools kubectl` as `zarf_kubectl`: the collection in `ansible/colonel_byte/zarf/`, the module logic in `internal/zarfmod/`, and one module file binary built from `cmd/zarfmod/`. The collection also ships read-only modules, which are built as plain action plugins rather than as wrapper binaries and are not part of this proof -- see [choice-zarf-info-modules](choice-zarf-info-modules.md). It is a proof of concept and is meant to be removed once the proposal is resolved -- see [choice-zarf-collection-removal](choice-zarf-collection-removal.md).
 
 Both modules link zarf in and execute its own command tree. How that came about, and what it bought, is the point of this note.
 
@@ -30,15 +30,43 @@ Both of these are the argument for the proposal rather than defects to engineer 
 
 ### What it cost
 
-`vendor/` went from 66M to 386M, and each module file is about 280M. The proof is air-gapped-first and vendored, so that tree is the dependency list rather than a cache -- see `CLAUDE.md`. Accepted deliberately: a proof that argues for code living inside zarf has to link zarf, and inside zarf the cost is zero because the binary is already there.
+`vendor/` went from 66M to 386M, and the module file binary is about 280M. The proof is air-gapped-first and vendored, so that tree is the dependency list rather than a cache -- see `CLAUDE.md`. Accepted deliberately: a proof that argues for code living inside zarf has to link zarf, and inside zarf the cost is zero because the binary is already there.
 
 Two things the linking made dead were removed rather than left to rot, and both are breaking changes to the converging modules' parameter surface.
 
-The `zarf_binary` parameter and the `ZARF_ANSIBLE_BINARY` environment variable selected which zarf to execute. Nothing executes a zarf by name any more, so a task that sets either was choosing something that could not be honoured -- worse than no parameter at all. The command a result reports now begins with the literal `zarf`, which is still what an operator would type to reproduce the run. The three read-only modules are plain action plugins that genuinely do shell out, so they keep their own `zarf_binary`; this was never a collection-wide parameter.
+The `zarf_binary` parameter and the `ZARF_ANSIBLE_BINARY` environment variable selected which zarf to execute. Nothing executes a zarf by name any more, so a task that sets either was choosing something that could not be honoured -- worse than no parameter at all. The command a result reports now begins with the literal `zarf`, which is still what an operator would type to reproduce the run. The five read-only modules are plain action plugins that genuinely do shell out, so they keep their own `zarf_binary`; this was never a collection-wide parameter.
 
 The version floor went with it. `MinZarfVersion` was `0.72.0`, the release where `zarf init` gained the positional package source, and `internal/zarfmod/version.go` read `zarf version` before every init so that an older installed zarf failed naming both versions instead of rejecting an argument it had never heard of. With zarf compiled in, that check asked the binary its own version and compared it against a constant it could not fall below: `go.mod` is the floor, and `check-go-mod.yaml` enforces it. `zarf.version` is still reported -- it is `config.CLIVersion` now, read straight off the linked-in zarf.
 
 Calling `packager.Deploy` with a `packager.DeployOptions` instead was considered and rejected. That call is the last of eight steps in `initOptions.run`, and the other seven are unexported; taking that route means reimplementing init's orchestration outside zarf, which drifts on every zarf release and argues the opposite of what this proof exists to argue.
+
+## One binary under one name per module
+
+Every module file is a symlink to the single binary built from `cmd/zarfmod`, which answers as whichever `zarf_` name it was invoked under. That is the proposal's own design -- in it, `/usr/bin/zarf_init` is a symlink to `/usr/bin/zarf` -- and here the symlinks point at a wrapper of this repository's own instead, because a proof built here cannot add the dispatch hook to zarf's `main`.
+
+It was a `main` package per module until linking zarf in made that expensive. Each binary carried its own copy of zarf's dependency tree -- 269MB apiece, 538MB for two -- to reach dispatch code that was already shared, since `internal/zarfmod` was one package the whole time. Collapsing them cost the symlinks and saved a copy per module, which is also what a third module would have cost: `zarf_kubectl` added one dispatch entry and no binary.
+
+`zarfmod.ModuleFiles()` is the list of names, derived from the dispatch table, and both the build target and `.goreleaser.yaml`'s packaging read it rather than keeping lists of their own. The binary's own name is not one of them, so running it by hand prints what it is for instead of answering as a module.
+
+## The root command's shorthands are pruned, and `os.Args` is left alone
+
+Cobra merges a parent's persistent flags into the command being run, so zarf's root flags land in the flag set of whatever `zarf tools kubectl` resolves to -- and `-l` is zarf's `--log-level` and kubectl's `--selector`. pflag panics on that: `unable to redefine "l" shorthand`. Duplicate long names are fine, because `AddFlagSet` skips a name the child already has; it is only the letters that collide. `LibraryRunner` therefore clears the shorthand on every root persistent flag before executing, which costs nothing here because the modules render long flags only. Every letter rather than `-l` alone: the next zarf release that gives a root flag a letter kubectl already uses would panic in a playbook, and nothing in this repository would have seen it coming.
+
+Zarf's own CLI avoids the collision differently -- it installs no root flags at all for a vendored command, which it decides by reading `os.Args` -- and presenting the rendered command line there was tried first. It works, and it is worse. kubectl's `NewDefaultKubectlCommandWithArgs` installs its plugin handler when `os.Args` names `tools kubectl`, and that handler calls `os.Exit(1)` for a subcommand it cannot find and `syscall.Exec`s a plugin it can. Either one leaves the module process without the JSON object Ansible is waiting for, which is a worse failure than the one being avoided, and the second one leaves it running something else entirely. Pruning the shorthands reaches the same place without presenting anything.
+
+Two consequences of not having kubectl's plugin handler are handled in the module instead. kubectl plugins are not reachable at all, which for an air-gapped management node is the answer that was wanted anyway. And the handler is what diagnoses an unknown subcommand on the real CLI, so without it `args: [frobnicate]` reached kubectl's root `Run`, printed help, and reported success -- cobra's own unknown-command check fires only at a root command, and kubectl's root has a parent here. `validateKubectlCommand` does that check: resolve as far as the tree matches, let the resolved command parse the rest, and refuse a leftover positional argument on a command that has subcommands.
+
+## `zarf_kubectl` is a passthrough, and deliberately thin
+
+`zarf tools kubectl` is vendored kubectl, and the module renders nothing into the argument vector a task gives it: `args` is kubectl's own argv, and the only other parameter is `kubeconfig`, which zarf takes from the environment rather than a flag. Projecting kubectl's flag surface into Ansible parameters would be reimplementing kubectl in YAML, and `kubernetes.core.k8s` already exists for declarative resource management.
+
+What it adds is that there is no kubectl to install: the one zarf vendors is already inside the module file, and a management node driving an air-gapped cluster would otherwise carry a second binary through the airlock to read one resource. The `prerequisites` role already reaches the cluster through `zarf tools kubectl` for the same reason.
+
+Two things about it are honest rather than convenient. It reports `changed: true` with `changedSignal: unknown`, because nothing in the module reads the argument vector: a successful run says the command worked and nothing about whether the cluster moved, and reporting `changed: false` would tell a playbook to skip the handlers after an apply that did change something. A read is what `changed_when: false` is for. And check mode skips, because nothing here can tell a `get` from an `apply`.
+
+Its failures are reported rather than exited on. kubectl reports a fatal error through `cmdutil.CheckErr`, which prints and calls `os.Exit` -- correct for a CLI, and the end of a module, since Ansible would report MODULE FAILURE in place of what went wrong. That is the ordinary failure path, not an edge: a cluster that cannot be reached goes through it. `cmdutil.BehaviorOnFatal` is kubectl's own hook for a caller that is not its `main`, and its documentation names `panic` as the thing to do instead, so `runCatchingKubectlExit` installs a handler that panics and recovers it into an error with kubectl's message and exit code.
+
+Its output comes back as `zarf.output`. kubectl writes to `os.Stdout`, which it takes when the command tree is built -- inside the runner, by which point the stdout guard has pointed `os.Stdout` at stderr -- so `runKubectl` points it at a temporary file for the length of the run. A file rather than a pipe: nothing drains a pipe while the command runs, and `get -o yaml` over a large cluster would fill one and hang.
 
 ## What the proof does keep
 
