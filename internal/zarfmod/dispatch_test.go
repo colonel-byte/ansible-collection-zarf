@@ -219,11 +219,13 @@ func (p *printingRunner) Run(_ context.Context, _ Invocation) (Result, error) {
 // invoke, so a module added without its symlink is caught here rather than by a playbook.
 func TestModulesAnswersEveryAction(t *testing.T) {
 	if got, want := strings.Join(Modules(), ","),
-		"init,kubectl,package_deploy,package_pull,package_remove"; got != want {
+		"init,kubectl,package_deploy,package_mirror_resources,package_pull,package_remove,"+
+			"update_creds"; got != want {
 		t.Errorf("Modules() = %q, want %q", got, want)
 	}
 	if got, want := strings.Join(ModuleFiles(), ","),
-		"zarf_init,zarf_kubectl,zarf_package_deploy,zarf_package_pull,zarf_package_remove"; got != want {
+		"zarf_init,zarf_kubectl,zarf_package_deploy,zarf_package_mirror_resources,"+
+			"zarf_package_pull,zarf_package_remove,zarf_update_creds"; got != want {
 		t.Errorf("ModuleFiles() = %q, want %q", got, want)
 	}
 }

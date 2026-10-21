@@ -85,8 +85,9 @@ RUN rpm --install --verbose /tmp/rpms/*.rpm \
 # These checks are the ZEP-0072 proof's contract, and each one fails the image build rather than a
 # playbook. Invoked under a zarf_ name that is not an action it answers as, a module file must
 # refuse with a non-zero status rather than emit JSON nobody asked for -- package_remove is such a
-# name, because this binary answers as init, kubectl, package_deploy, package_pull and
-# package_remove and nothing else -- package_create is deliberately not among them; given parameters
+# name, because this binary answers as init, kubectl, package_deploy, package_mirror_resources,
+# package_pull, package_remove and update_creds and nothing else -- package_create is deliberately
+# not among them; given parameters
 # it cannot read, a module must still answer with one JSON object and exit 0, because a non-zero
 # status makes Ansible report MODULE FAILURE instead of the message the module wrote; and in check
 # mode it must report the task as skipped, since zarf init has no dry run. Every module file name
@@ -132,6 +133,14 @@ RUN ansible-galaxy collection list >/tmp/collections 2>/dev/null \
   && printf '%s' '{"package":"monitoring","_ansible_check_mode":true}' \
     | ZARF_ANSIBLE_MODULE=package_remove zarf_package_remove \
     | python3 -c 'import json,sys; r=json.load(sys.stdin); sys.exit(0 if r.get("skipped") and not r.get("changed") else 1)' \
+  && test -L /usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/plugins/modules/zarf_package_mirror_resources \
+  && printf '%s' '{"package":"/tmp/pkg.tar.zst","images":true,"repos":true}' \
+    | ZARF_ANSIBLE_MODULE=package_mirror_resources zarf_package_mirror_resources \
+    | python3 -c 'import json,sys; r=json.load(sys.stdin); sys.exit(0 if r.get("failed") and "mutually exclusive" in r.get("msg","") else 1)' \
+  && test -L /usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/plugins/modules/zarf_update_creds \
+  && printf '%s' '{"service":"registry","git_push_password":"hunter2"}' \
+    | ZARF_ANSIBLE_MODULE=update_creds zarf_update_creds \
+    | python3 -c 'import json,sys; r=json.load(sys.stdin); sys.exit(0 if r.get("failed") and "git_push_password" in r.get("msg","") else 1)' \
   && test -L /usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/plugins/modules/zarf_kubectl \
   && ZARF_ANSIBLE_MODULE=kubectl zarf_kubectl /dev/null \
     | python3 -c 'import json,sys; r=json.load(sys.stdin); sys.exit(0 if r.get("failed") else 1)' \

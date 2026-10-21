@@ -2,7 +2,7 @@
 
 Initialise an air-gapped cluster with [zarf](https://zarf.dev) from an Ansible playbook. This collection is a proof of [ZEP-0072](https://github.com/zarf-dev/proposals/pull/73). It began in [colonel-byte/cargoship](https://github.com/colonel-byte/cargoship), because the pattern it proposes already runs there as `colonel_byte.cargoship`, and moved here once it had outgrown being a guest in that repository.
 
-`zarf_init` and `zarf_package_deploy` are that proof, and most of this file is about them. Three more modules are the same binary: `zarf_package_pull` stages a package on disk for the airlock, `zarf_package_remove` takes a deployed package off a cluster, and `zarf_kubectl` passes an argument vector to the kubectl zarf vendors. Five further modules read a cluster rather than converging it -- `zarf_cluster_info`, `zarf_package_documentation`, `zarf_package_info`, `zarf_package_inspect` and `zarf_state_info` -- and three of them have a role apiece: `packages`, `package_inspect` and `state`. The `prerequisites` role is the one that is not a wrapper around a single module -- it reads a package's `PackagePrerequisites` document and the cluster, and fails the play on what the cluster does not satisfy. They are plain action plugins rather than wrapper binaries, they are not part of the proof, and [choice-zarf-info-modules](../../../docs/agent/choice-zarf-info-modules.md) records why.
+`zarf_init` and `zarf_package_deploy` are that proof, and most of this file is about them. Five more modules are the same binary: `zarf_package_pull` stages a package on disk for the airlock, `zarf_package_mirror_resources` pushes its images and repositories into a registry and git server, `zarf_package_remove` takes a deployed package off a cluster, `zarf_update_creds` rotates the credentials the cluster holds, and `zarf_kubectl` passes an argument vector to the kubectl zarf vendors. Five further modules read a cluster rather than converging it -- `zarf_cluster_info`, `zarf_package_documentation`, `zarf_package_info`, `zarf_package_inspect` and `zarf_state_info` -- and three of them have a role apiece: `packages`, `package_inspect` and `state`. The `prerequisites` role is the one that is not a wrapper around a single module -- it reads a package's `PackagePrerequisites` document and the cluster, and fails the play on what the cluster does not satisfy. They are plain action plugins rather than wrapper binaries, they are not part of the proof, and [choice-zarf-info-modules](../../../docs/agent/choice-zarf-info-modules.md) records why.
 
 ## Architecture
 
@@ -10,15 +10,17 @@ Zarf is not an SSH orchestrator. It talks to one cluster through a kubeconfig, f
 
 The modules that act are one compiled wrapper binary rather than Python modules, invoked under one name per module:
 
-| Layer                                   | What it is                                                                                                                                                                                     |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `colonel_byte.zarf.zarf_init`           | The wrapper binary built from `cmd/zarfmod`, invoked as `zarf_init`. It renders the `zarf init` command line, executes zarf's own command, follows the deployment, and writes one JSON object. |
-| `colonel_byte.zarf.zarf_package_deploy` | The same binary under its `zarf_package_deploy` name, for `zarf package deploy`.                                                                                                               |
-| `colonel_byte.zarf.zarf_package_pull`   | The same binary again, for `zarf package pull`: it fetches a package to disk and names what arrived.                                                                                           |
-| `colonel_byte.zarf.zarf_package_remove` | The same binary again, for `zarf package remove`, which always renders `--confirm`.                                                                                                            |
-| `colonel_byte.zarf.zarf_kubectl`        | The same binary again, for `zarf tools kubectl` with the arguments a task gives it.                                                                                                            |
-| `plugins/action/zarf_*.py`              | The documented parameter surfaces, and the delivery and display described below. They hold no translation rules.                                                                               |
-| `plugins/plugin_utils/projection.py`    | Argument delivery, the heartbeat monitor thread, and result parsing. The whole of the Python in this collection.                                                                               |
+| Layer                                             | What it is                                                                                                                                                                                     |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `colonel_byte.zarf.zarf_init`                     | The wrapper binary built from `cmd/zarfmod`, invoked as `zarf_init`. It renders the `zarf init` command line, executes zarf's own command, follows the deployment, and writes one JSON object. |
+| `colonel_byte.zarf.zarf_package_deploy`           | The same binary under its `zarf_package_deploy` name, for `zarf package deploy`.                                                                                                               |
+| `colonel_byte.zarf.zarf_package_pull`             | The same binary again, for `zarf package pull`: it fetches a package to disk and names what arrived.                                                                                           |
+| `colonel_byte.zarf.zarf_package_mirror_resources` | The same binary again, for `zarf package mirror-resources`: it follows the components the way a deploy does.                                                                                   |
+| `colonel_byte.zarf.zarf_package_remove`           | The same binary again, for `zarf package remove`, which always renders `--confirm`.                                                                                                            |
+| `colonel_byte.zarf.zarf_update_creds`             | The same binary again, for `zarf tools update-creds <service>`, one service per task.                                                                                                          |
+| `colonel_byte.zarf.zarf_kubectl`                  | The same binary again, for `zarf tools kubectl` with the arguments a task gives it.                                                                                                            |
+| `plugins/action/zarf_*.py`                        | The documented parameter surfaces, and the delivery and display described below. They hold no translation rules.                                                                               |
+| `plugins/plugin_utils/projection.py`              | Argument delivery, the heartbeat monitor thread, and result parsing. The whole of the Python in this collection.                                                                               |
 
 ZEP-0072 proposes putting the module dispatch inside the `zarf` binary itself, which a proof in this repository cannot do. The wrapper is the one deliberate divergence, and it is one binary rather than one per module for the reason the proposal gives: the name it is invoked under is what selects the module. Everything else -- `argv[0]` dispatch, the WANT_JSON intake, the stdout guard, the single JSON result, the heartbeat side channel -- is the shape the proposal describes.
 
@@ -29,7 +31,8 @@ Build the wrapper, put it on the path of the node the play runs on, and link eac
 ```sh
 go build -o zarfmod ./cmd/zarfmod
 sudo install -m 0755 zarfmod /usr/local/bin/
-for module in zarf_init zarf_package_deploy zarf_package_pull zarf_package_remove zarf_kubectl; do
+for module in zarf_init zarf_package_deploy zarf_package_pull zarf_package_remove \
+              zarf_package_mirror_resources zarf_update_creds zarf_kubectl; do
   sudo ln -sf zarfmod "/usr/local/bin/$module"
 done
 ```

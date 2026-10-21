@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -102,6 +103,27 @@ func wrapperModuleCases() []wrapperModuleCase {
 			module: "zarf_package_deploy",
 			params: &deployParams{},
 			argv:   buildDeployArgs(fullDeployParams()),
+		},
+		{
+			module: "zarf_package_mirror_resources",
+			params: &mirrorParams{},
+			// Two renders joined, because images and repos are mutually exclusive and no single
+			// command line can carry both. What this case checks is the flags the module can
+			// render, which is the union of the two.
+			argv: append(buildMirrorArgs(fullMirrorParams()),
+				buildMirrorArgs(fullMirrorParamsMirroringRepos())...),
+		},
+		{
+			module: "zarf_update_creds",
+			params: &updateCredsParams{},
+			// Three renders joined. Zarf has one subcommand per service and each takes only that
+			// service's credentials, so no single command line carries them all; what this case
+			// checks is the flags the module can render.
+			argv: slices.Concat(
+				buildUpdateCredsArgs(fullUpdateCredsParams()),
+				buildUpdateCredsArgs(fullUpdateCredsParamsFor("git")),
+				buildUpdateCredsArgs(fullUpdateCredsParamsFor("agent")),
+			),
 		},
 		{
 			module: "zarf_package_pull",
@@ -373,5 +395,78 @@ func fullRemoveParams() *removeParams {
 		InsecureSkipTLSVerify: &yes,
 		LogLevel:              "debug",
 		LogFormat:             "json",
+	}
+}
+
+// fullMirrorParams populates every zarf_package_mirror_resources parameter but one: images and
+// repos are mutually exclusive, so the widest renderable vector carries only one of them.
+func fullMirrorParams() *mirrorParams {
+	yes := true
+	number := 1
+	return &mirrorParams{
+		Package:                 "/srv/staging/zarf-package-monitoring-amd64.tar.zst",
+		Kubeconfig:              "/etc/rancher/rke2/rke2.yaml",
+		ZarfConfig:              "/etc/zarf/zarf-config.yaml",
+		StatusFile:              "/run/zarf/status.json",
+		Images:                  &yes,
+		Components:              "monitoring-images",
+		RegistryURL:             "registry.bubbles.test",
+		RegistryPushUsername:    "zarf-push",
+		RegistryPushPassword:    "push",
+		GitURL:                  "https://git.bubbles.test",
+		GitPushUsername:         "zarf-push",
+		GitPushPassword:         "push",
+		Shasum:                  "0000000000000000000000000000000000000000000000000000000000000000",
+		NoImgChecksum:           &yes,
+		PublicKey:               "/etc/zarf/cosign.pub",
+		Verify:                  "always",
+		SkipSignatureValidation: &yes,
+		Retries:                 &number,
+		OCIConcurrency:          &number,
+		LogLevel:                "debug",
+		LogFormat:               "json",
+	}
+}
+
+// fullMirrorParamsMirroringRepos is the same set with the other half of that exclusive pair.
+func fullMirrorParamsMirroringRepos() *mirrorParams {
+	yes := true
+	p := fullMirrorParams()
+	p.Images = nil
+	p.Repos = &yes
+	return p
+}
+
+// fullUpdateCredsParamsFor is the same set rendered for another service. The parameters are the
+// whole surface either way; which of them render is the subcommand's business.
+func fullUpdateCredsParamsFor(service string) *updateCredsParams {
+	p := fullUpdateCredsParams()
+	p.Service = service
+	return p
+}
+
+// fullUpdateCredsParams does the same for zarf_update_creds, as the registry subcommand.
+func fullUpdateCredsParams() *updateCredsParams {
+	yes := true
+	return &updateCredsParams{
+		Service:              "registry",
+		Kubeconfig:           "/etc/rancher/rke2/rke2.yaml",
+		ZarfConfig:           "/etc/zarf/zarf-config.yaml",
+		RegistryURL:          "registry.bubbles.test",
+		RegistryPushUsername: "zarf-push",
+		RegistryPushPassword: "push",
+		RegistryPullUsername: "zarf-pull",
+		RegistryPullPassword: "pull",
+		GitURL:               "https://git.bubbles.test",
+		GitPushUsername:      "zarf-push",
+		GitPushPassword:      "push",
+		GitPullUsername:      "zarf-pull",
+		GitPullPassword:      "pull",
+		AgentTLSCA:           "/etc/zarf/ca.pem",
+		AgentTLSCert:         "/etc/zarf/tls.pem",
+		AgentTLSKey:          "/etc/zarf/tls.key",
+		ForceConflicts:       &yes,
+		LogLevel:             "debug",
+		LogFormat:            "json",
 	}
 }
