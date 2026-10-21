@@ -1,0 +1,262 @@
+---
+# The five acting modules the walks do not already cover, against a cluster a walk has initialised:
+# zarf_kubectl, zarf_package_pull, zarf_package_mirror_resources, zarf_update_creds and
+# zarf_package_remove.
+#
+# They run after a walk rather than on a cluster of their own, for the same reason info-modules.yml
+# does: a mirror needs the registry `zarf init` stood up, a credential rotation needs the state it
+# wrote, and a removal needs something deployed to remove. A cluster nothing had touched would
+# exercise the failure paths only, and test/e2e/noncluster/testdata/acting-modules.yml already
+# covers those with no cluster at all.
+#
+# The order in this file is load-bearing: the removal takes a package the read-only modules expect
+# to find, so it comes after everything that needs the storage provider and nothing in the suite
+# runs after this play on this cluster.
+#
+# Assertions live in this file wherever they are about what a module returned. The Go side counts
+# the tasks that reported passing, reads the recorded results, and asks the cluster what actually
+# changed. Every assert task says ASSERTED on success.
+- name: Act on an initialised cluster with the zarf modules the walks do not cover
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    # ---------------------------------------------------------------- zarf_kubectl
+    - name: Read the cluster's nodes through the kubectl inside the module
+      colonel_byte.zarf.zarf_kubectl:
+        args:
+          - get
+          - nodes
+          - -o
+          - json
+        kubeconfig: "{{ zarf_kubeconfig }}"
+        wrapper_binary: "{{ zarf_wrapper_dir }}/zarf_kubectl"
+      delegate_to: localhost
+      run_once: true
+      changed_when: false
+      register: kubectl_nodes
+
+    - name: Record what kubectl answered about the nodes
+      ansible.builtin.copy:
+        content: "{{ kubectl_nodes | to_json }}"
+        dest: "{{ zarf_result_dir }}/acting-kubectl-nodes.json"
+        mode: "0600"
+
+    - name: zarf_kubectl reads a real cluster and returns kubectl's own output
+      ansible.builtin.assert:
+        that:
+          - not kubectl_nodes.failed | default(false)
+          - (kubectl_nodes.zarf.output | from_json)['kind'] == "List"
+          - (kubectl_nodes.zarf.output | from_json)['items'] | length > 0
+          - (kubectl_nodes.zarf.output | from_json)['items'][0]['metadata']['name'] | length > 0
+        success_msg: ASSERTED zarf_kubectl reads a real cluster
+        fail_msg: "zarf_kubectl returned {{ kubectl_nodes.zarf | default(kubectl_nodes) }}"
+
+    # The selector is the regression this task exists for: -l is zarf's --log-level and kubectl's
+    # --selector, and the two collided until the module stopped propagating zarf's shorthands.
+    # kubernetes.io/metadata.name is set by the API server on every namespace, so it always matches.
+    - name: Read a namespace through a label selector, which is what -l means to kubectl
+      colonel_byte.zarf.zarf_kubectl:
+        args:
+          - get
+          - namespaces
+          - -l
+          - kubernetes.io/metadata.name=zarf
+          - -o
+          - json
+        kubeconfig: "{{ zarf_kubeconfig }}"
+        wrapper_binary: "{{ zarf_wrapper_dir }}/zarf_kubectl"
+      delegate_to: localhost
+      run_once: true
+      changed_when: false
+      register: kubectl_selector
+
+    - name: zarf_kubectl passes -l through to kubectl as a selector
+      ansible.builtin.assert:
+        that:
+          - not kubectl_selector.failed | default(false)
+          - (kubectl_selector.zarf.output | from_json)['items'] | length == 1
+          - (kubectl_selector.zarf.output | from_json)['items'][0]['metadata']['name'] == "zarf"
+        success_msg: ASSERTED zarf_kubectl passes a label selector through
+        fail_msg: "the selector returned {{ kubectl_selector.zarf | default(kubectl_selector) }}"
+
+    # ---------------------------------------------------------------- zarf_package_pull
+    - name: Make the staging directory the pull writes into
+      ansible.builtin.file:
+        path: "{{ zarf_result_dir }}/pulled"
+        state: directory
+        mode: "0700"
+
+    - name: Fetch the storage provider package from its registry
+      colonel_byte.zarf.zarf_package_pull:
+        package: "{{ zarf_storage_package_ref }}"
+        output_directory: "{{ zarf_result_dir }}/pulled"
+        wrapper_binary: "{{ zarf_wrapper_dir }}/zarf_package_pull"
+      delegate_to: localhost
+      run_once: true
+      register: pulled
+
+    - name: Record what the pull fetched
+      ansible.builtin.copy:
+        content: "{{ pulled | to_json }}"
+        dest: "{{ zarf_result_dir }}/acting-pull.json"
+        mode: "0600"
+
+    - name: zarf_package_pull reports the package file it fetched
+      ansible.builtin.assert:
+        that:
+          - pulled.changed
+          - pulled.zarf.changedSignal == "complete"
+          - pulled.zarf.packagesPulled | length == 1
+          - pulled.zarf.packagesPulled[0] is match('.*\.tar\.zst$')
+        success_msg: ASSERTED zarf_package_pull names the package that arrived
+        fail_msg: "zarf_package_pull returned {{ pulled.zarf | default(pulled) }}"
+
+    - name: Fetch the same package into the same directory again
+      colonel_byte.zarf.zarf_package_pull:
+        package: "{{ zarf_storage_package_ref }}"
+        output_directory: "{{ zarf_result_dir }}/pulled"
+        wrapper_binary: "{{ zarf_wrapper_dir }}/zarf_package_pull"
+      delegate_to: localhost
+      run_once: true
+      register: pulled_again
+
+    - name: zarf_package_pull reports no change when the package was already there
+      ansible.builtin.assert:
+        that:
+          - not pulled_again.changed
+          - pulled_again.zarf.packagesPulled | default([]) | length == 0
+        success_msg: ASSERTED zarf_package_pull is idempotent over its output directory
+        fail_msg: "the second pull returned {{ pulled_again.zarf | default(pulled_again) }}"
+
+    # ---------------------------------------------------- zarf_package_mirror_resources
+    - name: Push the storage provider's images into the cluster's own registry
+      colonel_byte.zarf.zarf_package_mirror_resources:
+        package: "{{ zarf_storage_package }}"
+        images: true
+        kubeconfig: "{{ zarf_kubeconfig }}"
+        public_key: "{{ zarf_public_key }}"
+        verify: always
+        retries: 3
+        wrapper_binary: "{{ zarf_wrapper_dir }}/zarf_package_mirror_resources"
+      delegate_to: localhost
+      run_once: true
+      register: mirrored
+
+    - name: Record what the mirror pushed
+      ansible.builtin.copy:
+        content: "{{ mirrored | to_json }}"
+        dest: "{{ zarf_result_dir }}/acting-mirror.json"
+        mode: "0600"
+
+    # No component list and an unknown signal, which is what a mirror can honestly report: zarf
+    # announces the images it pushes rather than the component they came from. This suite is where
+    # that was found -- the module wired the progress reader to it first.
+    - name: zarf_package_mirror_resources pushes into a real registry and says what it cannot know
+      ansible.builtin.assert:
+        that:
+          - mirrored.changed
+          - mirrored.zarf.changedSignal == "unknown"
+          - mirrored.zarf.exitCode | default(0) == 0
+          - mirrored.zarf.componentsRan | default([]) | length == 0
+        success_msg: ASSERTED zarf_package_mirror_resources pushes into a real registry
+        fail_msg: "zarf_package_mirror_resources returned {{ mirrored.zarf | default(mirrored) }}"
+
+    # ---------------------------------------------------------------- zarf_package_remove
+    #
+    # After everything that needs the storage provider deployed, because it takes it away.
+    - name: Remove the storage provider the walk deployed
+      colonel_byte.zarf.zarf_package_remove:
+        package: csi-local-path-provider
+        kubeconfig: "{{ zarf_kubeconfig }}"
+        wrapper_binary: "{{ zarf_wrapper_dir }}/zarf_package_remove"
+      delegate_to: localhost
+      run_once: true
+      register: removed
+
+    - name: Record what the removal reported
+      ansible.builtin.copy:
+        content: "{{ removed | to_json }}"
+        dest: "{{ zarf_result_dir }}/acting-remove.json"
+        mode: "0600"
+
+    - name: zarf_package_remove reports the removal it cannot measure
+      ansible.builtin.assert:
+        that:
+          - removed.changed
+          - removed.zarf.changedSignal == "unknown"
+          - "'csi-local-path-provider' in removed.msg"
+        success_msg: ASSERTED zarf_package_remove takes a deployed package off the cluster
+        fail_msg: "zarf_package_remove returned {{ removed.zarf | default(removed) }}"
+
+    - name: Ask the cluster which packages are left
+      colonel_byte.zarf.zarf_package_info:
+        kubeconfig: "{{ zarf_kubeconfig }}"
+        zarf_binary: "{{ zarf_binary }}"
+      delegate_to: localhost
+      run_once: true
+      register: remaining
+
+    - name: Record what is left deployed
+      ansible.builtin.copy:
+        content: "{{ remaining | to_json }}"
+        dest: "{{ zarf_result_dir }}/acting-remaining.json"
+        mode: "0600"
+
+    # Zarf's own record is the evidence, not the provisioner Deployment or the StorageClass: one of
+    # the two clusters this suite builds has k3s local-storage enabled, so both of those exist
+    # there whether or not the package is deployed.
+    - name: The removed package is no longer deployed, and the init package still is
+      ansible.builtin.assert:
+        that:
+          - "'csi-local-path-provider' not in (remaining.packages | map(attribute='package') | list)"
+          - "'init-slim' in (remaining.packages | map(attribute='package') | list)"
+        success_msg: ASSERTED the removed package is gone from the cluster and nothing else is
+        fail_msg: "the cluster still lists {{ remaining.packages | map(attribute='package') | list }}"
+
+    # ---------------------------------------------------------------- zarf_update_creds
+    #
+    # Check mode rather than a real rotation, and that is zarf against the cluster this suite
+    # builds rather than a gap in the module. Neither subcommand can complete here:
+    #
+    #   - git fails with `failed to update git user "zarf-git-read-user": unexpected status code
+    #     404`, because the rotation updates the gitea users zarf-state names and the read-only
+    #     user it names is never created by the uds-bundle's slim init. Its rollback fails after
+    #     it, leaving the message `the cluster may be in an inconsistent state`.
+    #   - registry fails with `error finding init package with registry service`, because the
+    #     walk's second init records only the components that step deployed, so the deployed
+    #     package zarf looks up for the registry is not the one that owns it.
+    #
+    # So what is covered against a real cluster is that the module reaches it and refuses to act:
+    # the rendering of all three subcommands is held against zarf's own commands by
+    # TestUpdateCredsArgsAreKnownFlags, and the refusals by
+    # test/e2e/noncluster/testdata/acting-modules.yml.
+    - name: Ask for a credential rotation in check mode
+      colonel_byte.zarf.zarf_update_creds:
+        service: registry
+        registry_pull_password: FIXTURE-not-a-real-password
+        kubeconfig: "{{ zarf_kubeconfig }}"
+        wrapper_binary: "{{ zarf_wrapper_dir }}/zarf_update_creds"
+      delegate_to: localhost
+      run_once: true
+      check_mode: true
+      register: rotated
+      no_log: true
+
+    - name: Record what the rotation reported
+      ansible.builtin.copy:
+        content: "{{ rotated | to_json }}"
+        dest: "{{ zarf_result_dir }}/acting-update-creds.json"
+        mode: "0600"
+      no_log: true
+
+    - name: zarf_update_creds reaches the cluster and rotates nothing in check mode
+      ansible.builtin.assert:
+        that:
+          - rotated.skipped | default(false)
+          - not (rotated.changed | default(true))
+          - rotated.zarf.module == "update_creds"
+          - rotated.zarf.changedSignal == "unknown"
+        success_msg: ASSERTED zarf_update_creds refuses to act in check mode against a real cluster
+        fail_msg: "zarf_update_creds check mode did not report a skip"

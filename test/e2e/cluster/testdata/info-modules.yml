@@ -21,10 +21,11 @@
   gather_facts: false
 
   vars:
-    # The walk deployed both. The init package is tracked on the cluster under the name "init"
-    # rather than under its own metadata name.
+    # The walk deployed both. The init package is tracked on the cluster under its own metadata
+    # name, which for the uds-bundle's slim init is init-slim rather than the init that the
+    # zarf-dev package would record.
     expected_packages:
-      - init
+      - init-slim
       - csi-local-path-provider
 
     # The credentials zarf v0.85.0 writes into the zarf-state Secret, by the path each sits at.

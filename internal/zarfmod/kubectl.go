@@ -218,9 +218,6 @@ func captureStdout() (func() string, error) {
 		defer os.Remove(f.Name()) //nolint:errcheck // a temporary file in TMPDIR
 		defer f.Close()           //nolint:errcheck // read below is what had to succeed
 
-		if _, err := f.Seek(0, 0); err != nil {
-			return ""
-		}
 		b, err := os.ReadFile(f.Name())
 		if err != nil {
 			return ""

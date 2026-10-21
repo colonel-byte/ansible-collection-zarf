@@ -10,20 +10,20 @@ The dependency tree is vendored, so every target builds from `vendor/` and needs
 
 ## `Build`
 
-| Target          | What it does                                                                                                                 |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `build:modules` | Compiles both Ansible module files -- `zarf_init` from `cmd/init`, `zarf_package_deploy` from `cmd/deploy` -- into `build/`. |
+| Target          | What it does                                                                                                                                                |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `build:modules` | Compiles the Ansible module wrapper from `cmd/zarfmod` into `build/zarfmod`, and links a `zarf_<module>` name to it for every module in the dispatch table. |
 
-They are built for the host rather than for a release target list, because what drives them is the end-to-end suite and an operator reproducing a module run. The release builds come from `.goreleaser.yaml`. No version is stamped in: a module file reports what zarf did, and has no version of its own to report.
+One binary under several names is what ZEP-0072 describes, and the names come from `zarfmod.ModuleFiles()` rather than a list in the target, so a module added to the dispatch table gets its symlink with nothing to keep in step. It is built for the host rather than for a release target list, because what drives it is the end-to-end suites and an operator reproducing a module run. The release builds come from `.goreleaser.yaml`. No version is stamped in: a module file reports what zarf did, and has no version of its own to report.
 
 ## `Test`
 
-| Target                    | What it needs                                                            |
-| ------------------------- | ------------------------------------------------------------------------ |
-| `test:unit`               | Nothing. Runs every package except the suites under `test/`.             |
-| `test:endToEndNonCluster` | `ansible-playbook`.                                                      |
-| `test:endToEndCluster`    | `k3d`, `zarf`, `ansible-playbook`, Docker, and the network on first run. |
-| `test:cleanClusters`      | `k3d`. Removes clusters an interrupted run left behind.                  |
+| Target                    | What it needs                                                                            |
+| ------------------------- | ---------------------------------------------------------------------------------------- |
+| `test:unit`               | Nothing. Runs every package except the suites under `test/`.                             |
+| `test:endToEndNonCluster` | `ansible-playbook`, and a `zarf` for the cases that build a package. Builds the wrapper. |
+| `test:endToEndCluster`    | `k3d`, `zarf`, `ansible-playbook`, Docker, and the network on first run.                 |
+| `test:cleanClusters`      | `k3d`. Removes clusters an interrupted run left behind.                                  |
 
 See [e2e-tests](e2e-tests.md) for what each suite covers.
 

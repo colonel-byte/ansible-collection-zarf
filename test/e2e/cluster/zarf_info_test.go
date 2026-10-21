@@ -29,9 +29,9 @@ import (
 const assertedPrefix = "ASSERTED "
 
 // deployedPackages are the packages a completed walk leaves on the cluster. The init package is
-// tracked under "init" rather than under its own metadata name.
+// tracked under its own metadata name, which for the uds-bundle's slim init is init-slim.
 var deployedPackages = []string{ //nolint:gochecknoglobals
-	"init",
+	"init-slim",
 	"csi-local-path-provider",
 }
 

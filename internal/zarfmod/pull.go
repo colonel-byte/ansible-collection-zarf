@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/zarf-dev/zarf/src/config"
 )
@@ -186,10 +187,10 @@ func packagesInDirectory(dir string) map[string]bool {
 }
 
 // isPackageFile reports whether a filename is a zarf package tarball, which is the only thing a
-// pull writes.
+// pull writes. Both suffixes, because a package of uncompressed components is written as a plain
+// .tar.
 func isPackageFile(name string) bool {
-	return len(name) > len(".tar.zst") &&
-		(name[len(name)-len(".tar.zst"):] == ".tar.zst" || name[len(name)-len(".tar"):] == ".tar")
+	return strings.HasSuffix(name, ".tar.zst") || strings.HasSuffix(name, ".tar")
 }
 
 // newPackages names what the second listing holds and the first did not, sorted.

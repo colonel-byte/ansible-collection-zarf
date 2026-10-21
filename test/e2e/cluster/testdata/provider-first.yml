@@ -20,13 +20,32 @@
 # length: zarf writes a gitServer block on the first init whatever components were asked for, and
 # its guard then refuses a later init that supplies git input disagreeing with it. Setting them on
 # the first init is what makes the second one legal.
+#
+# The git credentials are not pinned here, and that is zarf v0.88 rather than a preference. A first
+# init records the git server's credentials only when the git-server component is in the set it was
+# asked for -- see cluster.go, `opts.InternalServices.Has(state.GitKey)` -- and the seed phase is
+# not that step. Given on a later init they are therefore a change to state that holds nothing,
+# which zarf refuses: `cannot change git server information after initial init`. Letting zarf
+# generate them is what lets this play be re-run: the re-init branch fills defaults only for a
+# service no earlier init configured, so the second run of the same step agrees with the state the
+# first one wrote. test/e2e/cluster/testdata/acting-modules.yml rotates them afterwards with
+# zarf_update_creds, which is the command zarf's own error names.
 - name: Deploy the storage provider before initialising
   hosts: localhost
   connection: local
   gather_facts: false
   vars:
-    zarf_init_seed_components: zarf-injector,zarf-seed-registry
-    zarf_init_rest_components: zarf-registry,zarf-agent,git-server
+    # git-server is in the seed set rather than only in the rest set, and that is zarf v0.88
+    # rather than the bundle's shape. Two of its behaviours meet badly: a first init records the
+    # git server's credentials only when the git-server component is in the set it was asked for
+    # (cluster.go, `opts.InternalServices.Has(state.GitKey)`), and `zarf init` carries
+    # --git-push-username=zarf-git-user as a flag default whether or not anybody asked for it --
+    # a viper default another command sets, which root.go's own comment warns about leaking. So a
+    # second init onto a cluster whose state holds no git server is read as changing the git
+    # server, and refused: `cannot change git server information after initial init`. Deploying
+    # git-server in the first step is what makes the state it compares against exist.
+    zarf_init_seed_components: zarf-injector,zarf-seed-registry,git-server
+    zarf_init_rest_components: zarf-registry,zarf-agent
     zarf_storage_components: local-path-images,local-path-chart
   tasks:
     - name: Deploy the storage provider onto the uninitialised cluster
@@ -58,10 +77,6 @@
         init_package: "{{ zarf_init_package }}"
         kubeconfig: "{{ zarf_kubeconfig }}"
         registry_mode: proxy
-        git_push_username: "{{ zarf_git_push_username }}"
-        git_push_password: "{{ zarf_git_push_password }}"
-        git_pull_username: "{{ zarf_git_pull_username }}"
-        git_pull_password: "{{ zarf_git_pull_password }}"
         timeout: "{{ zarf_timeout | default('15m') }}"
       delegate_to: localhost
       run_once: true
@@ -103,10 +118,6 @@
         kubeconfig: "{{ zarf_kubeconfig }}"
         registry_mode: proxy
         take_ownership: true
-        git_push_username: "{{ zarf_git_push_username }}"
-        git_push_password: "{{ zarf_git_push_password }}"
-        git_pull_username: "{{ zarf_git_pull_username }}"
-        git_pull_password: "{{ zarf_git_pull_password }}"
         timeout: "{{ zarf_timeout | default('15m') }}"
       delegate_to: localhost
       run_once: true

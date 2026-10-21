@@ -59,13 +59,19 @@ func RunE2ECluster() error {
 	return RunE2ENoBuild("90m", modulePath+"/test/e2e/cluster/...")
 }
 
-// RunE2ENonCluster runs the suite that needs no cluster: the read-only modules and the state
-// redaction, driven through a real ansible-playbook against a stub zarf.
+// RunE2ENonCluster runs the suite that needs no cluster: the read-only modules against a stub
+// zarf, the state redaction, and the acting modules' refusals and check-mode answers.
 //
-// It builds no module files. Every module it exercises is an action plugin with no wrapper
-// binary behind it -- see docs/agent/choice-zarf-info-modules.md -- so there is nothing to
-// compile, and the suite skips itself when ansible-playbook is missing rather than failing.
+// It builds the module wrapper, which it did not have to while every module it exercised was an
+// action plugin with no binary behind it -- see docs/agent/choice-zarf-info-modules.md. The
+// acting modules are that binary, and the paths covered here need no cluster: a refusal happens
+// before zarf is reached, check mode runs nothing, and `kubectl version --client` answers from
+// inside the binary. The test skips with a reason when the wrapper is missing, so `go test` over
+// the package still works without this target.
 func RunE2ENonCluster() error {
+	if err := build.ZarfModuleFiles(); err != nil {
+		return err
+	}
 	return RunE2ENoBuild("20m", modulePath+"/test/e2e/noncluster/...")
 }
 
