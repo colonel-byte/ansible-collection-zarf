@@ -11,7 +11,7 @@ This is where the collection and the Go code are held against each other. The fo
 | `TestEveryActionPluginIsCovered`                           | A new action plugin that no test looks at, or a test list naming a plugin that no longer exists         |
 | `TestInitArgsAreKnownFlags`, `TestDeployArgsAreKnownFlags` | A flag the module renders that the recorded zarf does not accept                                        |
 
-The last pair checks against a recorded flag list rather than against zarf's own command tree, so it cannot catch a zarf release that renamed a flag. Refresh the lists with `generate:zarfFlags` when the zarf the modules run moves.
+The last pair parses what each module renders against zarf's own command tree, which is linked in, so pflag decides whether a flag exists and a zarf release that renamed one fails the job. There is nothing to refresh by hand; the zarf they check against is the `github.com/zarf-dev/zarf` version in `go.mod`.
 
 The suites under `./test/...` need Ansible, k3d and Docker, so they are excluded here and run in [`e2e.yaml`](e2e.yaml.md) and [`e2e-cluster.yaml`](e2e-cluster.yaml.md) instead. See `Test.Unit` in `magefiles/test.go` for the package selection.
 

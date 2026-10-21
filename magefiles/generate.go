@@ -24,7 +24,6 @@ import (
 	"github.com/colonel-byte/ansible-collection-zarf/magefiles/pkg/devtools/dnfpins"
 	"github.com/colonel-byte/ansible-collection-zarf/magefiles/pkg/gen/docs"
 	"github.com/colonel-byte/ansible-collection-zarf/magefiles/pkg/gen/schema"
-	"github.com/colonel-byte/ansible-collection-zarf/magefiles/pkg/gen/zarfflags"
 	"github.com/magefile/mage/mg"
 )
 
@@ -43,12 +42,6 @@ func (Generate) Document() error {
 // after changing a type or a doc comment there; the schema's descriptions are those comments.
 func (Generate) Schema() error {
 	return schema.Generate()
-}
-
-// ZarfFlags records the flag surface of the zarf commands the modules wrap, read from the
-// installed zarf. Set ZARF_ANSIBLE_FLAGS_BINARY to name one that is not on PATH.
-func (Generate) ZarfFlags() error {
-	return zarfflags.Generate()
 }
 
 // DnfPins queries the AlmaLinux 10 repodata over HTTP and rewrites the pinned versions of the

@@ -29,7 +29,7 @@ module: zarf_package_deploy
 short_description: Deploy a zarf package onto an initialised cluster
 description:
   - "Runs C(zarf package deploy) against the cluster a kubeconfig names, and follows the deployment component by component."
-  - "The module is a small wrapper binary, not zarf. It renders the command line from these parameters, runs the installed zarf, reads the component boundaries back out of zarf's log stream, and reports one JSON result."
+  - "The module is a compiled binary with zarf linked into it. It renders the C(zarf package deploy) command line from these parameters, executes zarf's own command in its own process, reads the component boundaries back out of zarf's log stream, and reports one JSON result. It needs no C(zarf) on the node."
   - "It is the companion of M(colonel_byte.zarf.zarf_init). A cluster whose init package has no StorageClass to claim cannot finish initialising until a storage provider is deployed, and the provider cannot be deployed until the cluster is initialised far enough to hold it, so a playbook alternates between the two."
 version_added: "0.0.1"
 author:
@@ -67,13 +67,6 @@ options:
       - "A zarf config file, passed as C(ZARF_CONFIG). It is how a playbook keeps credentials out of the argument vector."
     type: str
     required: false
-    cli_flag: None
-  zarf_binary:
-    description:
-      - "The zarf to run. Resolved on the path of the node the task runs on when unset."
-    type: str
-    required: false
-    default: zarf
     cli_flag: None
   wrapper_binary:
     description:

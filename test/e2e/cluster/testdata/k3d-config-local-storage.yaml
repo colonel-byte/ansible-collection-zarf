@@ -30,6 +30,18 @@ options:
   k3d:
     disableImageVolume: false
   k3s:
+    nodeLabels:
+      # The one place these fixtures diverge from the upstream config, and it is the init package
+      # that requires it rather than the test. The uds-bundle's slim init pins its registry with a
+      # required nodeAffinity on adrp.xyz/is-infra=true, which is a convention of the real
+      # infrastructure that bundle deploys onto; the upstream k3d config does not set it, because
+      # k3d is not that infrastructure. Without the label the registry pod is simply
+      # unschedulable -- "0/2 nodes are available: 2 node(s) didn't match Pod's node
+      # affinity/selector" -- and the seed phase waits until the Helm install times out.
+      - label: adrp.xyz/is-infra=true
+        nodeFilters:
+          - server:*
+          - agent:*
     extraArgs:
       - arg: "--disable=traefik"
         nodeFilters:

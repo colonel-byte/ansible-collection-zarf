@@ -4,7 +4,7 @@
 
 Extract and parse the documentation a Zarf package carries.
 
-Write it as `colonel_byte.zarf.zarf_package_documentation`. It runs the installed zarf on the node the task is delegated to; nothing is installed on the cluster's nodes.
+Write it as `colonel_byte.zarf.zarf_package_documentation`. It runs zarf on the node the task is delegated to; nothing is installed on the cluster's nodes.
 
 Added in `colonel_byte.zarf` 0.33.0.
 

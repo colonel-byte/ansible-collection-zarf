@@ -79,9 +79,23 @@ const (
 	// clean removes.
 	packageCache = "build/tmp/zarf-e2e"
 
-	// storagePackage is the uds-bundle's local-path storage provider. The tag is pinned here
-	// rather than taken from the bundle at run time: a suite that resolved it would be testing
-	// whatever was published this morning.
+	// The two packages come from the init-local-path uds-bundle, which is the baseline this suite
+	// walks:
+	// https://github.com/colonel-byte/uds-bundles/blob/main/upstream/init-local-path/uds-bundle.yaml
+	//
+	// Both tags are pinned here rather than resolved from the bundle at run time, because a suite
+	// that read the bundle would be testing whatever was published this morning. They are also not
+	// quite the bundle's own strings: the bundle asks for init-slim:v0.88.0-upstream and
+	// csi-local-path-provider:v0.0.37-upstream, and neither tag exists -- the init publishes
+	// v0.88.0 with no suffix, and the provider dropped its leading v at 0.0.37 (v0.0.36-upstream
+	// still has one). These are the tags that resolve.
+	//
+	// initPackageRef is the slim init, whose five components are all optional. That is what lets
+	// the walks deploy the seed phase and the rest of init as separate steps, which is the whole
+	// shape of the bundle; the standard zarf init package has no optional components to pick.
+	initPackageRef  = "oci://ghcr.io/colonel-byte/zarf/init-slim:v0.88.0"
+	initPackageFile = "zarf-init-%s-v0.88.0.tar.zst"
+	// storagePackage is the uds-bundle's local-path storage provider.
 	storagePackage = "oci://ghcr.io/colonel-byte/zarf/csi-local-path-provider:0.0.37-upstream"
 	// storagePackageFile is what `zarf package pull` writes that reference to.
 	storagePackageFile = "zarf-package-csi-local-path-provider-%s-0.0.37-upstream.tar.zst"
@@ -107,7 +121,6 @@ type environment struct {
 	root           string
 	arch           string
 	zarf           string
-	zarfVersion    string
 	ansible        string
 	initWrapper    string
 	deployWrapper  string
@@ -175,12 +188,6 @@ func prepare(env *environment) string {
 	}
 	env.zarf = zarfPath
 
-	version, err := zarfReleaseVersion(zarfPath)
-	if err != nil {
-		return fmt.Sprintf("unable to read the zarf version: %v", err)
-	}
-	env.zarfVersion = version
-
 	for _, wrapper := range []struct {
 		path string
 		into *string
@@ -219,36 +226,31 @@ func prepare(env *environment) string {
 	return ""
 }
 
-// zarfReleaseVersion is the version of the zarf on PATH, as the tag of the matching init package.
-func zarfReleaseVersion(zarfPath string) (string, error) {
-	out, err := exec.Command(zarfPath, "version").Output()
-	if err != nil {
-		return "", err
-	}
-	version := strings.TrimSpace(string(out))
-	if version == "" {
-		return "", fmt.Errorf("`zarf version` printed nothing")
-	}
-	// The init package is tagged with a leading v whether or not `zarf version` prints one.
-	return "v" + strings.TrimPrefix(version, "v"), nil
-}
-
 // resolvePackages finds or pulls the two packages the walks deploy.
 //
-// The init package has to match the zarf that deploys it -- zarf looks for an init package named
-// after its own version in the working directory -- so its tag is the installed zarf's version
-// rather than a pin in this file, which would go stale the first time anybody upgraded zarf. The
-// storage provider is pinned, because it is the uds-bundle's package and nothing about it follows
-// the zarf release.
+// Both tags are pinned to the uds-bundle's, rather than derived from the zarf on PATH as the init
+// package's once was. That derivation stopped meaning anything when the modules linked zarf in:
+// the zarf that deploys the init package is the one compiled into the module, so the installed
+// zarf's version says nothing about which package belongs here. The installed zarf is still what
+// pulls them, which is why it remains a prerequisite.
 func resolvePackages(env *environment) string {
 	dir := filepath.Join(env.root, packageCache)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Sprintf("unable to create %s: %v", dir, err)
 	}
 
-	initName := fmt.Sprintf("zarf-init-%s-%s.tar.zst", env.arch, env.zarfVersion)
-	initRef := "oci://ghcr.io/zarf-dev/packages/init:" + env.zarfVersion
-	pkg, reason := havePackage(env, dir, initName, initRef, envInitPackage)
+	// The slim init goes in a subdirectory of its own, which is not tidiness. `zarf package pull`
+	// names its output after the package's kind and version, and for any ZarfInitConfig of this
+	// version that is zarf-init-<arch>-v0.88.0.tar.zst -- the same name the standard zarf-dev
+	// init package pulls to. A cache that had ever held the standard one would serve it here, and
+	// the walk would quietly test the wrong package: the standard init's components are all
+	// required, so every step would deploy all of them and the bundle's split would mean nothing.
+	initDir := filepath.Join(dir, "init-slim")
+	if err := os.MkdirAll(initDir, 0o755); err != nil {
+		return fmt.Sprintf("unable to create %s: %v", initDir, err)
+	}
+	initName := fmt.Sprintf(initPackageFile, env.arch)
+	pkg, reason := havePackage(env, initDir, initName, initPackageRef, envInitPackage)
 	if reason != "" {
 		return reason
 	}
@@ -433,6 +435,14 @@ func (c *cluster) walk(t *testing.T, playbook string) (string, string) {
 		"-e", "zarf_kubeconfig="+c.kubeconfig,
 		"-e", "zarf_result_dir="+results,
 		"-e", "zarf_timeout=15m",
+		// Pinned so that an init can be run twice. With no git credentials given zarf generates
+		// them, and a second init then disagrees with the state the first one wrote -- which is
+		// zarf's `cannot change git server information` guard, not a fault in the module. These
+		// are test credentials for a git server that never leaves the k3d cluster.
+		"-e", "zarf_git_push_username=zarf-git-user",
+		"-e", "zarf_git_push_password=bubbles-push-0",
+		"-e", "zarf_git_pull_username=zarf-git-read-user",
+		"-e", "zarf_git_pull_password=bubbles-pull-0",
 		// The read-only modules run the installed zarf rather than a wrapper binary, so they are
 		// given its path rather than resolving it on the PATH of a test process.
 		"-e", "zarf_binary="+suite.zarf,

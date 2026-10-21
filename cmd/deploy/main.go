@@ -16,8 +16,8 @@
 //
 // It is the second entry point the colonel_byte.zarf collection invokes, and it is the same shape
 // as cmd/init: take over standard output, read the module's JSON parameters, render the zarf
-// command line, run the installed zarf, follow the deployment, and write one JSON object.
-// Everything it does is in internal/zarfmod.
+// command line, execute zarf's own package deploy command in this process, follow the deployment,
+// and write one JSON object. Everything it does is in internal/zarfmod.
 //
 // Deploy exists beside init because neither is enough on its own. A cluster whose init package
 // disables k3s local-storage has no StorageClass for zarf's registry to claim, so the registry
@@ -69,5 +69,5 @@ func main() {
 		os.Exit(2)
 	}
 
-	os.Exit(zarfmod.Run(ctx, name, os.Args, zarfmod.ExecRunner{}))
+	os.Exit(zarfmod.Run(ctx, name, os.Args, zarfmod.LibraryRunner{}))
 }

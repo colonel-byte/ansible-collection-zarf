@@ -16,12 +16,15 @@
 //
 // It is the entry point the colonel_byte.zarf collection invokes. It is deliberately this small:
 // it takes over standard output, reads the module's JSON parameters, renders the zarf command line,
-// runs the installed zarf, follows the init package's deployment, and writes one JSON object.
-// Everything it does is in internal/zarfmod.
+// executes zarf's own init command in this process, follows the init package's deployment, and
+// writes one JSON object. Everything it does is in internal/zarfmod.
 //
-// This file is a wrapper rather than part of zarf because ZEP-0072's design -- dispatch inside the
-// zarf binary itself -- is not something this repository can build. See
-// docs/agent/choice-zarf-ansible-module.md for what that costs and what it does not.
+// Zarf is linked in rather than run as a child, so this binary enters the same init that an
+// operator's command line enters. That is what makes it a proof of ZEP-0072 rather than a
+// demonstration that zarf can be driven from outside: what the proposal asks for is this with the
+// dispatch hook in zarf's own main, and zarf's main is already shaped to take one. The sibling
+// zarf_package_deploy still runs a child, so the two designs sit side by side in one tree. See
+// docs/agent/choice-zarf-ansible-module.md.
 package main
 
 import (
@@ -35,10 +38,10 @@ import (
 )
 
 func main() {
-	// Cancel on the first signal and leave on the second. A cancelled context kills the zarf
-	// child, which is the behaviour ZEP-0072 leans toward for a controller that gives up mid-run:
-	// an initialisation still mutating a cluster nobody is watching is worse than a partial one a
-	// later run reconciles.
+	// Cancel on the first signal and leave on the second. The cancelled context is the one zarf
+	// executes with, which is the behaviour ZEP-0072 leans toward for a controller that gives up
+	// mid-run: an initialisation still mutating a cluster nobody is watching is worse than a
+	// partial one a later run reconciles. This is the same wiring zarf's own main has.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	signalCh := make(chan os.Signal, 1)
@@ -66,5 +69,5 @@ func main() {
 		os.Exit(2)
 	}
 
-	os.Exit(zarfmod.Run(ctx, name, os.Args, zarfmod.ExecRunner{}))
+	os.Exit(zarfmod.Run(ctx, name, os.Args, zarfmod.LibraryRunner{}))
 }

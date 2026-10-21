@@ -20,10 +20,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/zarf-dev/zarf/src/config"
 )
 
-// The flags of zarf package deploy the module renders, beyond the ones it shares with init. They
-// are held against testdata/zarf-package-deploy-flags.txt by TestDeployArgsAreKnownFlags, for the
+// The flags of zarf package deploy the module renders, beyond the ones it shares with init.
+// TestDeployArgsAreKnownFlags parses them against zarf's own package deploy command, for the
 // reason given on the init flag block.
 const (
 	flagConnected = "connected"
@@ -77,13 +79,10 @@ func runPackageDeploy(ctx context.Context, run Runner, args *Args, resp *Respons
 		return err
 	}
 
-	// Read before the deploy, and reported whether it could be read or not. Unlike init there is
-	// no floor to enforce -- `zarf package deploy` has taken its positional source for as long as
-	// it has existed -- but Detail.Version exists so that a run which failed has the version of
-	// the zarf that failed it attached to the result, and that is worth as much to a failed deploy
-	// as to a failed init. A version that cannot be read is not an error here either; see
-	// requireZarfVersion.
-	resp.Zarf.Version, _ = zarfVersion(ctx, run, p.binary()) //nolint:errcheck // reported, not refused
+	// The zarf that does the work is the one linked into this binary, so the version is a
+	// constant rather than something to go and ask for. Detail.Version is still reported, because
+	// a run which failed is worth having the version of the zarf that failed it attached to.
+	resp.Zarf.Version = config.CLIVersion
 
 	hb := NewHeartbeat(p.StatusFile)
 	defer hb.Clear()
@@ -92,11 +91,10 @@ func runPackageDeploy(ctx context.Context, run Runner, args *Args, resp *Respons
 	prog := newProgress(hb, componentCount(p.Components))
 	argv := buildDeployArgs(&p)
 
-	resp.Zarf.Command = append([]string{p.binary()}, redact(argv)...)
+	resp.Zarf.Command = append([]string{commandName}, redact(argv)...)
 	resp.Zarf.Directory = dir
 
 	res, runErr := run.Run(ctx, Invocation{
-		Binary: p.binary(),
 		Args:   argv,
 		Dir:    dir,
 		Env:    p.childEnv(hb),

@@ -31,9 +31,9 @@ import (
 // the part a fuzzer can reach.
 func FuzzReadArgs(f *testing.F) {
 	for _, seed := range []string{
-		`{"zarf_binary":"zarf","init_package":"/srv/zarf-init.tar.zst","_ansible_check_mode":true}`,
+		`{"storage_class":"local-path","init_package":"/srv/zarf-init.tar.zst","_ansible_check_mode":true}`,
 		`{"registry_port":5000,"_ansible_verbosity":3,"_ansible_future_key":{"a":1}}`,
-		`{"zarf_binaryy":"zarf"}`,
+		`{"storage_clazz":"local-path"}`,
 		`{"":null}`,
 		`{"Binary":"zarf"}`,
 		`{}`,

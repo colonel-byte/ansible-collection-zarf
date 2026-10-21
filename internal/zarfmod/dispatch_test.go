@@ -208,13 +208,8 @@ type printingRunner struct {
 	line string
 }
 
-func (p *printingRunner) Run(_ context.Context, in Invocation) (Result, error) {
+func (p *printingRunner) Run(_ context.Context, _ Invocation) (Result, error) {
 	os.Stdout.WriteString(p.line + "\n") //nolint:errcheck,gosec // the write is the point
-	if len(in.Args) > 0 && in.Args[0] == "version" {
-		if in.OnLine != nil {
-			in.OnLine("v" + MinZarfVersion)
-		}
-	}
 	return Result{}, nil
 }
 

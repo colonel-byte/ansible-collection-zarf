@@ -12,7 +12,7 @@ Any one of these is enough:
 
 - **ZEP-0072 is accepted and implemented in zarf.** Then the real thing exists, dispatch lives inside the `zarf` binary, and keeping wrappers that shell out to zarf means maintaining a worse copy of a shipped feature.
 - **ZEP-0072 is rejected, or lands somewhere else.** The maintainers' own feedback on the pull request raised an isolated experimental repository and a plugin architecture as alternatives. If either is where this goes, the proof belongs in that repository rather than this one.
-- **It stops being maintained here.** The flag surfaces are recorded lists rather than reads of zarf's command tree (see [choice-zarf-ansible-module](choice-zarf-ansible-module.md)), and the e2e suite pulls packages from two registries. The first time a zarf release breaks it and nobody is willing to refresh it, delete it rather than skip it.
+- **It stops being maintained here.** The modules pin a zarf version in `go.mod` that someone has to bump and re-vendor (see [choice-zarf-ansible-module](choice-zarf-ansible-module.md)), and the e2e suite pulls packages from two registries. The first time a zarf release breaks it and nobody is willing to refresh it, delete it rather than skip it.
 
 Nothing about cargoship's own roadmap forces the removal, and nothing breaks while it stays. It is dead weight rather than a hazard: a release artifact administrators carry through an airlock and never install, and a test suite with prerequisites most contributors do not have.
 

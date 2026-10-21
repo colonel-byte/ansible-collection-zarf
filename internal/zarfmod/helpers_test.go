@@ -30,10 +30,6 @@ type fakeRunner struct {
 	lines    []string
 	exitCode int
 	err      error
-	// version is what `zarf version` prints. The init module reads it before it runs, so a
-	// runner that answered the real lines to both calls would have the version check parsing
-	// log output. Empty means a zarf recent enough to not be the subject of the test.
-	version string
 
 	got Invocation
 	ran []Invocation
@@ -42,17 +38,6 @@ type fakeRunner struct {
 func (f *fakeRunner) Run(_ context.Context, in Invocation) (Result, error) {
 	f.got = in
 	f.ran = append(f.ran, in)
-
-	if len(in.Args) > 0 && in.Args[0] == "version" {
-		version := f.version
-		if version == "" {
-			version = "v" + MinZarfVersion
-		}
-		if in.OnLine != nil {
-			in.OnLine(version)
-		}
-		return Result{}, nil
-	}
 
 	for _, line := range f.lines {
 		if in.OnLine != nil {

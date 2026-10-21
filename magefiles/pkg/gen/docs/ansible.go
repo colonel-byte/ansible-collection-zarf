@@ -88,7 +88,7 @@ var ansibleCollections = []ansibleCollection{
 		docsDir:      ansibleDocsDir,
 		fqcn:         "colonel_byte.zarf",
 		modulePrefix: "zarf_",
-		tagline:      "It runs the installed zarf on the node the task is delegated to; nothing is installed on the cluster's nodes.",
+		tagline:      "It runs zarf on the node the task is delegated to; nothing is installed on the cluster's nodes.",
 		roles:        true,
 		summaryLabel: "zarf",
 	},

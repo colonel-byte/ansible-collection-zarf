@@ -15,19 +15,19 @@
 package zarfmod
 
 import (
-	"bufio"
 	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/zarf-dev/zarf/src/cmd"
+	"github.com/zarf-dev/zarf/src/config"
 )
 
 // Tests for the zarf_init module: the command line it renders, the flags that command line is
-// held against, what it refuses, and what it reports having done.
-
-// flagList is the recorded zarf init flag surface. See testdata/zarf-init-flags.txt.
-const flagList = "testdata/zarf-init-flags.txt"
+// held against -- zarf's own init command, linked in -- what it refuses, and what it reports
+// having done.
 
 func TestBuildInitArgs(t *testing.T) {
 	ownership := true
@@ -168,12 +168,15 @@ func TestBuildInitArgs(t *testing.T) {
 	}
 }
 
-// TestInitArgsAreKnownFlags holds every flag the module can render against the recorded zarf init
-// flag surface. A flag the module renders and zarf does not accept fails the run with a usage
-// error, which reads as the module being broken rather than as a parameter being wrong.
+// TestInitArgsAreKnownFlags parses every flag the module can render against zarf's own init
+// command, so pflag is the thing that decides whether a flag exists.
+//
+// This used to hold the rendered flags against testdata/zarf-init-flags.txt, a recording that
+// could catch a flag zarf never had but not a flag zarf renamed. Now that zarf's command tree is
+// linked in, the real one answers: an unknown flag, a value a flag will not take, and a flag that
+// moved between the root and the subcommand are all parse errors here. That is the check the
+// wrapper could not have, and it is most of why linking zarf in is worth the dependency.
 func TestInitArgsAreKnownFlags(t *testing.T) {
-	known := readKnownFlags(t, flagList)
-
 	// Every parameter set, so that every flag the module can render is in one vector.
 	yes := true
 	number := 1
@@ -221,39 +224,30 @@ func TestInitArgsAreKnownFlags(t *testing.T) {
 		},
 	}
 
-	for _, arg := range buildInitArgs(&widest, "/srv/staging/zarf-init-amd64-v0.86.0.tar.zst") {
-		name, ok := strings.CutPrefix(arg, "--")
-		if !ok {
-			continue
-		}
-		name, _, _ = strings.Cut(name, "=")
-		if !known[name] {
-			t.Errorf("the module renders --%s, which %s does not list", name, flagList)
-		}
-	}
-}
+	const source = "/srv/staging/zarf-init-amd64-v0.88.0.tar.zst"
+	argv := buildInitArgs(&widest, source)
 
-func readKnownFlags(t *testing.T, path string) map[string]bool {
-	t.Helper()
-	f, err := os.Open(path) //nolint:gosec // the path is a fixture in this package
+	// Find resolves the subcommand the way an invocation would, so a flag the module puts on init
+	// that zarf keeps on the root is still parsed through the inherited set rather than missed.
+	initCmd, flags, err := cmd.NewZarfCommand().Find(argv)
 	if err != nil {
-		t.Fatalf("unable to read the recorded zarf flag list: %v", err)
+		t.Fatalf("zarf has no command for %q: %v", argv, err)
 	}
-	defer f.Close() //nolint:errcheck // read-only
+	if initCmd.Name() != "init" {
+		t.Fatalf("the module renders %q, which zarf resolves to %q", argv, initCmd.CommandPath())
+	}
 
-	known := map[string]bool{}
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		known[line] = true
+	if err := initCmd.ParseFlags(flags); err != nil {
+		t.Fatalf("the module renders something zarf init does not accept: %v", err)
 	}
-	if err := scanner.Err(); err != nil {
-		t.Fatalf("unable to read the recorded zarf flag list: %v", err)
+
+	// Find hands back the positional PACKAGE_SOURCE alongside the flags, so prove it survived as
+	// one argument rather than being eaten as some flag's value. A flag with a no-argument default
+	// written in the space form does exactly that, which is the mistake --verify=always exists to
+	// avoid, and it shows up here as a second positional rather than as a parse error.
+	if got := initCmd.Flags().Args(); len(got) != 1 || got[0] != source {
+		t.Errorf("zarf reads the positional arguments as %q, want exactly [%s]", got, source)
 	}
-	return known
 }
 
 func TestRedact(t *testing.T) {
@@ -293,8 +287,8 @@ func TestRunInitCheckModeSkips(t *testing.T) {
 	if resp.Changed {
 		t.Error("a check-mode run reported changed")
 	}
-	if run.got.Binary != "" {
-		t.Errorf("a check-mode run executed %q", run.got.Binary)
+	if run.got.Args != nil {
+		t.Errorf("a check-mode run executed %q", run.got.Args)
 	}
 	if resp.Zarf.ChangedSignal != SignalUnknown {
 		t.Errorf("the changed signal was %q, want %q", resp.Zarf.ChangedSignal, SignalUnknown)
@@ -310,7 +304,6 @@ func TestRunInitReportsTheRun(t *testing.T) {
 
 	args := argsFor(t, map[string]any{
 		"init_package":           pkg,
-		"zarf_binary":            "/usr/bin/zarf",
 		"kubeconfig":             "/etc/rancher/rke2/rke2.yaml",
 		"registry_push_password": "hunter2",
 		"status_file":            filepath.Join(dir, "status.json"),
@@ -334,11 +327,13 @@ func TestRunInitReportsTheRun(t *testing.T) {
 	if len(run.got.Args) < 2 || run.got.Args[0] != "init" || run.got.Args[1] != pkg {
 		t.Errorf("zarf was run as %v, want the init package as the positional source %q", run.got.Args, pkg)
 	}
-	if resp.Zarf.Version != "v"+MinZarfVersion {
-		t.Errorf("the reported zarf version was %q", resp.Zarf.Version)
+	if resp.Zarf.Version != config.CLIVersion {
+		t.Errorf("the reported zarf version was %q, want the linked-in %q",
+			resp.Zarf.Version, config.CLIVersion)
 	}
-	if run.got.Binary != "/usr/bin/zarf" {
-		t.Errorf("zarf was run as %q", run.got.Binary)
+	if len(resp.Zarf.Command) == 0 || resp.Zarf.Command[0] != commandName {
+		t.Errorf("the reported command was %v, want it to begin with %q",
+			resp.Zarf.Command, commandName)
 	}
 	if !containsEnv(run.got.Env, "KUBECONFIG=/etc/rancher/rke2/rke2.yaml") {
 		t.Errorf("the child environment was %v, want it to carry KUBECONFIG", run.got.Env)

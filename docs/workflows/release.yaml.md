@@ -2,7 +2,7 @@
 
 Builds and publishes a release. Triggered by pushing a tag, which is what [`release-please.yaml`](release-please.yaml.md) does when the release pull request merges.
 
-GoReleaser builds the wrapper binaries and the archives per [`.goreleaser.yaml`](https://github.com/colonel-byte/ansible-collection-zarf/blob/main/.goreleaser.yaml). Its `before` hook shells out to `ansible-galaxy` to build the collection tarball, which is why the job installs `ansible-core` with `pipx` -- without it the release fails at its first step.
+GoReleaser builds the module binaries and the archives per [`.goreleaser.yaml`](https://github.com/colonel-byte/ansible-collection-zarf/blob/main/.goreleaser.yaml). Its `before` hook shells out to `ansible-galaxy` to build the collection tarball, which is why the job installs `ansible-core` with `pipx` -- without it the release fails at its first step.
 
 The job asks for four writes, each for one reason:
 

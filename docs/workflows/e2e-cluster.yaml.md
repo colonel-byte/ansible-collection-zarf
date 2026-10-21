@@ -1,6 +1,6 @@
 # E2E cluster
 
-Runs [`test/e2e/cluster`](../dev/e2e-tests.md) -- the suite that walks both wrapper binaries across two real k3d clusters.
+Runs [`test/e2e/cluster`](../dev/e2e-tests.md) -- the suite that walks both module binaries across two real k3d clusters.
 
 It is **not** a check on every push. It stands up two clusters, pulls three zarf packages, and runs a real `zarf init` against each, which makes it the slowest and least hermetic thing in this repository; the first run on a cold cache pays for the package pulls. Everything it covers that can be covered without a cluster already is, by the unit tests and by [`e2e.yaml`](e2e.yaml.md).
 

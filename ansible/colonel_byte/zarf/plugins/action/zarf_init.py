@@ -32,7 +32,7 @@ module: zarf_init
 short_description: Initialise a cluster with a staged zarf init package
 description:
   - "Runs C(zarf init) against the cluster a kubeconfig names, and follows the init package's deployment component by component."
-  - "The module is a small wrapper binary, not zarf. It renders the C(zarf init) command line from these parameters, runs the installed zarf, reads the component boundaries back out of zarf's log stream, and reports one JSON result."
+  - "The module is a compiled binary with zarf linked into it. It renders the C(zarf init) command line from these parameters, executes zarf's own init command in its own process, reads the component boundaries back out of zarf's log stream, and reports one JSON result. It needs no C(zarf) on the node."
   - "This is a proof of ZEP-0072 (U(https://github.com/zarf-dev/proposals/pull/73)), which proposes putting this dispatch inside the zarf binary itself."
 version_added: "0.0.1"
 author:
@@ -43,7 +43,7 @@ notes:
   - "Check mode reports the task as skipped. C(zarf init) has no dry run, so there is nothing honest to report instead."
   - "A parameter left unset renders no flag, so whatever zarf's own config file sets still applies. That is why C(plain_http: false) and omitting C(plain_http) differ."
   - "Credentials given as parameters are rendered as flags, which puts them in the process table for the life of the run. Put them in a zarf config file and name it with C(zarf_config) to keep them out of it."
-  - "Needs zarf v0.72.0 or newer, which is where C(zarf init) gained the positional package source this module passes C(init_package) as. The wrapper reads C(zarf version) before it runs and fails naming both versions when the zarf it found is older."
+  - "The zarf that does the work is linked into the module, so there is no version to check and nothing to install. It is reported as C(zarf.version) in the result."
 options:
   init_package:
     description:
@@ -74,13 +74,6 @@ options:
       - "It is how a playbook keeps registry and git credentials out of the argument vector: zarf reads them from the file, so they never reach the process table."
     type: str
     required: false
-    cli_flag: None
-  zarf_binary:
-    description:
-      - "The zarf to run. Resolved on the path of the node the task runs on when unset."
-    type: str
-    required: false
-    default: zarf
     cli_flag: None
   wrapper_binary:
     description:

@@ -33,7 +33,7 @@ Then make the collection visible to Ansible, by copying or symlinking this direc
 
 ## Using it
 
-`init_package` is the package zarf deploys, passed as the positional package source `zarf init` accepts: a path to a staged tarball under any name, a directory for zarf to search, or an `oci://` reference. That needs zarf v0.72.0 or newer, and the wrapper reads `zarf version` before it runs so an older one fails naming both versions rather than rejecting an argument it has never heard of.
+`init_package` is the package zarf deploys, passed as the positional package source `zarf init` accepts: a path to a staged tarball under any name, a directory for zarf to search, or an `oci://` reference. The zarf that reads it is linked into the module, so there is no installed version to be too old.
 
 ```yaml
 - name: Initialise the cluster
@@ -98,5 +98,4 @@ The role reference pages are generated the same way, from each role's `meta/argu
 - Check mode reports the task as skipped. Neither `zarf init` nor `zarf package deploy` has a dry run. The read-only modules answer in check mode instead, because reading a cluster changes nothing.
 - The collection is a proof of concept, and what happens to it is tied to ZEP-0072's outcome. See [choice-zarf-collection-removal](../../../docs/agent/choice-zarf-collection-removal.md).
 - Component progress is read back out of zarf's log stream, so it depends on zarf's log messages rather than on an API. A renamed log message costs the progress display and nothing else.
-- The flags the wrappers render are held against recorded lists in `internal/zarfmod/testdata/zarf-init-flags.txt` and `zarf-package-deploy-flags.txt`, not against zarf's own command tree. Refresh them when the zarf they run moves.
 - The monitor reads one status file every 500ms, so a component that finishes and is replaced inside that window shows its `[running]` line and not its `[done]` line. Real init components take minutes; a fake zarf that finishes one per second does not.

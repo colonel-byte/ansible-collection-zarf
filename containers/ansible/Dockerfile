@@ -14,9 +14,15 @@
 
 # syntax=docker/dockerfile:1
 
-# The zarf binary the colonel_byte.zarf module files drive. They render a zarf command line and run
-# the installed zarf; without one in the image, every task in that collection fails on a binary it
-# cannot find.
+# The zarf binary the collection's read-only modules drive. zarf_init and zarf_package_deploy have
+# zarf linked into them and need none, but zarf_package_info, zarf_package_inspect and
+# zarf_state_info are plain action plugins that shell out to the installed zarf -- see
+# docs/agent/choice-zarf-info-modules.md -- so without one in the image every task using those
+# three fails on a binary it cannot find. `zarf completion bash` below also comes from it.
+#
+# Keep this tag in step with the github.com/zarf-dev/zarf version in go.mod. Nothing enforces it,
+# and a mismatch means the read-only modules report on a different zarf release than the
+# converging two execute.
 #
 # It comes from the agent image rather than from a release archive because that image is already a
 # signed, multi-architecture artifact carrying the whole CLI at /zarf -- zarf's own agent runs
