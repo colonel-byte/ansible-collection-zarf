@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-aaf88b7e.js";
+            window.path_to_searchindex_js = "../searchindex-14806675.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-1e97d9c5.js"></script>
+        <script src="../toc-afc694a1.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -184,7 +184,7 @@
                     <main>
                         <h1 id="test-build-containers"><a class="header" href="#test-build-containers">Test build containers</a></h1>
 <p>Builds the management node image on a pull request that touches it, and on the merge queue. Paths-filtered to <code>containers/**</code>, <code>.goreleaser.yaml</code>, the collection, <code>cmd/**</code>, <code>internal/zarfmod/**</code>, and the workflow itself.</p>
-<p>This is a test rather than a packaging check. The smoke-check <code>RUN</code> block in <a href="https://github.com/colonel-byte/ansible-collection-zarf/blob/main/containers/ansible/Dockerfile"><code>containers/ansible/Dockerfile</code></a> is the only place in the tree where the collection, the two module files, a <code>zarf</code> and an <code>ansible-core</code> exist at once, so it is the only place the argv dispatch contract is checked end to end: a module file invoked under a <code>zarf_</code> name it does not answer as must exit non-zero, one given parameters it cannot read must still write one JSON object and exit 0, check mode must report the task as skipped, and a deploy against a bad kubeconfig must come back with <code>failed</code> and a <code>zarf.exitCode</code>. Each of those fails the image build.</p>
+<p>This is a test rather than a packaging check. The smoke-check <code>RUN</code> block in <a href="https://github.com/colonel-byte/ansible-collection-zarf/blob/main/containers/ansible/Dockerfile"><code>containers/ansible/Dockerfile</code></a> is the only place in the tree where the collection, the installed module files, a <code>zarf</code> and an <code>ansible-core</code> exist at once, so it is the only place the argv dispatch contract is checked end to end: every module file name must be a link to the same binary, a module file invoked under a <code>zarf_</code> name it does not answer as must exit non-zero, one given parameters it cannot read must still write one JSON object and exit 0, check mode must report the task as skipped, a deploy against a bad kubeconfig must come back with <code>failed</code> and a <code>zarf.exitCode</code>, and <code>zarf_kubectl</code> must return the vendored kubectl’s output in <code>zarf.output</code>. Each of those fails the image build.</p>
 <p>The Dockerfile cannot be built with a plain <code>docker build</code>: it <code>COPY</code>s the nfpm-produced <code>*.rpm</code> out of a <code>${TARGETPLATFORM}</code> directory that only GoReleaser stages. So the job runs <code>goreleaser release --snapshot --clean --skip=sign,sbom</code>. <code>--snapshot</code> skips publish, validate and announce – nfpm still builds the rpm and the <code>dockers_v2</code> pipe still runs <code>buildx build</code> – which is why the job needs no registry login and no <code>packages: write</code>. <code>--skip=sign,sbom</code> avoids failing on the cosign key the workflow has no reason to hold.</p>
 <p>QEMU and Buildx are installed because the pipe builds <code>linux/amd64</code> and <code>linux/arm64</code> in one pass, and <code>ansible-core</code> because GoReleaser’s <code>before</code> hook shells out to <code>ansible-galaxy</code> for the collection tarball.</p>
 <p><a href="scan-lint.yaml.html"><code>scan-lint.yaml</code></a> runs hadolint over the same Dockerfile. That checks syntax and never builds, so a base image bump that breaks the build is caught here and nowhere else.</p>

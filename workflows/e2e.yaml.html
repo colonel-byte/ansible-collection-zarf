@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-aaf88b7e.js";
+            window.path_to_searchindex_js = "../searchindex-14806675.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-1e97d9c5.js"></script>
+        <script src="../toc-afc694a1.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -183,9 +183,10 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="e2e"><a class="header" href="#e2e">E2E</a></h1>
-<p>Runs <a href="../dev/e2e-tests.html"><code>test/e2e/noncluster</code></a> – the three read-only modules and the state redaction, driven through a real <code>ansible-playbook</code>, mostly against a stub zarf. It needs no cluster, but it does need a real zarf: one case builds a real package to inspect. Runs on every pull request and on the merge queue.</p>
+<p>Runs <a href="../dev/e2e-tests.html"><code>test/e2e/noncluster</code></a> – the five read-only modules, the state redaction, and every acting module’s refusals and check-mode answers, driven through a real <code>ansible-playbook</code>, mostly against a stub zarf. It needs no cluster, but it does need a real zarf: one case builds a real package to inspect. Runs on every pull request and on the merge queue.</p>
+<p>The target builds the module wrapper, which the acting modules are. That is a large binary – zarf is linked into it – so this job pays a compile the read-only cases do not need; the alternative was leaving seven modules with no coverage outside the suite that needs k3d.</p>
 <p>The triggers carry <strong>no path filter</strong>, deliberately. This is a required status check, and a filtered required check never reports at all on a change that only touches the ignored paths, which leaves the check pending forever.</p>
-<p>Installing <code>ansible-core</code> and <code>zarf</code> are steps rather than optional conveniences. Every module in this collection is an action plugin, so only Ansible can run one; without <code>ansible-playbook</code> on <code>PATH</code> the whole suite skips itself with a reason and the job still passes, and without <code>zarf</code> the cases that build a real package skip the same way. That is exactly the failure mode worth preventing here – see the note in <a href="../dev/e2e-tests.html"><code>e2e-tests.md</code></a> about a suite that silently stopped running looking just like a suite that passed.</p>
+<p>Installing <code>ansible-core</code> and <code>zarf</code> are steps rather than optional conveniences. Every module in this collection reaches zarf through an action plugin, so only Ansible can run one; without <code>ansible-playbook</code> on <code>PATH</code> the whole suite skips itself with a reason and the job still passes, and without <code>zarf</code> the cases that build a real package skip the same way. That is exactly the failure mode worth preventing here – see the note in <a href="../dev/e2e-tests.html"><code>e2e-tests.md</code></a> about a suite that silently stopped running looking just like a suite that passed.</p>
 <p>The suite that needs k3d, a real zarf and Docker is not run here; see <a href="e2e-cluster.yaml.html"><code>e2e-cluster.yaml</code></a>.</p>
 <p><code>github.ref</code> is distinct per <code>merge_group</code> ref, so the concurrency group never lets a queued entry be cancelled by a push to the pull request it came from.</p>
 

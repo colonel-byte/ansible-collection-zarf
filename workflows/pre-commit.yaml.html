@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-aaf88b7e.js";
+            window.path_to_searchindex_js = "../searchindex-14806675.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-1e97d9c5.js"></script>
+        <script src="../toc-afc694a1.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -184,7 +184,8 @@
                     <main>
                         <h1 id="validate-pre-commit-hooks"><a class="header" href="#validate-pre-commit-hooks">Validate pre-commit hooks</a></h1>
 <p>Runs the hooks from <a href="https://github.com/colonel-byte/ansible-collection-zarf/blob/main/.pre-commit-config.yaml"><code>.pre-commit-config.yaml</code></a> over the whole tree, so licensing, formatting and sorting can never drift from the local pre-commit setup. Runs on every pull request and on the merge queue.</p>
-<p>It uses <a href="https://github.com/j178/prek"><code>prek</code></a> rather than <code>pre-commit</code>: same config, same hooks, faster. That matches the local instruction to prefer <code>prek run --all-files</code>.</p>
+<p>It uses <a href="https://github.com/j178/prek"><code>prek</code></a> rather than <code>pre-commit</code>: same config, same hooks, faster. That matches the local instruction to prefer <code>prek</code>.</p>
+<p>It passes <code>--config .pre-commit-config.yaml</code>, and that flag is load-bearing rather than explicit-for-its-own-sake. prek discovers nested <code>.pre-commit-config.yaml</code> files and runs each as a separate project, and two vendored dependencies ship one of their own. Without the flag this job runs <em>their</em> hooks over <em>their</em> code and fails on their toolchain – a <code>shellcheck</code> that is not installed, a <code>golangci-lint</code> built against a different Go – rather than on anything in this repository. Naming the config turns discovery off. The local command carries the same flag for the same reason.</p>
 <p>Two hooks are skipped:</p>
 <div class="table-wrapper">
 <table>
@@ -197,7 +198,7 @@
 </tbody>
 </table>
 </div>
-<p>Every hook that walks files excludes <code>vendor/</code>. That is not tidiness: <code>addlicense</code> would stamp a header onto other people’s code and the whitespace fixers would rewrite it, in both cases making the tree differ from what <code>go mod vendor</code> produces – which <a href="check-go-mod.yaml.html"><code>check-go-mod.yaml</code></a> then fails on. If a hook starts touching <code>vendor/</code>, the fix is an exclude.</p>
+<p>Every hook that walks files excludes <code>vendor/</code>. That is not tidiness: <code>addlicense</code> would stamp a header onto other people’s code and the whitespace fixers would rewrite it, in both cases making the tree differ from what <code>go mod vendor</code> produces – which <a href="check-go-mod.yaml.html"><code>check-go-mod.yaml</code></a> then fails on. If a hook starts touching <code>vendor/</code>, the fix is an exclude. An exclude does not cover the nested-config case above, though, because it filters the files a hook walks rather than which configs prek finds.</p>
 
                     </main>
 

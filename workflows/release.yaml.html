@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-aaf88b7e.js";
+            window.path_to_searchindex_js = "../searchindex-14806675.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-1e97d9c5.js"></script>
+        <script src="../toc-afc694a1.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -184,7 +184,7 @@
                     <main>
                         <h1 id="goreleaser"><a class="header" href="#goreleaser">goreleaser</a></h1>
 <p>Builds and publishes a release. Triggered by pushing a tag, which is what <a href="release-please.yaml.html"><code>release-please.yaml</code></a> does when the release pull request merges.</p>
-<p>GoReleaser builds the wrapper binaries and the archives per <a href="https://github.com/colonel-byte/ansible-collection-zarf/blob/main/.goreleaser.yaml"><code>.goreleaser.yaml</code></a>. Its <code>before</code> hook shells out to <code>ansible-galaxy</code> to build the collection tarball, which is why the job installs <code>ansible-core</code> with <code>pipx</code> – without it the release fails at its first step.</p>
+<p>GoReleaser builds the module binaries and the archives per <a href="https://github.com/colonel-byte/ansible-collection-zarf/blob/main/.goreleaser.yaml"><code>.goreleaser.yaml</code></a>. Its <code>before</code> hook shells out to <code>ansible-galaxy</code> to build the collection tarball, which is why the job installs <code>ansible-core</code> with <code>pipx</code> – without it the release fails at its first step.</p>
 <p>The job asks for four writes, each for one reason:</p>
 <div class="table-wrapper">
 <table>

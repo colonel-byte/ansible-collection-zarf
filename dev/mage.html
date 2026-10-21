@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-aaf88b7e.js";
+            window.path_to_searchindex_js = "../searchindex-14806675.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-1e97d9c5.js"></script>
+        <script src="../toc-afc694a1.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -194,11 +194,11 @@
 <tr><th>Target</th><th>What it does</th></tr>
 </thead>
 <tbody>
-<tr><td><code>build:modules</code></td><td>Compiles both Ansible module files – <code>zarf_init</code> from <code>cmd/init</code>, <code>zarf_package_deploy</code> from <code>cmd/deploy</code> – into <code>build/</code>.</td></tr>
+<tr><td><code>build:modules</code></td><td>Compiles the Ansible module wrapper from <code>cmd/zarfmod</code> into <code>build/zarfmod</code>, and links a <code>zarf_&lt;module&gt;</code> name to it for every module in the dispatch table.</td></tr>
 </tbody>
 </table>
 </div>
-<p>They are built for the host rather than for a release target list, because what drives them is the end-to-end suite and an operator reproducing a module run. The release builds come from <code>.goreleaser.yaml</code>. No version is stamped in: a module file reports what zarf did, and has no version of its own to report.</p>
+<p>One binary under several names is what ZEP-0072 describes, and the names come from <code>zarfmod.ModuleFiles()</code> rather than a list in the target, so a module added to the dispatch table gets its symlink with nothing to keep in step. It is built for the host rather than for a release target list, because what drives it is the end-to-end suites and an operator reproducing a module run. The release builds come from <code>.goreleaser.yaml</code>. No version is stamped in: a module file reports what zarf did, and has no version of its own to report.</p>
 <h2 id="test"><a class="header" href="#test"><code>Test</code></a></h2>
 <div class="table-wrapper">
 <table>
@@ -207,7 +207,7 @@
 </thead>
 <tbody>
 <tr><td><code>test:unit</code></td><td>Nothing. Runs every package except the suites under <code>test/</code>.</td></tr>
-<tr><td><code>test:endToEndNonCluster</code></td><td><code>ansible-playbook</code>.</td></tr>
+<tr><td><code>test:endToEndNonCluster</code></td><td><code>ansible-playbook</code>, and a <code>zarf</code> for the cases that build a package. Builds the wrapper.</td></tr>
 <tr><td><code>test:endToEndCluster</code></td><td><code>k3d</code>, <code>zarf</code>, <code>ansible-playbook</code>, Docker, and the network on first run.</td></tr>
 <tr><td><code>test:cleanClusters</code></td><td><code>k3d</code>. Removes clusters an interrupted run left behind.</td></tr>
 </tbody>
@@ -223,14 +223,13 @@
 <tbody>
 <tr><td><code>generate:document</code></td><td><code>docs/ansible/module_*.md</code> and <code>role_*.md</code>, <code>docs/golang/</code>, <code>docs/index.md</code>, <code>docs/security.md</code>, <code>docs/SUMMARY.md</code>.</td></tr>
 <tr><td><code>generate:schema</code></td><td><code>schema/*.json</code>, reflected from the Go types in <code>api/</code> and <code>magefiles/pkg/pkgvendor</code>.</td></tr>
-<tr><td><code>generate:zarfFlags</code></td><td><code>internal/zarfmod/testdata/zarf-init-flags.txt</code> and <code>zarf-package-deploy-flags.txt</code>, read from the installed zarf.</td></tr>
 <tr><td><code>generate:dnfPins</code></td><td>The <code>ansible-core</code> and <code>bash-completion</code> pins in <code>containers/ansible/Dockerfile</code> and <code>.goreleaser.yaml</code>.</td></tr>
 </tbody>
 </table>
 </div>
 <p><code>generate:document</code> rewrites generated pages in place. The hand-written overviews beside them – <code>docs/ansible/collection.md</code>, <code>modules.md</code>, <code>roles.md</code> – are left alone, which is why only the <code>module_*</code> and <code>role_*</code> patterns are cleared before a run.</p>
 <p><code>generate:schema</code> writes the two published JSON Schemas: the <code>colonel-byte.dev/v1alpha1</code> <code>PackagePrerequisites</code> schema, from <code>api/colonel-byte.dev/v1alpha1/prerequisites</code>, and the schema of a reference package’s <code>resources.json</code>, from <code>magefiles/pkg/pkgvendor</code>. The descriptions in both are the doc comments on those types, so a reworded comment is a schema change. <code>TestCommittedSchemasAreCurrent</code> fails when a committed schema stops matching its type – a stale schema does not fail at build time, it validates the wrong document.</p>
-<p><code>generate:zarfFlags</code> is the refresh for the recorded flag lists <code>TestInitArgsAreKnownFlags</code> and <code>TestDeployArgsAreKnownFlags</code> check against. Run it when the zarf the modules run moves, and review the diff: a flag that disappeared is a module parameter that no longer works. Set <code>ZARF_ANSIBLE_FLAGS_BINARY</code> to name a zarf that is not on <code>PATH</code>. It deliberately does not read the flags at test time – the unit tests run with no zarf on the machine, in CI and on a contributor’s laptop, and a test that needs a binary to say anything is a test that gets skipped.</p>
+<p>There is no <code>generate:zarfFlags</code> any more. It used to record the flag surface of the zarf commands the modules wrap into <code>internal/zarfmod/testdata/</code>, so their tests could check the rendered flags against a list. Both modules now link zarf’s command tree in, so <code>TestInitArgsAreKnownFlags</code> and <code>TestDeployArgsAreKnownFlags</code> parse what they render against the real commands and pflag decides whether a flag exists – which also catches a flag zarf renamed, the one thing a recorded list could not. The zarf they check against is the <code>github.com/zarf-dev/zarf</code> version in <code>go.mod</code>, which Dependabot watches. See <a href="../agent/choice-zarf-ansible-module.html">choice-zarf-ansible-module</a>.</p>
 <p><code>generate:dnfPins</code> moves the two dnf package pins the management node image installs. It fetches <code>repomd.xml</code> and <code>primary.xml.gz</code> from the AlmaLinux 10 AppStream and BaseOS repodata over HTTP, picks the newest <code>ansible-core</code> and <code>bash-completion</code> by RPM epoch-version-release ordering, and rewrites the <code>ARG</code> lines in <code>containers/ansible/Dockerfile</code> along with the <code>zarf-ansible</code> <code>build_args</code> in <code>.goreleaser.yaml</code>. Both files carry the same two versions on purpose – the <code>ARG</code> defaults are what a local build gets and the <code>build_args</code> are what the release build passes – so one run writes both, and a rewriter that no longer finds what it edits fails the target rather than leaving one of them behind. Dependabot’s <code>docker</code> ecosystem moves the two <code>FROM</code> digests and nothing else, which is why these pins need a target at all.</p>
 <p>Read the diff rather than committing it unseen: a pin that jumped a minor line is a change to what the image installs, and the image’s own build is what proves it still works.</p>
 <h2 id="examples"><a class="header" href="#examples"><code>Examples</code></a></h2>
@@ -255,7 +254,7 @@
 go run ./magefiles/core examples:images
 go run ./magefiles/core examples:lint
 </code></pre>
-<p><code>magefiles/pkg/pkgvendor</code> is where that lives, and it is a Go port of the shell in <a href="https://github.com/colonel-byte/zarf-pkg-fluxcd">colonel-byte/zarf-pkg-fluxcd</a>’s <code>.github/hack</code>. <code>ZARF_ANSIBLE_FLAGS_BINARY</code> names a zarf that is not on <code>PATH</code>, the same variable <code>generate:zarfFlags</code> reads.</p>
+<p><code>magefiles/pkg/pkgvendor</code> is where that lives, and it is a Go port of the shell in <a href="https://github.com/colonel-byte/zarf-pkg-fluxcd">colonel-byte/zarf-pkg-fluxcd</a>’s <code>.github/hack</code>. <code>ZARF_ANSIBLE_FLAGS_BINARY</code> names a zarf that is not on <code>PATH</code>. The name is the one the retired <code>generate:zarfFlags</code> read; these targets kept it rather than asking an operator to learn a second variable.</p>
 
                     </main>
 

@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-aaf88b7e.js";
+            window.path_to_searchindex_js = "../searchindex-14806675.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-1e97d9c5.js"></script>
+        <script src="../toc-afc694a1.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -183,8 +183,8 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="e2e-cluster"><a class="header" href="#e2e-cluster">E2E cluster</a></h1>
-<p>Runs <a href="../dev/e2e-tests.html"><code>test/e2e/cluster</code></a> – the suite that walks both wrapper binaries across two real k3d clusters.</p>
-<p>It is <strong>not</strong> a check on every push. It stands up two clusters, pulls three zarf packages, and runs a real <code>zarf init</code> against each, which makes it the slowest and least hermetic thing in this repository; the first run on a cold cache pays for the package pulls. Everything it covers that can be covered without a cluster already is, by the unit tests and by <a href="e2e.yaml.html"><code>e2e.yaml</code></a>.</p>
+<p>Runs <a href="../dev/e2e-tests.html"><code>test/e2e/cluster</code></a> – the suite that walks the converging modules across two real k3d clusters, then runs the other five acting modules against the cluster the first walk initialised.</p>
+<p>It is <strong>not</strong> a check on every push. It stands up two clusters, pulls three zarf packages, and runs a real <code>zarf init</code> against each, which makes it the slowest and least hermetic thing in this repository; the first run on a cold cache pays for the package pulls. Everything it covers that can be covered without a cluster already is, by the unit tests and by <a href="e2e.yaml.html"><code>e2e.yaml</code></a> – which includes every acting module’s refusals and check-mode answers, so what is left here is the half that needs a registry, a cluster state or something deployed to take away.</p>
 <p>So it runs in two cases only: on demand from the Actions tab (<code>workflow_dispatch</code>), and on a pull request carrying the <code>e2e-cluster</code> label. The job’s <code>if:</code> condition enforces both, which is why adding the label to an open pull request is enough to start a run.</p>
 <p>The job installs Go, Python, <code>ansible-core</code>, k3d and zarf, then runs <code>test:endToEndCluster</code> with a 90-minute timeout and tears down any surviving clusters with <code>test:cleanClusters</code> under <code>if: always()</code>.</p>
 <p>One step is easy to mistake for boilerplate: <code>mkdir -p /tmp/k3d</code>. Both k3d configs bind-mount that directory into the nodes as the local-path provisioner’s root, k3d does not create it, and a missing bind source fails the cluster create before any test runs.</p>

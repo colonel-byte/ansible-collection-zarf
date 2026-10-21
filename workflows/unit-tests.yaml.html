@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-aaf88b7e.js";
+            window.path_to_searchindex_js = "../searchindex-14806675.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-1e97d9c5.js"></script>
+        <script src="../toc-afc694a1.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -198,7 +198,7 @@
 </tbody>
 </table>
 </div>
-<p>The last pair checks against a recorded flag list rather than against zarf’s own command tree, so it cannot catch a zarf release that renamed a flag. Refresh the lists with <code>generate:zarfFlags</code> when the zarf the modules run moves.</p>
+<p>The last pair parses what each module renders against zarf’s own command tree, which is linked in, so pflag decides whether a flag exists and a zarf release that renamed one fails the job. There is nothing to refresh by hand; the zarf they check against is the <code>github.com/zarf-dev/zarf</code> version in <code>go.mod</code>.</p>
 <p>The suites under <code>./test/...</code> need Ansible, k3d and Docker, so they are excluded here and run in <a href="e2e.yaml.html"><code>e2e.yaml</code></a> and <a href="e2e-cluster.yaml.html"><code>e2e-cluster.yaml</code></a> instead. See <code>Test.Unit</code> in <code>magefiles/test.go</code> for the package selection.</p>
 <p>The step runs <code>go run -mod=vendor ./magefiles/core test:unit</code> rather than <code>mage</code>: same target, and it needs no mage binary on the runner. <code>GOPROXY=off</code> makes accidental network access fail fast rather than quietly succeed on a machine that happens to be online.</p>
 

@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-aaf88b7e.js";
+            window.path_to_searchindex_js = "../searchindex-14806675.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-1e97d9c5.js"></script>
+        <script src="../toc-afc694a1.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -184,7 +184,7 @@
                     <main>
                         <h1 id="driving-zarf-from-ansible"><a class="header" href="#driving-zarf-from-ansible">Driving zarf from Ansible</a></h1>
 <p>The <code>colonel_byte.zarf</code> collection initialises a cluster with zarf and deploys zarf packages onto it from a playbook. It is a proof of <a href="https://github.com/zarf-dev/proposals/pull/73">ZEP-0072</a>, which proposes native Ansible module support for zarf. It began in <a href="https://github.com/colonel-byte/cargoship">colonel-byte/cargoship</a>, because the pattern it proposes is the one <code>colonel_byte.cargoship</code> already runs there.</p>
-<p>This guide covers the two modules that converge a cluster: what they are, how to install them, the two-module walk that a cluster with no storage provider needs, and what the result holds. The collection also ships five read-only modules and three roles that wrap three of them – <code>zarf_cluster_info</code>, <code>zarf_package_documentation</code>, <code>zarf_package_info</code>, <code>zarf_package_inspect</code> and <code>zarf_state_info</code> – which are not part of the walk and are documented on the <a href="../ansible/collection.html">collection reference</a>; <a href="../agent/choice-zarf-info-modules.html">choice-zarf-info-modules</a> records why they are built differently. The full parameter set of each module, and the zarf flag each parameter renders, is on its reference page: <a href="../ansible/module_init.html"><code>zarf_init</code></a> and <a href="../ansible/module_package_deploy.html"><code>zarf_package_deploy</code></a>, both generated from the collection. For why the modules are separate wrapper binaries rather than the <code>zarf</code> binary itself, see <a href="../agent/choice-zarf-ansible-module.html">choice-zarf-ansible-module</a>.</p>
+<p>This guide covers the two modules that converge a cluster: what they are, how to install them, the two-module walk that a cluster with no storage provider needs, and what the result holds. The collection also ships five read-only modules and three roles that wrap three of them – <code>zarf_cluster_info</code>, <code>zarf_package_documentation</code>, <code>zarf_package_info</code>, <code>zarf_package_inspect</code> and <code>zarf_state_info</code> – which are not part of the walk and are documented on the <a href="../ansible/collection.html">collection reference</a>; <a href="../agent/choice-zarf-info-modules.html">choice-zarf-info-modules</a> records why they are built differently. The full parameter set of each module, and the zarf flag each parameter renders, is on its reference page: <a href="../ansible/module_init.html"><code>zarf_init</code></a> and <a href="../ansible/module_package_deploy.html"><code>zarf_package_deploy</code></a>, both generated from the collection. For how the modules reach zarf – each links zarf’s command tree in and executes it in its own process – see <a href="../agent/choice-zarf-ansible-module.html">choice-zarf-ansible-module</a>.</p>
 <h2 id="the-two-converging-modules"><a class="header" href="#the-two-converging-modules">The two converging modules</a></h2>
 <div class="table-wrapper">
 <table>
@@ -198,16 +198,15 @@
 </table>
 </div>
 <p>Both run on the node the task is delegated to, not on the cluster’s nodes. Zarf reaches the cluster through a kubeconfig, so there is no inventory to project and nothing to copy to a managed node: a task supplies a kubeconfig, a package, and the parameters the zarf command takes.</p>
-<p>Neither module is a Python module. Each is a compiled wrapper binary that renders the zarf command line from the task’s parameters, runs the <strong>installed</strong> zarf, follows the deployment component by component, and writes one JSON object back. The zarf that does the work is the one on the node’s path, which is what keeps the module and the tool in step.</p>
+<p>Neither module is a Python module. Each is a compiled binary that renders the zarf command line from the task’s parameters, executes zarf’s own command in its own process, follows the deployment component by component, and writes one JSON object back. Zarf is <strong>linked in</strong> rather than installed: neither module needs a <code>zarf</code> on the node, and the zarf that does the work is the version the binary was built against. <a href="../agent/choice-zarf-ansible-module.html">choice-zarf-ansible-module</a> records why.</p>
 <h2 id="installing"><a class="header" href="#installing">Installing</a></h2>
-<p>The release <code>.rpm</code>, <code>.deb</code>, and <code>.apk</code> install the collection to <code>/usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/</code> – on Ansible’s default collections path – along with <code>/usr/bin/zarf_init</code> and <code>/usr/bin/zarf_package_deploy</code> and the module symlinks that point at them. Installing the package is all a management node needs, beyond a zarf of its own.</p>
+<p>The release <code>.rpm</code>, <code>.deb</code>, and <code>.apk</code> install the collection to <code>/usr/share/ansible/collections/ansible_collections/colonel_byte/zarf/</code> – on Ansible’s default collections path – along with <code>/usr/bin/zarfmod</code>, a <code>/usr/bin/zarf_&lt;module&gt;</code> symlink per module, and the same names under the collection’s <code>plugins/modules/</code>. One binary answers as all of them: the name it is invoked under is what selects the module. Installing the package is all a management node needs, beyond a zarf of its own for the read-only modules.</p>
 <p>From a checkout, build the module files and put them on the path:</p>
-<pre><code class="language-sh">go run ./magefiles/core test:endToEndCluster   # builds both, then runs the e2e suite
-# or just the binaries:
-go build -o build/zarf_init ./cmd/init
-go build -o build/zarf_package_deploy ./cmd/deploy
+<pre><code class="language-sh">go run ./magefiles/core test:endToEndCluster   # builds the wrapper, then runs the e2e suite
+# or just the module files:
+go run ./magefiles/core build:modules          # build/zarfmod, with a symlink per module name
 </code></pre>
-<p>A management node needs <code>ansible-core</code>, the collection on Ansible’s collections path, the two module files, and a <code>zarf</code> of its own. <code>ghcr.io/colonel-byte/zarf-ansible-modules</code> is all four: it installs the release <code>.rpm</code> on top of <code>ansible-core</code> and carries the <code>zarf</code> binary out of zarf’s own agent image. One tag per release, and no <code>latest</code> – a management node is meant to pin the image it runs, the way it pins everything else it carries through the airlock.</p>
+<p>A management node needs <code>ansible-core</code>, the collection on Ansible’s collections path, the module wrapper with its names linked to it, and a <code>zarf</code> of its own for the read-only modules. <code>ghcr.io/colonel-byte/zarf-ansible-modules</code> is all four: it installs the release <code>.rpm</code> on top of <code>ansible-core</code> and carries the <code>zarf</code> binary out of zarf’s own agent image. One tag per release, and no <code>latest</code> – a management node is meant to pin the image it runs, the way it pins everything else it carries through the airlock.</p>
 <!-- x-release-please-start-version -->
 <pre><code class="language-sh">docker run --rm -v "$PWD:/workspace" -v "$HOME/.kube:/home/nonroot/.kube:ro" \
   ghcr.io/colonel-byte/zarf-ansible-modules:v0.87.0 \
@@ -232,7 +231,7 @@ go build -o build/zarf_package_deploy ./cmd/deploy
   --output-directory /srv/staging
 </code></pre>
 <p>A package pulled that way keeps the <code>zarf-init-&lt;arch&gt;-&lt;version&gt;.tar.zst</code> name, and the version has to be the version of the zarf that will deploy it: <code>zarf version</code> on the node that runs the play is what picks the tag. A package built in-house is under no such constraint about its name, because nothing looks it up by name.</p>
-<p>This needs zarf <strong>v0.72.0 or newer</strong>, which is where <code>zarf init</code> gained that positional argument. Before it, the only way to choose a package was to run zarf in the directory holding a file named after zarf’s own version, and the module did exactly that – so an older zarf rejects the argument as a usage error naming neither the parameter nor the version that would accept it. The wrapper reads <code>zarf version</code> before it runs and fails with both versions instead, and reports what it found as <code>zarf.version</code> either way.</p>
+<p>The positional argument arrived in zarf <strong>v0.72.0</strong>; before it, the only way to choose a package was to run zarf in the directory holding a file named after zarf’s own version. That is no longer a compatibility question an operator can get wrong: the zarf that does the work is linked into the module, so the version is whatever the module was built against and is reported as <code>zarf.version</code> in the result. There is nothing to install and no floor to trip over.</p>
 <p><code>directory</code> is now a separate thing: the working directory zarf runs in, which is where a relative <code>init_package</code> and a relative path inside a <code>zarf_config</code> file resolve from. The two may be set together.</p>
 <pre><code class="language-yaml">- name: Initialise the cluster from a package built in-house
   colonel_byte.zarf.zarf_init:

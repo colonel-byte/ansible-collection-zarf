@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-aaf88b7e.js";
+            window.path_to_searchindex_js = "../searchindex-14806675.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-1e97d9c5.js"></script>
+        <script src="../toc-afc694a1.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -183,12 +183,12 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="why-the-read-only-zarf-modules-are-python-rather-than-wrapper-binaries"><a class="header" href="#why-the-read-only-zarf-modules-are-python-rather-than-wrapper-binaries">Why the read-only zarf modules are Python rather than wrapper binaries</a></h1>
-<p>Every other module in <code>colonel_byte.zarf</code> is a wrapper binary. <code>plugins/plugin_utils/projection.py</code> opens by saying its Python is “deliberately the whole of” the collection’s Python, and <a href="choice-zarf-ansible-module.html">choice-zarf-ansible-module</a> records why: the parameters are a Go struct in <code>internal/zarfmod</code>, the command line is rendered by a Go function, and <code>plugindocs_test.go</code> holds the Python <code>DOCUMENTATION</code> block against both.</p>
+<p>Every other module in <code>colonel_byte.zarf</code> is a compiled Go binary. <code>plugins/plugin_utils/projection.py</code> opens by saying its Python is “deliberately the whole of” the collection’s Python, and <a href="choice-zarf-ansible-module.html">choice-zarf-ansible-module</a> records why: the parameters are a Go struct in <code>internal/zarfmod</code>, the command line is rendered by a Go function, and <code>plugindocs_test.go</code> holds the Python <code>DOCUMENTATION</code> block against both.</p>
 <p><code>zarf_cluster_info</code>, <code>zarf_package_documentation</code>, <code>zarf_package_info</code>, <code>zarf_package_inspect</code>, and <code>zarf_state_info</code> are not built that way. Their whole implementation is the action plugin, sharing <code>ZarfInfoActionBase</code> in <code>plugins/plugin_utils/info.py</code>. This is the record of that decision, and of what it costs.</p>
 <p>It was written when there were three of them and one flag between them. Two were added for the <code>PackagePrerequisites</code> format, the flag counting below no longer holds, and <a href="choice-package-documentation-module.html">choice-package-documentation-module</a> is the record of why the conclusion survived the arithmetic anyway. Read that one with this one.</p>
 <h2 id="why-the-wrapper-buys-nothing-here"><a class="header" href="#why-the-wrapper-buys-nothing-here">Why the wrapper buys nothing here</a></h2>
 <p>The wrapper exists for three reasons, and a read-only command has none of them.</p>
-<p><strong>There is no flag surface worth projecting.</strong> <code>zarf init</code> renders more than thirty flags, which is why spelling them out in Go and checking them against a recorded list earns its keep. The most any of these renders is three – <code>--keys</code>, <code>--key</code> and <code>--verify=</code> on <code>zarf_package_documentation</code> – and <code>zarf_cluster_info</code> renders none that a parameter controls at all. The rest of each command line is fixed words.</p>
+<p><strong>There is no flag surface worth projecting.</strong> <code>zarf init</code> renders more than thirty flags, which is why spelling them out in Go and parsing them against zarf’s own command tree earns its keep. The most any of these renders is three – <code>--keys</code>, <code>--key</code> and <code>--verify=</code> on <code>zarf_package_documentation</code> – and <code>zarf_cluster_info</code> renders none that a parameter controls at all. The rest of each command line is fixed words.</p>
 <p>When this was written the claim was “one flag between them, <code>--key</code> on <code>zarf_package_inspect</code>”, and it was already out of date: <code>verify</code> had been added to that module. See the correction in <a href="choice-package-documentation-module.html">choice-package-documentation-module</a>.</p>
 <p><strong>There is no progress to follow.</strong> <code>internal/zarfmod/progress.go</code> reads component boundaries back out of zarf’s log stream so that a fifteen-minute init is not a silent play. <code>zarf package list</code> returns in under a second and has no components, and so do the other four. The heartbeat file, the status-file parameter, and the polling monitor thread in <code>ZarfActionBase</code> would all be carried for nothing.</p>
 <p><strong>There is no <code>changed</code> to signal.</strong> The hardest question in the wrapper – what <code>changedSignal</code> can honestly be when zarf reports which components ran and not whether any of them had work to do – does not arise. These modules always report <code>changed: false</code>, and that is not an approximation.</p>
