@@ -106,11 +106,12 @@ func TestRunEmitsExactlyOneObjectAndExitsZero(t *testing.T) {
 		},
 		{
 			name:   "a module this binary does not answer as",
-			module: "package_remove",
+			module: "package_create",
 			argv:   argsFileFor(t, map[string]any{}),
 			run:    &fakeRunner{},
-			// ZEP-0072 names package_remove and nothing here implements it, so this is the
-			// message an operator of a near-future playbook actually hits.
+			// package_create is deliberately not implemented -- building a package from a
+			// definition in a repository belongs in a pipeline -- so this is the message an
+			// operator who reached for it actually hits.
 			wantFailed: true,
 			wantMsg:    "is not a zarf Ansible module",
 		},
@@ -217,11 +218,12 @@ func (p *printingRunner) Run(_ context.Context, _ Invocation) (Result, error) {
 // The names are what the build target links, what the packages install and what the action plugins
 // invoke, so a module added without its symlink is caught here rather than by a playbook.
 func TestModulesAnswersEveryAction(t *testing.T) {
-	if got, want := strings.Join(Modules(), ","), "init,kubectl,package_deploy"; got != want {
+	if got, want := strings.Join(Modules(), ","),
+		"init,kubectl,package_deploy,package_pull,package_remove"; got != want {
 		t.Errorf("Modules() = %q, want %q", got, want)
 	}
 	if got, want := strings.Join(ModuleFiles(), ","),
-		"zarf_init,zarf_kubectl,zarf_package_deploy"; got != want {
+		"zarf_init,zarf_kubectl,zarf_package_deploy,zarf_package_pull,zarf_package_remove"; got != want {
 		t.Errorf("ModuleFiles() = %q, want %q", got, want)
 	}
 }
@@ -265,8 +267,11 @@ func TestModuleName(t *testing.T) {
 			ok:    true,
 		},
 		{
+			// package_create is the name to use here for as long as it stays unimplemented on
+			// purpose: creating a package builds an artifact from a definition in a repository,
+			// which belongs in a pipeline rather than in a convergence run.
 			name:  "an action this wrapper does not answer as is not a module",
-			argv0: "/usr/bin/zarf_package_remove",
+			argv0: "/usr/bin/zarf_package_create",
 			ok:    false,
 		},
 		{

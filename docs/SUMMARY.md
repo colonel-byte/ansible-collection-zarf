@@ -24,6 +24,8 @@
   - [package_documentation](ansible/module_package_documentation.md)
   - [package_info](ansible/module_package_info.md)
   - [package_inspect](ansible/module_package_inspect.md)
+  - [package_pull](ansible/module_package_pull.md)
+  - [package_remove](ansible/module_package_remove.md)
   - [state_info](ansible/module_state_info.md)
 - [zarf roles](ansible/roles.md)
   - [package_inspect](ansible/role_package_inspect.md)

@@ -104,6 +104,16 @@ func wrapperModuleCases() []wrapperModuleCase {
 			argv:   buildDeployArgs(fullDeployParams()),
 		},
 		{
+			module: "zarf_package_pull",
+			params: &pullParams{},
+			argv:   buildPullArgs(fullPullParams()),
+		},
+		{
+			module: "zarf_package_remove",
+			params: &removeParams{},
+			argv:   buildRemoveArgs(fullRemoveParams()),
+		},
+		{
 			module: "zarf_kubectl",
 			params: &kubectlParams{},
 			// A passthrough renders no flags at all: args is kubectl's own argument vector and
@@ -319,5 +329,49 @@ func fullDeployParams() *deployParams {
 			LogLevel:              "debug",
 			LogFormat:             "json",
 		},
+	}
+}
+
+// fullPullParams populates every zarf_package_pull parameter, so that every flag the module can
+// render is in the vector the test reads.
+func fullPullParams() *pullParams {
+	yes := true
+	number := 1
+	return &pullParams{
+		Package:               "oci://ghcr.io/colonel-byte/zarf/csi-local-path-provider:0.0.37-upstream",
+		OutputDirectory:       "/srv/staging",
+		Shasum:                "0000000000000000000000000000000000000000000000000000000000000000",
+		OCIConcurrency:        &number,
+		Architecture:          "amd64",
+		Cache:                 "/var/cache/zarf",
+		Tmpdir:                "/var/tmp/zarf",
+		PlainHTTP:             &yes,
+		InsecureSkipTLSVerify: &yes,
+		ZarfConfig:            "/etc/zarf/zarf-config.yaml",
+		LogLevel:              "debug",
+		LogFormat:             "json",
+	}
+}
+
+// fullRemoveParams does the same for zarf_package_remove.
+func fullRemoveParams() *removeParams {
+	yes := true
+	number := 1
+	return &removeParams{
+		Package:               "csi-local-path-provider",
+		Kubeconfig:            "/etc/rancher/rke2/rke2.yaml",
+		ZarfConfig:            "/etc/zarf/zarf-config.yaml",
+		Components:            "local-path-chart",
+		Namespace:             "storage",
+		Values:                []string{"/etc/zarf/values.yaml"},
+		SetValues:             map[string]string{"key": "value"},
+		OCIConcurrency:        &number,
+		Architecture:          "amd64",
+		Cache:                 "/var/cache/zarf",
+		Tmpdir:                "/var/tmp/zarf",
+		PlainHTTP:             &yes,
+		InsecureSkipTLSVerify: &yes,
+		LogLevel:              "debug",
+		LogFormat:             "json",
 	}
 }
