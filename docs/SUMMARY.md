@@ -76,6 +76,7 @@
 
 - [ai-usage](agent/ai-usage.md)
 - [choice-dependabot-title-length](agent/choice-dependabot-title-length.md)
+- [choice-dependabot-vendor-grouping](agent/choice-dependabot-vendor-grouping.md)
 - [choice-fuzz-targets](agent/choice-fuzz-targets.md)
 - [choice-gitops-engine-key](agent/choice-gitops-engine-key.md)
 - [choice-package-documentation-module](agent/choice-package-documentation-module.md)

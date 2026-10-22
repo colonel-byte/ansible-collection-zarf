@@ -8,7 +8,9 @@ Dependabot's titles break one rule in that config and cannot be made to stop. Th
 
 `@commitlint/config-conventional` sets `header-max-length` to 100. Dependabot writes `build(deps): bump <module> from X to Y`, and it cannot shorten a module path -- there is no template knob that abbreviates it, and the path is the one piece of information the title exists to carry.
 
-Ten of the modules in `go.mod` overflow 100 characters that way. The longest, `go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc`, reaches 117. With `open-pull-requests-limit: 50` and a daily `gomod` schedule, that is a steady stream of pull requests that cannot pass a required check.
+Ten of the modules in `go.mod` overflow 100 characters that way. The longest, `go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc`, reaches 117. With a daily `gomod` schedule, that is a steady stream of pull requests that cannot pass a required check.
+
+Collapsing the `gomod` ecosystem into one group made most of them titles of the form `build(deps): bump the gomod group across 1 directory with N updates`, which fits -- see [`choice-dependabot-vendor-grouping.md`](choice-dependabot-vendor-grouping.md). It did not remove the problem: Dependabot opens a security advisory update outside the group, naming the one module, and that title is as long as it ever was.
 
 ## Why not the two easier answers
 

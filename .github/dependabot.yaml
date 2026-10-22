@@ -1,40 +1,25 @@
 ---
 version: 2
 updates:
+  # One group for every Go module, not a group per vendor family. Dependabot edits go.mod and
+  # go.sum and stops there, and this repository's vendor/ is the dependency list rather than a
+  # cache -- so every gomod branch arrives failing check-go-mod, unit tests, e2e, lint and
+  # CodeQL until someone runs `go mod vendor` on it. That re-vendor is the same single command
+  # whether the branch moved one module or two hundred, so grouping them turns a day's worth of
+  # branches needing it by hand into one. See docs/agent/choice-dependabot-vendor-grouping.md.
   - package-ecosystem: gomod
     directory: "/"
     schedule:
       interval: daily
     allow:
       - dependency-type: "all"
-    open-pull-requests-limit: 50
+    # One grouped branch at a time, plus headroom for the ungrouped updates Dependabot opens
+    # on its own for a security advisory.
+    open-pull-requests-limit: 5
     groups:
-      k8s:
+      gomod:
         patterns:
-          - "k8s.io/*"
-          - "sigs.k8s.io/*"
-      opentelemetry:
-        patterns:
-          - "go.opentelemetry.io/*"
-      sigstore:
-        patterns:
-          - "github.com/sigstore/*"
-      golang:
-        patterns:
-          - "golang.org/x/*"
-      docker:
-        patterns:
-          - "github.com/docker/*"
-          - "github.com/moby/*"
-          - "github.com/containerd/*"
-      cloud-kms:
-        patterns:
-          - "github.com/aws/*"
-          - "github.com/Azure/*"
-          - "cloud.google.com/go/*"
-      openapi:
-        patterns:
-          - "github.com/go-openapi/*"
+          - "*"
   - package-ecosystem: pre-commit
     directory: "/"
     schedule:
