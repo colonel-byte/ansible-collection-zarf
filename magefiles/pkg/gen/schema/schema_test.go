@@ -15,6 +15,7 @@
 package schema
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -24,7 +25,12 @@ import (
 
 	"github.com/colonel-byte/ansible-collection-zarf/api/colonel-byte.dev/v1alpha1/prerequisites"
 	"github.com/colonel-byte/ansible-collection-zarf/internal/testenv"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 )
+
+// schemaResourceName is what the rendered schema is compiled under. The document's own $id is a
+// published URL, and a compiler that resolved it would reach for the network.
+const schemaResourceName = "prerequisites.json"
 
 // Tests for the generator itself: that what it writes is what the Go types render to,
 // and that the constraints it is asked to emit survive into the output.
@@ -120,5 +126,120 @@ func TestRenderedSchemaRefusesBothEngines(t *testing.T) {
 	sort.Strings(want)
 	if strings.Join(not.Required, ",") != strings.Join(want, ",") {
 		t.Errorf("the refused combination is %v, want %v", not.Required, want)
+	}
+}
+
+// TestRenderedSchemaRefusesAmbiguousPackageRequirements holds the rule that a prerequisite package
+// is named exactly one of two ways: by the one name it has, or by the set of names it is published
+// under.
+//
+// It validates documents against the rendered schema rather than reading the schema's shape,
+// because the shape was what went wrong. PackageRequirement.JSONSchemaExtend first expressed the
+// rule as `anyOf`, which renders as branches that look right and accept a requirement carrying
+// both keys -- two branches match, and `anyOf` wants one or more. A test asserting that the
+// branches are present would have passed over that. Feeding the combination to a validator is
+// what says so.
+//
+// The role refuses the same document, and that is not redundant: a document reaches the role
+// through the zarf_prerequisites variable without meeting a validator, and the role reads `names`
+// in preference to `name`. This holds the half that catches it while it is being written.
+func TestRenderedSchemaRefusesAmbiguousPackageRequirements(t *testing.T) {
+	rendered, err := RenderPrerequisites()
+	if err != nil {
+		t.Fatalf("unable to render the prerequisites schema: %v", err)
+	}
+
+	resource, err := jsonschema.UnmarshalJSON(bytes.NewReader(rendered))
+	if err != nil {
+		t.Fatalf("the rendered schema does not decode: %v", err)
+	}
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource(schemaResourceName, resource); err != nil {
+		t.Fatalf("unable to add the rendered schema to the compiler: %v", err)
+	}
+	compiled, err := compiler.Compile(schemaResourceName)
+	if err != nil {
+		t.Fatalf("the rendered schema does not compile: %v", err)
+	}
+
+	for _, testCase := range []struct {
+		name  string
+		entry map[string]any
+		valid bool
+	}{
+		{
+			name: "a package named on its own",
+			entry: map[string]any{
+				"name":    "init",
+				"version": ">=0.85.0",
+			},
+			valid: true,
+		},
+		{
+			name: "the several names a package is published under",
+			entry: map[string]any{
+				"names":   []any{"init", "init-slim"},
+				"version": ">=0.85.0",
+			},
+			valid: true,
+		},
+		{
+			name: "one name and several at once",
+			entry: map[string]any{
+				"name":  "init",
+				"names": []any{"init", "init-slim"},
+			},
+			valid: false,
+		},
+		{
+			name: "a version and nothing it constrains",
+			entry: map[string]any{
+				"version": ">=0.85.0",
+			},
+			valid: false,
+		},
+		{
+			// Satisfies the exactly-one-key rule and then names nothing, which reaches an
+			// operator as "one of the zarf packages  is required and is not deployed".
+			name: "an empty list of names",
+			entry: map[string]any{
+				"names": []any{},
+			},
+			valid: false,
+		},
+		{
+			name: "an empty name",
+			entry: map[string]any{
+				"name": "",
+			},
+			valid: false,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			err := compiled.Validate(documentRequiring(testCase.entry))
+			if testCase.valid && err != nil {
+				t.Errorf("the schema refuses a requirement it should accept: %v", err)
+			}
+			if !testCase.valid && err == nil {
+				t.Error("the schema accepts a requirement that names its package in two ways at " +
+					"once, or in none, so a consumer has to invent a precedence between them")
+			}
+		})
+	}
+}
+
+// documentRequiring is the smallest document that carries one requires.packages entry, so that a
+// case is the entry and nothing else.
+func documentRequiring(entry map[string]any) any {
+	return map[string]any{
+		"apiVersion": "colonel-byte.dev/v1alpha1",
+		"kind":       "PackagePrerequisites",
+		"metadata": map[string]any{
+			"package": "a-package-with-a-package-requirement",
+			"version": "1.0.0",
+		},
+		"requires": map[string]any{
+			"packages": []any{entry},
+		},
 	}
 }

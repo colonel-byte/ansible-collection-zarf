@@ -18,7 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
+	"regexp"
 	"testing"
 
 	"github.com/colonel-byte/ansible-collection-zarf/api/colonel-byte.dev/v1alpha1/prerequisites"
@@ -82,10 +82,43 @@ func TestEveryRequirementIsNamedByTheRole(t *testing.T) {
 	}
 
 	for _, name := range names {
-		if !strings.Contains(tasks, name) {
+		// Matched as a whole word rather than as a substring. `names` is a substring of
+		// `namespace`, which the role uses everywhere, so a plain Contains passed for a field no
+		// expression in the role mentioned -- the one thing this test exists to catch.
+		if !mentionsField(tasks, name) {
 			t.Errorf("no task in the prerequisites role mentions %q, which requires.%s declares. "+
 				"Either check it, or append it to zarf_prerequisites_skipped so an operator is "+
 				"told it was not.", name, name)
 		}
+	}
+}
+
+// mentionsField reports whether the role's tasks name this JSON field as a field rather than as
+// part of a longer word. `names` inside `namespace` is not a mention of `names`.
+func mentionsField(tasks, name string) bool {
+	for _, index := range regexp.MustCompile(regexp.QuoteMeta(name)).FindAllStringIndex(tasks, -1) {
+		before := byte(' ')
+		if index[0] > 0 {
+			before = tasks[index[0]-1]
+		}
+		after := byte(' ')
+		if index[1] < len(tasks) {
+			after = tasks[index[1]]
+		}
+		if !isFieldChar(before) && !isFieldChar(after) {
+			return true
+		}
+	}
+	return false
+}
+
+// isFieldChar reports whether a byte could be part of a longer identifier. An underscore counts,
+// so `package_requirements` is not a mention of `packages`.
+func isFieldChar(c byte) bool {
+	switch {
+	case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '_':
+		return true
+	default:
+		return false
 	}
 }

@@ -138,18 +138,43 @@
       "description": "Metadata names the package the document belongs to."
     },
     "PackageRequirement": {
+      "oneOf": [
+        {
+          "required": [
+            "name"
+          ]
+        },
+        {
+          "required": [
+            "names"
+          ]
+        }
+      ],
       "properties": {
         "name": {
           "type": "string",
+          "minLength": 1,
           "description": "Name is the prerequisite package's metadata.name.",
           "examples": [
             "app-fluxcd",
             "cluster-init"
           ]
         },
+        "names": {
+          "items": {
+            "type": "string",
+            "examples": [
+              "init",
+              "init-slim"
+            ]
+          },
+          "type": "array",
+          "minItems": 1,
+          "description": "Names are the metadata.name values that satisfy this requirement, any one of which will do.\n\nIt is how a requirement is stated for something that exists under more than one name: the\nupstream init package reports itself as `init` and a rebuild of it as `init-slim`, and a\npackage needing an initialised cluster needs either. Several names rather than several\nrequirements, because the version constraint belongs to the requirement and not to each\nname -- restating it per name is a constraint that gets bumped in one place and not the\nother, which is how the two drift."
+        },
         "version": {
           "type": "string",
-          "description": "Version is a SemVer range the deployed package's version must satisfy.",
+          "description": "Version is a SemVer range the deployed package's version must satisfy.\n\nUnder Names it applies to whichever of them the cluster has, and to each of them if the\ncluster somehow has more than one.",
           "examples": [
             "\u003e=2.9.0"
           ]
@@ -157,10 +182,7 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "name"
-      ],
-      "description": "PackageRequirement is one other Zarf package that must be deployed first."
+      "description": "PackageRequirement is one other Zarf package that must be deployed first, named either by the one name it has or by the several names it is published under."
     },
     "Provides": {
       "properties": {
