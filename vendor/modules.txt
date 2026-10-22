@@ -217,7 +217,7 @@ github.com/AliyunContainerService/ack-ram-tool/pkg/credentials/provider
 ## explicit
 github.com/Azure/azure-sdk-for-go/services/preview/containerregistry/runtime/2019-08-15-preview/containerregistry
 github.com/Azure/azure-sdk-for-go/version
-# github.com/Azure/azure-sdk-for-go/sdk/azcore v1.22.0
+# github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.0
 ## explicit; go 1.25.0
 github.com/Azure/azure-sdk-for-go/sdk/azcore
 github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/internal/resource
@@ -244,8 +244,8 @@ github.com/Azure/azure-sdk-for-go/sdk/azcore/tracing
 github.com/Azure/azure-sdk-for-go/sdk/azidentity
 github.com/Azure/azure-sdk-for-go/sdk/azidentity/internal
 github.com/Azure/azure-sdk-for-go/sdk/azidentity/internal/customtokenproxy
-# github.com/Azure/azure-sdk-for-go/sdk/internal v1.12.0
-## explicit; go 1.24.0
+# github.com/Azure/azure-sdk-for-go/sdk/internal v1.13.0
+## explicit; go 1.25.0
 github.com/Azure/azure-sdk-for-go/sdk/internal/diag
 github.com/Azure/azure-sdk-for-go/sdk/internal/errorinfo
 github.com/Azure/azure-sdk-for-go/sdk/internal/exported
@@ -288,7 +288,7 @@ github.com/Azure/go-autorest/logger
 # github.com/Azure/go-autorest/tracing v0.6.0
 ## explicit; go 1.12
 github.com/Azure/go-autorest/tracing
-# github.com/AzureAD/microsoft-authentication-library-for-go v1.7.2
+# github.com/AzureAD/microsoft-authentication-library-for-go v1.8.0
 ## explicit; go 1.18
 github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache
 github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential
