@@ -38,10 +38,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-14806675.js";
+            window.path_to_searchindex_js = "searchindex-f4552cbd.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-afc694a1.js"></script>
+        <script src="toc-8db5b85d.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -2108,7 +2108,8 @@ curl -fsSL "https://github.com/ossf/scorecard/releases/download/${ver}/scorecard
 <p>Dependabot’s titles break one rule in that config and cannot be made to stop. This is the record of what was done about it.</p>
 <h2 id="the-problem"><a class="header" href="#the-problem">The problem</a></h2>
 <p><code>@commitlint/config-conventional</code> sets <code>header-max-length</code> to 100. Dependabot writes <code>build(deps): bump &lt;module&gt; from X to Y</code>, and it cannot shorten a module path – there is no template knob that abbreviates it, and the path is the one piece of information the title exists to carry.</p>
-<p>Ten of the modules in <code>go.mod</code> overflow 100 characters that way. The longest, <code>go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc</code>, reaches 117. With <code>open-pull-requests-limit: 50</code> and a daily <code>gomod</code> schedule, that is a steady stream of pull requests that cannot pass a required check.</p>
+<p>Ten of the modules in <code>go.mod</code> overflow 100 characters that way. The longest, <code>go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc</code>, reaches 117. With a daily <code>gomod</code> schedule, that is a steady stream of pull requests that cannot pass a required check.</p>
+<p>Collapsing the <code>gomod</code> ecosystem into one group made most of them titles of the form <code>build(deps): bump the gomod group across 1 directory with N updates</code>, which fits – see <a href="#why-every-go-module-update-arrives-in-one-dependabot-pull-request"><code>choice-dependabot-vendor-grouping.md</code></a>. It did not remove the problem: Dependabot opens a security advisory update outside the group, naming the one module, and that title is as long as it ever was.</p>
 <h2 id="why-not-the-two-easier-answers"><a class="header" href="#why-not-the-two-easier-answers">Why not the two easier answers</a></h2>
 <p><strong>Skipping the job for Dependabot</strong> leaves <code>title_check</code> with no result at all. A required status check that never reports is not a passing check – the pull request stays unmergeable, which is the problem it was meant to solve. The same reasoning is why the job runs on <code>merge_group</code> and reports success with every step skipped: the queue needs to see a result.</p>
 <p><strong>Turning <code>header-max-length</code> off everywhere</strong> gives up the rule on human titles too, and a human title is a title somebody can shorten. The rule is worth keeping where it can be met.</p>
@@ -2125,6 +2126,23 @@ fi
 <p>Two files that must agree. There is no shared base, because commitlint cannot extend a YAML sibling, so a rule added or changed in <code>.commitlintrc.yaml</code> has to be copied into <code>.commitlintrc.dependabot.yaml</code> by hand. Both files carry a comment saying so, and nothing in CI checks it – the configs can drift, and the symptom would be a rule that is enforced on humans and quietly not on Dependabot.</p>
 <p>If commitlint ever gains sibling extension, collapsing these two into a base plus one override is the fix.</p>
 <div style="break-before: page; page-break-before: always;"></div>
+<h1 id="why-every-go-module-update-arrives-in-one-dependabot-pull-request"><a class="header" href="#why-every-go-module-update-arrives-in-one-dependabot-pull-request">Why every Go module update arrives in one Dependabot pull request</a></h1>
+<p><a href="https://github.com/colonel-byte/ansible-collection-zarf/blob/main/.github/dependabot.yaml"><code>.github/dependabot.yaml</code></a> puts the whole <code>gomod</code> ecosystem in a single group matching <code>*</code>. It used to carry seven groups by vendor family – <code>k8s</code>, <code>opentelemetry</code>, <code>sigstore</code>, <code>golang</code>, <code>docker</code>, <code>cloud-kms</code>, <code>openapi</code> – and anything outside them opened a pull request of its own. This is the record of why they were collapsed.</p>
+<h2 id="the-problem-1"><a class="header" href="#the-problem-1">The problem</a></h2>
+<p><code>vendor/</code> is committed, and every build and CI job reads from it, because the management node this collection runs on is typically air-gapped. That makes the vendored tree the dependency list rather than a cache, and it is the reason <a href="#check-for-go-mod-changes"><code>check-go-mod.yaml</code></a> re-vendors and fails on any diff.</p>
+<p>Dependabot edits <code>go.mod</code> and <code>go.sum</code> and stops there. It has no notion of a vendored tree, and there is no setting that gives it one. So every <code>gomod</code> branch it opens is inconsistent on arrival, and the failures are not confined to the check that exists to catch it:</p>
+<pre><code>vendor/cloud.google.com/go/monitoring/apiv3/v2/auxiliary_go123.go:32:32: method AlertPolicyIterator.All already declared at vendor/.../auxiliary.go:31:32
+vendor/github.com/containerd/typeurl/v2/types_gogo.go:24:2: cannot find module providing package github.com/gogo/protobuf/proto: import lookup disabled by -mod=vendor
+</code></pre>
+<p>Unit tests, both e2e suites, lint and CodeQL all fail the same way, because none of them can load a package that <code>vendor/</code> no longer holds. The fix is one command – <code>go mod vendor</code>, committed to the branch – and it is the same one command whether the branch moved one module or two hundred.</p>
+<p>With seven groups, a daily schedule and a 50 pull request limit, that command had to be run by hand on up to a dozen branches a day. The queue of them is what the grouping removes.</p>
+<h2 id="why-not-the-two-alternatives"><a class="header" href="#why-not-the-two-alternatives">Why not the two alternatives</a></h2>
+<p><strong>Automating the re-vendor</strong> means a workflow that pushes a commit to a Dependabot branch, which needs <code>contents: write</code> on a pull-request-triggered job – a token grant that <a href="https://github.com/colonel-byte/ansible-collection-zarf/blob/main/.github/AGENTS.md"><code>.github/AGENTS.md</code></a> keeps off anything a fork can trigger. A <code>workflow_dispatch</code> variant taking a pull request number avoids that, and remains the upgrade if one grouped branch a day still proves to be one too many.</p>
+<p><strong>Dropping <code>vendor/</code></strong> is not available. The air-gapped build is the point of it.</p>
+<h2 id="the-cost-1"><a class="header" href="#the-cost-1">The cost</a></h2>
+<p>A grouped update is one pull request and therefore one revert. When a bump breaks something, <code>git revert</code> takes the other two hundred modules back with it, and finding which one was at fault means bisecting within the branch rather than reading the title. The previous layout bought that isolation, and it was paid for daily in re-vendoring; the grouped layout pays only when a bump actually breaks, which is rarer.</p>
+<p>Security advisories are unaffected. Dependabot opens those outside the group regardless of this configuration, which is what the <code>open-pull-requests-limit: 5</code> headroom is for.</p>
+<div style="break-before: page; page-break-before: always;"></div>
 <h1 id="why-there-are-two-fuzz-targets-and-why-they-are-not-under-fuzz"><a class="header" href="#why-there-are-two-fuzz-targets-and-why-they-are-not-under-fuzz">Why there are two fuzz targets, and why they are not under <code>fuzz/</code></a></h1>
 <p>This repository has two Go fuzz targets, both in <code>internal/zarfmod</code>, beside the code they exercise. This is the record of why those two and not others, and why a <code>fuzz/</code> directory was considered and rejected.</p>
 <h2 id="why-fuzzing-at-all"><a class="header" href="#why-fuzzing-at-all">Why fuzzing at all</a></h2>
@@ -2140,7 +2158,7 @@ fi
 <p><strong>A Go fuzz target lives in the package it tests.</strong> Both targets reach unexported identifiers - <code>componentName</code>, <code>controlPrefix</code>, <code>jsonFieldNames</code>, <code>initParams</code> - and there is no exported path to the progress parser at all. A <code>fuzz/</code> package could only see the exported API, so the move would mean either exporting internals to suit a test, or dropping the target that guards something real. Exporting a function because a test in the wrong directory cannot see it is the test dictating the API, and the API is the thing with the longer life.</p>
 <h2 id="what-is-deliberately-not-fuzzed"><a class="header" href="#what-is-deliberately-not-fuzzed">What is deliberately not fuzzed</a></h2>
 <p><code>redact_state</code> in <code>plugins/action/zarf_state_info.py</code> is the only place in this repository where a bug leaks a credential, and it is where a fuzzer would most like to go. It is Python, so no Go target reaches it, and fuzzing it means <code>atheris</code> or <code>hypothesis</code>: an unvendored dependency on a tree whose premise is that the build works with no proxy reachable. The function is already written to fail safe - it matches credential-bearing leaf names anywhere in the document rather than a list of paths, so a field zarf adds under a name like those is withheld before anybody reads that file - and the non-cluster suite covers it. More cases there are the cheaper answer than a fuzzing runtime; see <a href="#why-the-read-only-zarf-modules-are-python-rather-than-wrapper-binaries">choice-zarf-info-modules.md</a> for why the redaction removes keys rather than blanking them.</p>
-<h2 id="the-cost-1"><a class="header" href="#the-cost-1">The cost</a></h2>
+<h2 id="the-cost-2"><a class="header" href="#the-cost-2">The cost</a></h2>
 <p>Neither target has a CI job, and that is on purpose. Go runs a fuzz target’s seed corpus as an ordinary unit test, so <code>test:unit</code> exercises the seeds and the recorded crashers for free, and that is the part that protects against a regression. A campaign that explores new input is a by-hand run:</p>
 <pre><code class="language-sh">go test ./internal/zarfmod -run=FuzzComponentName -fuzz=FuzzComponentName -fuzztime=30s
 </code></pre>

@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-14806675.js";
+            window.path_to_searchindex_js = "../searchindex-f4552cbd.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-afc694a1.js"></script>
+        <script src="../toc-8db5b85d.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -187,7 +187,8 @@
 <p>Dependabot’s titles break one rule in that config and cannot be made to stop. This is the record of what was done about it.</p>
 <h2 id="the-problem"><a class="header" href="#the-problem">The problem</a></h2>
 <p><code>@commitlint/config-conventional</code> sets <code>header-max-length</code> to 100. Dependabot writes <code>build(deps): bump &lt;module&gt; from X to Y</code>, and it cannot shorten a module path – there is no template knob that abbreviates it, and the path is the one piece of information the title exists to carry.</p>
-<p>Ten of the modules in <code>go.mod</code> overflow 100 characters that way. The longest, <code>go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc</code>, reaches 117. With <code>open-pull-requests-limit: 50</code> and a daily <code>gomod</code> schedule, that is a steady stream of pull requests that cannot pass a required check.</p>
+<p>Ten of the modules in <code>go.mod</code> overflow 100 characters that way. The longest, <code>go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc</code>, reaches 117. With a daily <code>gomod</code> schedule, that is a steady stream of pull requests that cannot pass a required check.</p>
+<p>Collapsing the <code>gomod</code> ecosystem into one group made most of them titles of the form <code>build(deps): bump the gomod group across 1 directory with N updates</code>, which fits – see <a href="choice-dependabot-vendor-grouping.html"><code>choice-dependabot-vendor-grouping.md</code></a>. It did not remove the problem: Dependabot opens a security advisory update outside the group, naming the one module, and that title is as long as it ever was.</p>
 <h2 id="why-not-the-two-easier-answers"><a class="header" href="#why-not-the-two-easier-answers">Why not the two easier answers</a></h2>
 <p><strong>Skipping the job for Dependabot</strong> leaves <code>title_check</code> with no result at all. A required status check that never reports is not a passing check – the pull request stays unmergeable, which is the problem it was meant to solve. The same reasoning is why the job runs on <code>merge_group</code> and reports success with every step skipped: the queue needs to see a result.</p>
 <p><strong>Turning <code>header-max-length</code> off everywhere</strong> gives up the rule on human titles too, and a human title is a title somebody can shorten. The rule is worth keeping where it can be met.</p>
@@ -212,7 +213,7 @@ fi
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../agent/choice-fuzz-targets.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../agent/choice-dependabot-vendor-grouping.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -226,7 +227,7 @@ fi
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../agent/choice-fuzz-targets.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../agent/choice-dependabot-vendor-grouping.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
