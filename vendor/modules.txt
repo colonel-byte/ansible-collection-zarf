@@ -2270,7 +2270,7 @@ github.com/magefile/mage/mage
 github.com/magefile/mage/mg
 github.com/magefile/mage/parse
 github.com/magefile/mage/sh
-# github.com/magiconair/properties v1.18.11
+# github.com/magiconair/properties v1.18.12
 ## explicit; go 1.19
 github.com/magiconair/properties
 # github.com/masahiro331/go-mvn-version v0.0.0-20250131095131-f4974fa13b8a
