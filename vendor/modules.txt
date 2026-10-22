@@ -2239,8 +2239,8 @@ github.com/lestrrat-go/jwx/v3/transform
 # github.com/lestrrat-go/option/v2 v2.0.0
 ## explicit; go 1.23
 github.com/lestrrat-go/option/v2
-# github.com/letsencrypt/boulder v0.20260309.0
-## explicit; go 1.25.0
+# github.com/letsencrypt/boulder v0.20261013.0
+## explicit; go 1.27.0
 github.com/letsencrypt/boulder/core
 github.com/letsencrypt/boulder/core/proto
 github.com/letsencrypt/boulder/goodkey
