@@ -1,0 +1,132 @@
+---
+# What colonel_byte.zarf.deploy_packages does with a stack, with no cluster anywhere.
+#
+# Almost every decision this role makes is a Jinja expression, and until this file existed the only
+# thing that ran any of them was a cluster suite needing k3d, zarf, Docker and a network. That is
+# how an item which named no components came to kill the play while three places documented it as
+# working: nothing cheap enough to run had ever rendered the branch.
+#
+# Everything here runs in check mode. The two acting modules report themselves skipped without
+# touching anything, and the read-only ones answer from the stub -- but Ansible templates a task's
+# arguments before the action plugin decides anything, so every expression in the role is still
+# evaluated. That is the half this file is for.
+#
+# zarf_binary is testdata/zarf-cluster-stub.sh, which serves `package list` from
+# testdata/zarf-package-list.json -- a cluster with `init` and `csi-local-path-provider` deployed --
+# and hands `package inspect definition` to a real zarf, because learning a package's name and
+# version needs a real package and the Go test builds one. The fixture package is named neither of
+# the two deployed names, so no item here is ever skippable, which is deliberate: what is under
+# test is that each item reaches its deploy task, not what the skip arithmetic concludes.
+#
+# Nothing here is contacted.
+- name: The deploy_packages role renders every item it is given
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    # The regression case. An item written exactly as the documentation permits -- a path and
+    # nothing else -- used to fail with `object of type 'dict' has no attribute 'components'`,
+    # because the components expression tested the value's shape before the default meant to cover
+    # an absent key, and Ansible's undefined marker raises from `is iterable` rather than
+    # returning false.
+    - name: An item that names no components
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.deploy_packages
+      vars:
+        zarf_packages_to_deploy:
+          - path: "{{ fixture_package }}"
+
+    - name: The item was rendered and reached its deploy task
+      ansible.builtin.assert:
+        that:
+          - zarf_deploy_packages_changed is defined
+        success_msg: ASSERTED an item naming no components renders rather than failing
+        fail_msg: an item naming no components did not reach its deploy task
+
+    # An exclusion says what not to deploy. It does not say what is deployed, so an item naming
+    # only exclusions has no required set to compare and deploys every run -- the same answer as
+    # an item naming nothing, and for the same reason.
+    - name: An item that names only exclusions
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.deploy_packages
+      vars:
+        zarf_packages_to_deploy:
+          - path: "{{ fixture_package }}"
+            components:
+              - -a-file
+
+    # A key written with nothing after it is present and null. default() replaces an undefined
+    # value and never a null one, so each of these used to reach `| length` as None and fail the
+    # task with an error naming neither the key nor the item.
+    - name: An item whose optional keys are present and empty
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.deploy_packages
+      vars:
+        zarf_packages_to_deploy:
+          - path: "{{ fixture_package }}"
+            components:
+              - a-file
+            timeout:
+            kubeconfig:
+            public_key:
+            take_ownership:
+            force_conflicts:
+
+    # Neither module task matches a third package_type, so without the assert the item deploys
+    # nothing, writes no result, and still marks the stack changed.
+    - name: An item naming a package type the role cannot act on
+      block:
+        - name: Include the role with the unknown package type
+          ansible.builtin.include_role:
+            name: colonel_byte.zarf.deploy_packages
+          vars:
+            zarf_packages_to_deploy:
+              - path: "{{ fixture_package }}"
+                package_type: deploy_package
+                components:
+                  - a-file
+
+        - name: The role should not have got this far
+          ansible.builtin.fail:
+            msg: >-
+              the role accepted package_type deploy_package, which neither module task matches, so
+              the item would deploy nothing and still report the stack changed
+
+      rescue:
+        - name: The role refused, naming the type and the item
+          ansible.builtin.assert:
+            that:
+              - "'deploy_package' in ansible_failed_result.msg"
+              - "'init, package or deploy' in ansible_failed_result.msg"
+            success_msg: ASSERTED a package type the role cannot act on is refused
+            fail_msg: the role failed, but not because of the unknown package type
+
+    # The drift check reads one cluster through the role-level kubeconfig. An item naming its own
+    # while that is unset would be judged against whatever cluster the query reached.
+    - name: An item naming its own kubeconfig while the role-level one is unset
+      block:
+        - name: Include the role with a per-item kubeconfig and no role-level one
+          ansible.builtin.include_role:
+            name: colonel_byte.zarf.deploy_packages
+          vars:
+            zarf_kubeconfig: ""
+            zarf_packages_to_deploy:
+              - path: "{{ fixture_package }}"
+                kubeconfig: /etc/rancher/rke2/rke2.yaml
+                components:
+                  - a-file
+
+        - name: The role should not have got this far
+          ansible.builtin.fail:
+            msg: >-
+              the role accepted an item naming its own kubeconfig while zarf_kubeconfig was unset,
+              so the skip decision would read a different cluster from the one the item deploys to
+
+      rescue:
+        - name: The role refused, saying which cluster the drift check reads
+          ansible.builtin.assert:
+            that:
+              - "'kubeconfig' in ansible_failed_result.msg"
+            success_msg: ASSERTED a stack that disagrees with the drift check on the cluster is refused
+            fail_msg: the role failed, but not because of the disagreeing kubeconfig
