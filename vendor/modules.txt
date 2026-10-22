@@ -1,8 +1,8 @@
 # atomicgo.dev/cursor v0.2.0
 ## explicit; go 1.15
 atomicgo.dev/cursor
-# atomicgo.dev/keyboard v0.2.9
-## explicit; go 1.15
+# atomicgo.dev/keyboard v0.2.10
+## explicit; go 1.25.0
 atomicgo.dev/keyboard
 atomicgo.dev/keyboard/internal
 atomicgo.dev/keyboard/keys
