@@ -7,6 +7,7 @@ import (
 	"hash/fnv"
 	"math"
 	"reflect"
+	"sync"
 	"time"
 	"unsafe"
 )
@@ -39,19 +40,30 @@ type HashOptions struct {
 	// precedence (meaning that if the type doesn't implement fmt.Stringer, we
 	// panic)
 	UseStringer bool
+
+	// UnwrapFunc is a hook to replace a value with another value before hashing,
+	// e.g. to hash a struct by some identity method instead of its exported fields.
+	// It is called for every value visited, including nested values (struct fields,
+	// slice/array elements and map keys/values), after any pointers and interfaces
+	// have been dereferenced, so the hook typically wants to switch on the value's
+	// Kind before doing any work.
+	// Return the input value unchanged to hash it as-is.
+	// A changed value replaces the original: it is dereferenced and unwrapped
+	// again, then hashed in place of the original, bypassing any other handling
+	// of the original value (e.g. the Hashable interface and struct tags).
+	// Note that Hash has a fast path for top-level string values that bypasses
+	// this hook; a string nested inside another value still visits it. Keep
+	// this in mind if the hook rewrites strings.
+	UnwrapFunc func(reflect.Value) (reflect.Value, error)
 }
 
 // Hash returns the hash value of an arbitrary value.
 //
 // If opts is nil, then default options will be used. See HashOptions
-// for the default values. The same *HashOptions value cannot be used
-// concurrently. None of the values within a *HashOptions struct are
-// safe to read/write while hashing is being done.
-//
-// The "format" is required and must be one of the format values defined
-// by this library. You should probably just use "FormatV2". This allows
-// generated hashes uses alternate logic to maintain compatibility with
-// older versions.
+// for the default values. Hash treats opts as read-only, so the same
+// *HashOptions value can be shared and reused, also concurrently, as
+// long as its Hasher is nil: a hash.Hash64 is stateful, so a
+// *HashOptions carrying a custom Hasher must not be used concurrently.
 //
 // Notes on the value:
 //
@@ -77,35 +89,30 @@ type HashOptions struct {
 //
 //   - "string" - The field will be hashed as a string, only works when the
 //     field implements fmt.Stringer
-func Hash(v interface{}, opts *HashOptions) (uint64, error) {
-	// Create default options
+func Hash(v any, opts *HashOptions) (uint64, error) {
 	if opts == nil {
 		opts = &HashOptions{}
 	}
-	if opts.Hasher == nil {
-		opts.Hasher = fnv.New64()
-	}
-	if opts.TagName == "" {
-		opts.TagName = "hash"
+
+	hasher := opts.Hasher
+	if hasher == nil {
+		hasher = getFnv()
+		defer putFnv(hasher)
 	}
 
-	// Reset the hash
-	opts.Hasher.Reset()
+	// No Reset of the hasher here: every function that touches it
+	// (hashString, hashDirect etc.) resets it before writing.
+	// Keep it that way if you add a new write site.
 
 	// Fast path for strings.
+	// This deliberately bypasses UnwrapFunc; see its documentation.
 	if s, ok := v.(string); ok {
-		return hashString(opts.Hasher, s)
+		return hashString(hasher, s)
 	}
 
-	// Create our walker and walk the structure
-	w := &walker{
-		h:               opts.Hasher,
-		tag:             opts.TagName,
-		zeronil:         opts.ZeroNil,
-		ignorezerovalue: opts.IgnoreZeroValue,
-		sets:            opts.SlicesAsSets,
-		stringer:        opts.UseStringer,
-	}
+	w := getWalker(hasher, opts)
+	defer putWalker(w)
+
 	return w.visit(reflect.ValueOf(v), nil)
 }
 
@@ -116,6 +123,7 @@ type walker struct {
 	ignorezerovalue bool
 	sets            bool
 	stringer        bool
+	unwrap          func(reflect.Value) (reflect.Value, error)
 	buf             [16]byte // Reusable buffer for binary encoding
 }
 
@@ -124,11 +132,15 @@ type visitOpts struct {
 	Flags visitFlag
 
 	// Information about the struct containing this field
-	Struct      interface{}
+	Struct      any
 	StructField string
 }
 
-var timeType = reflect.TypeOf(time.Time{})
+var timeType = reflect.TypeFor[time.Time]()
+
+// maxUnwraps caps the number of times UnwrapFunc may rewrite a single value,
+// as a guard against hooks that never converge.
+const maxUnwraps = 32
 
 // A direct hash calculation used for numeric and bool values.
 func (w *walker) hashDirect(v any) (uint64, error) {
@@ -201,11 +213,12 @@ func hashString(h hash.Hash64, s string) (uint64, error) {
 }
 
 func (w *walker) visit(v reflect.Value, opts *visitOpts) (uint64, error) {
-	t := reflect.TypeOf(0)
+	t := reflect.TypeFor[int]()
 
 	// Loop since these can be wrapped in multiple layers of pointers
-	// and interfaces.
-	for {
+	// and interfaces. An unwrapped value re-enters the loop, as it may
+	// itself be wrapped or subject to further unwrapping.
+	for unwraps := 0; ; {
 		// If we have an interface, dereference it. We have to do this up
 		// here because it might be a nil in there and the check below must
 		// catch that.
@@ -222,12 +235,27 @@ func (w *walker) visit(v reflect.Value, opts *visitOpts) (uint64, error) {
 			continue
 		}
 
-		break
-	}
+		// If it is nil, treat it like a zero.
+		if !v.IsValid() {
+			v = reflect.Zero(t)
+		}
 
-	// If it is nil, treat it like a zero.
-	if !v.IsValid() {
-		v = reflect.Zero(t)
+		if w.unwrap != nil {
+			vv, err := w.unwrap(v)
+			if err != nil {
+				return 0, err
+			}
+			if vv != v {
+				unwraps++
+				if unwraps > maxUnwraps {
+					return 0, fmt.Errorf("unwrapped value %s more than %d times; check that UnwrapFunc returns its input unchanged when there is nothing to unwrap", v.Type(), maxUnwraps)
+				}
+				v = vv
+				continue
+			}
+		}
+
+		break
 	}
 
 	if v.CanInt() {
@@ -308,13 +336,13 @@ func (w *walker) visit(v reflect.Value, opts *visitOpts) (uint64, error) {
 	case reflect.Array:
 		var h uint64
 		l := v.Len()
-		for i := 0; i < l; i++ {
+		for i := range l {
 			current, err := w.visit(v.Index(i), nil)
 			if err != nil {
 				return 0, err
 			}
 
-			h = hashUpdateOrdered(w.h, h, current)
+			h = w.hashUpdateOrdered(h, current)
 		}
 
 		return h, nil
@@ -323,7 +351,7 @@ func (w *walker) visit(v reflect.Value, opts *visitOpts) (uint64, error) {
 		var includeMap IncludableMap
 		var field string
 
-		if v, ok := v.Interface().(IncludableMap); ok {
+		if v, ok := reflect.TypeAssert[IncludableMap](v); ok {
 			includeMap = v
 		} else if opts != nil && opts.Struct != nil {
 			if v, ok := opts.Struct.(IncludableMap); ok {
@@ -362,18 +390,18 @@ func (w *walker) visit(v reflect.Value, opts *visitOpts) (uint64, error) {
 				return 0, err
 			}
 
-			fieldHash := hashUpdateOrdered(w.h, kh, vh)
-			h = hashUpdateUnordered(h, fieldHash)
+			fieldHash := w.hashUpdateOrdered(kh, vh)
+			h = w.hashUpdateUnordered(h, fieldHash)
 		}
 
 		// Important: read the docs for hashFinishUnordered
-		h = hashFinishUnordered(w.h, h)
+		h = w.hashFinishUnordered(h)
 
 		return h, nil
 
 	case reflect.Struct:
 		var include Includable
-		var parent interface{}
+		var parent any
 
 		// Check if we can address this value first (more common case for pointer receivers)
 		if v.CanAddr() {
@@ -416,7 +444,7 @@ func (w *walker) visit(v reflect.Value, opts *visitOpts) (uint64, error) {
 		}
 		fieldOpts.Struct = parent
 
-		for i := 0; i < l; i++ {
+		for i := range l {
 			if innerV := v.Field(i); v.CanSet() || t.Field(i).Name != "_" {
 				fieldType := t.Field(i)
 				if fieldType.PkgPath != "" {
@@ -438,7 +466,7 @@ func (w *walker) visit(v reflect.Value, opts *visitOpts) (uint64, error) {
 
 				// if string is set, use the string value
 				if tag == "string" || w.stringer {
-					if impl, ok := innerV.Interface().(fmt.Stringer); ok {
+					if impl, ok := reflect.TypeAssert[fmt.Stringer](innerV); ok {
 						innerV = reflect.ValueOf(impl.String())
 					} else if tag == "string" {
 						// We only show this error if the tag explicitly
@@ -476,11 +504,11 @@ func (w *walker) visit(v reflect.Value, opts *visitOpts) (uint64, error) {
 					return 0, err
 				}
 
-				fieldHash := hashUpdateOrdered(w.h, kh, vh)
-				h = hashUpdateUnordered(h, fieldHash)
+				fieldHash := w.hashUpdateOrdered(kh, vh)
+				h = w.hashUpdateUnordered(h, fieldHash)
 			}
 			// Important: read the docs for hashFinishUnordered
-			h = hashFinishUnordered(w.h, h)
+			h = w.hashFinishUnordered(h)
 		}
 
 		return h, nil
@@ -490,27 +518,40 @@ func (w *walker) visit(v reflect.Value, opts *visitOpts) (uint64, error) {
 		// visit all the elements. If it is a set, then we do a deterministic
 		// hash code.
 		var h uint64
-		var set bool
+		set := w.sets
 		if opts != nil {
-			set = (opts.Flags & visitFlagSet) != 0
+			set = set || (opts.Flags&visitFlagSet) != 0
 		}
 		l := v.Len()
-		for i := 0; i < l; i++ {
+		// In set mode, duplicate element hashes must be skipped: the hashes are
+		// combined with XOR, so an element repeated an even number of times
+		// cancels itself out, making e.g. {a, e, e} and {a, d, d} collide.
+		var seen map[uint64]struct{}
+		if set && l > 1 {
+			seen = make(map[uint64]struct{}, l)
+		}
+		for i := range l {
 			current, err := w.visit(v.Index(i), nil)
 			if err != nil {
 				return 0, err
 			}
 
-			if set || w.sets {
-				h = hashUpdateUnordered(h, current)
+			if set {
+				if seen != nil {
+					if _, ok := seen[current]; ok {
+						continue
+					}
+					seen[current] = struct{}{}
+				}
+				h = w.hashUpdateUnordered(h, current)
 			} else {
-				h = hashUpdateOrdered(w.h, h, current)
+				h = w.hashUpdateOrdered(h, current)
 			}
 		}
 
 		if set {
 			// Important: read the docs for hashFinishUnordered
-			h = hashFinishUnordered(w.h, h)
+			h = w.hashFinishUnordered(h)
 		}
 
 		return h, nil
@@ -522,19 +563,18 @@ func (w *walker) visit(v reflect.Value, opts *visitOpts) (uint64, error) {
 	}
 }
 
-func hashUpdateOrdered(h hash.Hash64, a, b uint64) uint64 {
+func (w *walker) hashUpdateOrdered(a, b uint64) uint64 {
 	// For ordered updates, use a real hash function
-	h.Reset()
+	w.h.Reset()
 
-	var buf [16]byte
-	binary.LittleEndian.PutUint64(buf[0:8], a)
-	binary.LittleEndian.PutUint64(buf[8:16], b)
-	h.Write(buf[:])
+	binary.LittleEndian.PutUint64(w.buf[0:8], a)
+	binary.LittleEndian.PutUint64(w.buf[8:16], b)
+	w.h.Write(w.buf[:])
 
-	return h.Sum64()
+	return w.h.Sum64()
 }
 
-func hashUpdateUnordered(a, b uint64) uint64 {
+func (w *walker) hashUpdateUnordered(a, b uint64) uint64 {
 	return a ^ b
 }
 
@@ -552,14 +592,13 @@ func hashUpdateUnordered(a, b uint64) uint64 {
 //
 // hashFinishUnordered "hardens" the result, so that encountering partially
 // overlapping input data later on in a different context won't cancel out.
-func hashFinishUnordered(h hash.Hash64, a uint64) uint64 {
-	h.Reset()
+func (w *walker) hashFinishUnordered(a uint64) uint64 {
+	w.h.Reset()
 
-	var buf [8]byte
-	binary.LittleEndian.PutUint64(buf[:], a)
-	h.Write(buf[:])
+	binary.LittleEndian.PutUint64(w.buf[:8], a)
+	w.h.Write(w.buf[:8])
 
-	return h.Sum64()
+	return w.h.Sum64()
 }
 
 // visitFlag is used as a bitmask for affecting visit behavior
@@ -569,3 +608,51 @@ const (
 	visitFlagInvalid visitFlag = iota
 	visitFlagSet               = iota << 1
 )
+
+var walkerPool = sync.Pool{
+	New: func() any {
+		return &walker{}
+	},
+}
+
+func getWalker(h hash.Hash64, opts *HashOptions) *walker {
+	w := walkerPool.Get().(*walker)
+	w.h = h
+	w.tag = opts.TagName
+	if w.tag == "" {
+		w.tag = "hash"
+	}
+	w.zeronil = opts.ZeroNil
+	w.ignorezerovalue = opts.IgnoreZeroValue
+	w.sets = opts.SlicesAsSets
+	w.stringer = opts.UseStringer
+	w.unwrap = opts.UnwrapFunc
+	return w
+}
+
+func putWalker(w *walker) {
+	w.h = nil
+	w.tag = ""
+	w.zeronil = false
+	w.ignorezerovalue = false
+	w.sets = false
+	w.stringer = false
+	w.unwrap = nil
+
+	walkerPool.Put(w)
+}
+
+var fnvPool = sync.Pool{
+	New: func() any {
+		return fnv.New64()
+	},
+}
+
+func getFnv() hash.Hash64 {
+	return fnvPool.Get().(hash.Hash64)
+}
+
+func putFnv(h hash.Hash64) {
+	// It will be reset before it's used again.
+	fnvPool.Put(h)
+}
