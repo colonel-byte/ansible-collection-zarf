@@ -94,7 +94,7 @@ require (
 	github.com/alibabacloud-go/tea v1.5.3 // indirect
 	github.com/alibabacloud-go/tea-utils/v2 v2.0.9 // indirect
 	github.com/aliyun/credentials-go v1.4.13 // indirect
-	github.com/anchore/bubbly v0.2.1 // indirect
+	github.com/anchore/bubbly v0.2.2 // indirect
 	github.com/anchore/clio v0.1.1 // indirect
 	github.com/anchore/fangs v0.1.1 // indirect
 	github.com/anchore/go-collections v0.1.1 // indirect
