@@ -34,6 +34,9 @@ var (
 
 	// ErrReaderClosed is returned when a ReadClosed closed the ringbuffer.
 	ErrReaderClosed = errors.New("reader closed")
+
+	// ErrReset is returned when Reset() is called, causing pending operations to abort.
+	ErrReset = errors.New("reset called")
 )
 
 // RingBuffer is a circular buffer that implements io.ReaderWriter interface.
@@ -41,33 +44,41 @@ var (
 // and can be read back from another goroutine.
 // It is safe to concurrently read and write RingBuffer.
 type RingBuffer struct {
-	buf       []byte
-	size      int
-	r         int // next position to read
-	w         int // next position to write
-	isFull    bool
-	err       error
-	block     bool
-	timeout   time.Duration
-	mu        sync.Mutex
-	wg        sync.WaitGroup
-	readCond  *sync.Cond // Signaled when data has been read.
-	writeCond *sync.Cond // Signaled when data has been written.
+	buf        []byte
+	size       int
+	r          int // next position to read
+	w          int // next position to write
+	isFull     bool
+	err        error
+	block      bool
+	overwrite  bool          // when true, overwrite old data when buffer is full
+	rTimeout   time.Duration // Applies to writes (waits for the read condition)
+	wTimeout   time.Duration // Applies to read (wait for the write condition)
+	noClOnTo   bool          // do not set buffer in error on a timeout
+	mu         sync.Mutex
+	writeMu    sync.Mutex // serializes the write side so ReadFrom can release mu while blocked in rd.Read
+	wg         sync.WaitGroup
+	readCond   *sync.Cond    // Signaled when data has been read.
+	writeCond  *sync.Cond    // Signaled when data has been written.
+	notify     chan struct{} // Signaled when data is written or state changes; see Notify.
+	generation int64         // Incremented on Reset() to invalidate current waiters
 }
 
 // New returns a new RingBuffer whose buffer has the given size.
 func New(size int) *RingBuffer {
 	return &RingBuffer{
-		buf:  make([]byte, size),
-		size: size,
+		buf:    make([]byte, size),
+		size:   size,
+		notify: make(chan struct{}, 1),
 	}
 }
 
 // NewBuffer returns a new RingBuffer whose buffer is provided.
 func NewBuffer(b []byte) *RingBuffer {
 	return &RingBuffer{
-		buf:  b,
-		size: len(b),
+		buf:    b,
+		size:   len(b),
+		notify: make(chan struct{}, 1),
 	}
 }
 
@@ -85,15 +96,22 @@ func (r *RingBuffer) SetBlocking(block bool) *RingBuffer {
 	return r
 }
 
+// SetOverwrite sets the overwrite mode of the ring buffer.
+// If overwrite is true, Write operations will overwrite the oldest data when the buffer is full,
+// similar to a traditional circular buffer. The read pointer will advance to skip overwritten data.
+// If overwrite is false (default), Write will return ErrIsFull or block (if blocking mode is enabled).
+func (r *RingBuffer) SetOverwrite(overwrite bool) *RingBuffer {
+	r.overwrite = overwrite
+	return r
+}
+
 // WithCancel sets a context to cancel the ring buffer.
 // When the context is canceled, the ring buffer will be closed with the context error.
 // A goroutine will be started and run until the provided context is canceled.
 func (r *RingBuffer) WithCancel(ctx context.Context) *RingBuffer {
 	go func() {
-		select {
-		case <-ctx.Done():
-			r.CloseWithError(ctx.Err())
-		}
+		<-ctx.Done()
+		r.CloseWithError(ctx.Err())
 	}()
 	return r
 }
@@ -104,7 +122,48 @@ func (r *RingBuffer) WithCancel(ctx context.Context) *RingBuffer {
 // A timeout of 0 or less will disable timeouts (default).
 func (r *RingBuffer) WithTimeout(d time.Duration) *RingBuffer {
 	r.mu.Lock()
-	r.timeout = d
+	r.rTimeout = d
+	r.wTimeout = d
+	r.mu.Unlock()
+	return r
+}
+
+// WithReadTimeout will set a blocking read timeout.
+// Reads refers to any call that reads data from the buffer.
+// If no writes occur within the timeout,
+// the ringbuffer will be closed and context.DeadlineExceeded will be returned.
+// A timeout of 0 or less will disable timeouts (default).
+func (r *RingBuffer) WithReadTimeout(d time.Duration) *RingBuffer {
+	r.mu.Lock()
+	// Read operations wait for writes to complete,
+	// therefore we set the wTimeout.
+	r.wTimeout = d
+	r.mu.Unlock()
+	return r
+}
+
+// WithWriteTimeout will set a blocking write timeout.
+// Write refers to any call that writes data into the buffer.
+// If no reads occur within the timeout,
+// the ringbuffer will be closed and context.DeadlineExceeded will be returned.
+// A timeout of 0 or less will disable timeouts (default).
+func (r *RingBuffer) WithWriteTimeout(d time.Duration) *RingBuffer {
+	r.mu.Lock()
+	// Write operations wait for reads to complete,
+	// therefore we set the rTimeout.
+	r.rTimeout = d
+	r.mu.Unlock()
+	return r
+}
+
+// WithNoCloseOnTimeout will set the ringbuffer to not close on timeout.
+// By default, the ringbuffer will close on timeout and return context.DeadlineExceeded.
+// When this option is set, the ringbuffer will not close on timeout (but still return
+// context.DeadlineExceeded) and will continue to operate.
+// This is useful when you want to handle timeouts without closing the ringbuffer.
+func (r *RingBuffer) WithNoCloseOnTimeout() *RingBuffer {
+	r.mu.Lock()
+	r.noClOnTo = true
 	r.mu.Unlock()
 	return r
 }
@@ -124,10 +183,15 @@ func (r *RingBuffer) setErr(err error, locked bool) error {
 		return err
 	default:
 		r.err = err
+		// The conds only exist in blocking mode (see SetBlocking), so this guard
+		// is nil-safety rather than policy. notify is allocated by both
+		// constructors and must fire in either mode: a consumer selecting on
+		// Notify still has to learn that the buffer closed.
 		if r.block {
 			r.readCond.Broadcast()
 			r.writeCond.Broadcast()
 		}
+		r.signalNotify()
 	}
 	return err
 }
@@ -171,8 +235,16 @@ func (r *RingBuffer) Read(p []byte) (n int, err error) {
 	defer r.wg.Done()
 	n, err = r.read(p)
 	for err == ErrIsEmpty && r.block {
+		// Record the generation before waiting. If Reset() increments the generation,
+		// we will detect it after waking up and continue waiting (as if nothing happened).
+		myGen := r.generation
 		if !r.waitWrite() {
 			return 0, context.DeadlineExceeded
+		}
+		// If generation changed, Reset() happened while we were waiting.
+		// Go back to waiting - the buffer was reset and we should continue as normal.
+		if myGen != r.generation {
+			continue
 		}
 		if err = r.readErr(true); err != nil {
 			break
@@ -207,56 +279,71 @@ func (r *RingBuffer) TryRead(p []byte) (n int, err error) {
 	return n, err
 }
 
+// copyFromBuffer copies data from the ring buffer to dst without modifying the read pointer.
+// Returns the number of bytes copied. Does not check for errors.
+func (r *RingBuffer) copyFromBuffer(dst []byte) int {
+	if r.w == r.r && !r.isFull {
+		return 0
+	}
+
+	var n int
+	if r.w > r.r {
+		n = r.w - r.r
+		if n > len(dst) {
+			n = len(dst)
+		}
+		copy(dst, r.buf[r.r:r.r+n])
+		return n
+	}
+
+	n = r.size - r.r + r.w
+	if n > len(dst) {
+		n = len(dst)
+	}
+
+	if r.r+n <= r.size {
+		copy(dst, r.buf[r.r:r.r+n])
+	} else {
+		c1 := r.size - r.r
+		copy(dst, r.buf[r.r:r.size])
+		c2 := n - c1
+		copy(dst[c1:], r.buf[0:c2])
+	}
+	return n
+}
+
 func (r *RingBuffer) read(p []byte) (n int, err error) {
 	if r.w == r.r && !r.isFull {
 		return 0, ErrIsEmpty
 	}
 
-	if r.w > r.r {
-		n = r.w - r.r
-		if n > len(p) {
-			n = len(p)
-		}
-		copy(p, r.buf[r.r:r.r+n])
-		r.r = (r.r + n) % r.size
-		return
+	n = r.copyFromBuffer(p)
+	if n == 0 {
+		return 0, ErrIsEmpty
 	}
 
-	n = r.size - r.r + r.w
-	if n > len(p) {
-		n = len(p)
-	}
-
-	if r.r+n <= r.size {
-		copy(p, r.buf[r.r:r.r+n])
-	} else {
-		c1 := r.size - r.r
-		copy(p, r.buf[r.r:r.size])
-		c2 := n - c1
-		copy(p[c1:], r.buf[0:c2])
-	}
 	r.r = (r.r + n) % r.size
-
 	r.isFull = false
 
 	return n, r.readErr(true)
 }
 
-// waitRead will wait for a read unblock.
 // Returns true if a read may have happened.
-// Returns false if waited longer than timeout.
+// Returns false if waited longer than rTimeout.
 // Must be called when locked and returns locked.
 func (r *RingBuffer) waitRead() (ok bool) {
-	if r.timeout <= 0 {
+	if r.rTimeout <= 0 {
 		r.readCond.Wait()
 		return true
 	}
 	start := time.Now()
-	defer time.AfterFunc(r.timeout, r.readCond.Broadcast).Stop()
+	defer time.AfterFunc(r.rTimeout, r.readCond.Broadcast).Stop()
 
 	r.readCond.Wait()
-	if time.Since(start) >= r.timeout {
-		r.setErr(context.DeadlineExceeded, true)
+	if time.Since(start) >= r.rTimeout {
+		if !r.noClOnTo {
+			r.setErr(context.DeadlineExceeded, true) //nolint errcheck
+		}
 		return false
 	}
 	return true
@@ -271,8 +358,16 @@ func (r *RingBuffer) ReadByte() (b byte, err error) {
 	}
 	for r.w == r.r && !r.isFull {
 		if r.block {
+			// Record the generation before waiting. If Reset() increments the generation,
+			// we will detect it after waking up and continue waiting.
+			myGen := r.generation
 			if !r.waitWrite() {
 				return 0, context.DeadlineExceeded
+			}
+			// If generation changed, Reset() happened while we were waiting.
+			// Go back to waiting - the buffer was reset.
+			if myGen != r.generation {
+				continue
 			}
 			err = r.readErr(true)
 			if err != nil {
@@ -289,7 +384,23 @@ func (r *RingBuffer) ReadByte() (b byte, err error) {
 	}
 
 	r.isFull = false
+	if r.block {
+		r.readCond.Broadcast()
+	}
 	return b, r.readErr(true)
+}
+
+// checkWriteErr checks if the buffer has an error that should prevent writes.
+// Returns the appropriate error to return (nil if write can proceed).
+// Must be called with mutex held.
+func (r *RingBuffer) checkWriteErr() error {
+	if r.err == nil {
+		return nil
+	}
+	if r.err == io.EOF {
+		return ErrWriteOnClosed
+	}
+	return r.err
 }
 
 // Write writes len(p) bytes from p to the underlying buf.
@@ -302,12 +413,11 @@ func (r *RingBuffer) Write(p []byte) (n int, err error) {
 	if len(p) == 0 {
 		return 0, r.setErr(nil, false)
 	}
+	r.writeMu.Lock()
+	defer r.writeMu.Unlock()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if err := r.err; err != nil {
-		if err == io.EOF {
-			err = ErrWriteOnClosed
-		}
+	if err := r.checkWriteErr(); err != nil {
 		return 0, err
 	}
 	wrote := 0
@@ -319,8 +429,20 @@ func (r *RingBuffer) Write(p []byte) (n int, err error) {
 		}
 		err = r.setErr(err, true)
 		if r.block && (err == ErrIsFull || err == ErrTooMuchDataToWrite) {
+			// Record the generation before waiting. If Reset() increments the generation,
+			// we will detect it after waking up and continue waiting.
+			myGen := r.generation
 			r.writeCond.Broadcast()
-			r.waitRead()
+			if !r.waitRead() {
+				return wrote, context.DeadlineExceeded
+			}
+			// If generation changed, Reset() happened while we were waiting.
+			// Go back to waiting - the buffer was reset.
+			if myGen != r.generation {
+				p = p[n:]
+				err = nil
+				continue
+			}
 			p = p[n:]
 			err = nil
 			continue
@@ -336,19 +458,22 @@ func (r *RingBuffer) Write(p []byte) (n int, err error) {
 
 // waitWrite will wait for a write event.
 // Returns true if a write may have happened.
-// Returns false if waited longer than timeout.
+// Returns false if waited longer than wTimeout.
 // Must be called when locked and returns locked.
 func (r *RingBuffer) waitWrite() (ok bool) {
-	if r.timeout <= 0 {
+	if r.wTimeout <= 0 {
 		r.writeCond.Wait()
 		return true
 	}
+
 	start := time.Now()
-	defer time.AfterFunc(r.timeout, r.writeCond.Broadcast).Stop()
+	defer time.AfterFunc(r.wTimeout, r.writeCond.Broadcast).Stop()
 
 	r.writeCond.Wait()
-	if time.Since(start) >= r.timeout {
-		r.setErr(context.DeadlineExceeded, true)
+	if time.Since(start) >= r.wTimeout {
+		if !r.noClOnTo {
+			r.setErr(context.DeadlineExceeded, true) //nolint errcheck
+		}
 		return false
 	}
 	return true
@@ -366,39 +491,81 @@ func (r *RingBuffer) waitWrite() (ok bool) {
 // Any error except EOF encountered during the read is also returned,
 // and the error will cause the Read side to fail as well.
 // ReadFrom only available in blocking mode.
+//
+// While a ReadFrom is in progress the read pointer is released between reads, so
+// Read, Peek, Length, Free and IsEmpty stay responsive even when the source is
+// idle and blocked in Read. Concurrent Write/WriteByte calls are serialized
+// against ReadFrom and wait while a single read into the buffer is in flight.
 func (r *RingBuffer) ReadFrom(rd io.Reader) (n int64, err error) {
 	if !r.block {
 		return 0, errors.New("RingBuffer: ReadFrom only available in blocking mode")
 	}
+	// ReadFrom is the write side for its whole duration. Serialize against other
+	// writers so we can release r.mu while blocked in rd.Read without a
+	// concurrent Write scribbling into the window we reserved or moving r.w out
+	// from under our snapshot. The read/inspection side never takes writeMu, so
+	// it is unaffected.
+	r.writeMu.Lock()
+	defer r.writeMu.Unlock()
+
 	zeroReads := 0
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	for {
+		r.mu.Lock()
 		if err = r.readErr(true); err != nil {
+			r.mu.Unlock()
 			return n, err
 		}
 		if r.isFull {
-			// Wait for a read
+			// Wait for a read.
 			if !r.waitRead() {
-				return 0, context.DeadlineExceeded
+				r.mu.Unlock()
+				return n, context.DeadlineExceeded
 			}
+			r.mu.Unlock()
 			continue
 		}
 
+		// Reserve the contiguous free window and snapshot what we will commit
+		// against. The window is free space beyond the write pointer, disjoint
+		// from the committed [r, w) region that readers and Peek/Length touch.
 		var toRead []byte
 		if r.w >= r.r {
-			// After reader, read until end of buffer
+			// After reader, read until end of buffer.
 			toRead = r.buf[r.w:]
 		} else {
 			// Before reader, read until reader.
+			if r.w >= r.size || r.r > r.size {
+				// Pointers are corrupted, return error to prevent panic.
+				r.mu.Unlock()
+				return n, errors.New("RingBuffer: internal state corrupted")
+			}
 			toRead = r.buf[r.w:r.r]
 		}
-		// Unlock while reading
+		startW := r.w
+		gen := r.generation
 		r.mu.Unlock()
+
+		// Read with no lock held: this is where an idle source blocks, and where
+		// every other method must stay responsive.
 		nr, rerr := rd.Read(toRead)
+
 		r.mu.Lock()
+		if r.generation != gen {
+			// Reset() happened while we were blocked in rd.Read. The snapshot is
+			// stale and any bytes read belong to a buffer that no longer exists;
+			// drop them and recompute against the fresh state.
+			r.mu.Unlock()
+			continue
+		}
 		if rerr != nil && rerr != io.EOF {
-			err = r.setErr(err, true)
+			// Keep the bytes that came with the error.
+			if nr > 0 {
+				r.w = (startW + nr) % r.size
+				r.isFull = r.r == r.w
+				n += int64(nr)
+			}
+			err = r.setErr(rerr, true)
+			r.mu.Unlock()
 			break
 		}
 		if nr == 0 && rerr == nil {
@@ -406,17 +573,20 @@ func (r *RingBuffer) ReadFrom(rd io.Reader) (n int64, err error) {
 			if zeroReads >= 100 {
 				err = r.setErr(io.ErrNoProgress, true)
 			}
+			r.mu.Unlock()
 			continue
 		}
 		zeroReads = 0
-		r.w += nr
-		if r.w == r.size {
-			r.w = 0
-		}
+
+		// Commit. writeMu keeps us the only writer, so startW == r.w still holds.
+		r.w = (startW + nr) % r.size
 		r.isFull = r.r == r.w && nr > 0
 		n += int64(nr)
 		r.writeCond.Broadcast()
-		if rerr == io.EOF {
+		r.signalNotify()
+		eof := rerr == io.EOF
+		r.mu.Unlock()
+		if eof {
 			// We do not close.
 			break
 		}
@@ -449,7 +619,7 @@ func (r *RingBuffer) WriteTo(w io.Writer) (n int64, err error) {
 		if r.r == r.w && !r.isFull {
 			// Wait for a write to make space
 			if !r.waitWrite() {
-				return 0, context.DeadlineExceeded
+				return n, context.DeadlineExceeded
 			}
 			continue
 		}
@@ -470,10 +640,12 @@ func (r *RingBuffer) WriteTo(w io.Writer) (n int64, err error) {
 		nr, werr := w.Write(toWrite)
 		r.mu.Lock()
 		if werr != nil {
+			n += int64(nr)
 			err = r.setErr(werr, true)
 			break
 		}
 		if nr != len(toWrite) {
+			n += int64(nr)
 			err = r.setErr(io.ErrShortWrite, true)
 			break
 		}
@@ -503,12 +675,10 @@ func (r *RingBuffer) WriteTo(w io.Writer) (n int64, err error) {
 func (r *RingBuffer) Copy(dst io.Writer, src io.Reader) (written int64, err error) {
 	r.SetBlocking(true)
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		r.ReadFrom(src)
+	wg.Go(func() {
+		_, _ = r.ReadFrom(src) //nolint errcheck
 		r.CloseWriter()
-	}()
+	})
 	defer wg.Wait()
 	return r.WriteTo(dst)
 }
@@ -519,15 +689,16 @@ func (r *RingBuffer) TryWrite(p []byte) (n int, err error) {
 	if len(p) == 0 {
 		return 0, r.setErr(nil, false)
 	}
+	if !r.writeMu.TryLock() {
+		return 0, ErrAcquireLock
+	}
+	defer r.writeMu.Unlock()
 	ok := r.mu.TryLock()
 	if !ok {
 		return 0, ErrAcquireLock
 	}
 	defer r.mu.Unlock()
-	if err := r.err; err != nil {
-		if err == io.EOF {
-			err = ErrWriteOnClosed
-		}
+	if err := r.checkWriteErr(); err != nil {
 		return 0, err
 	}
 
@@ -539,6 +710,32 @@ func (r *RingBuffer) TryWrite(p []byte) (n int, err error) {
 }
 
 func (r *RingBuffer) write(p []byte) (n int, err error) {
+	// In overwrite mode, we always allow writing by discarding old data
+	if r.overwrite && len(p) > 0 {
+		var avail int
+		if r.w == r.r && r.isFull {
+			// Buffer is full, no space available
+			avail = 0
+		} else if r.w >= r.r {
+			avail = r.size - r.w + r.r
+		} else {
+			avail = r.r - r.w
+		}
+
+		// If we need more space than available, discard old data
+		if len(p) > avail {
+			// Advance read pointer to make room
+			needed := len(p) - avail
+			// Never discard more than the buffer actually holds.
+			if used := r.size - avail; needed > used {
+				needed = used
+			}
+			r.r = (r.r + needed) % r.size
+			// If buffer was full, it's no longer full after advancing read pointer
+			r.isFull = false
+		}
+	}
+
 	if r.isFull {
 		return 0, ErrIsFull
 	}
@@ -579,23 +776,35 @@ func (r *RingBuffer) write(p []byte) (n int, err error) {
 		r.isFull = true
 	}
 
+	if n > 0 {
+		r.signalNotify()
+	}
+
 	return n, err
 }
 
 // WriteByte writes one byte into buffer, and returns ErrIsFull if the buffer is full.
 func (r *RingBuffer) WriteByte(c byte) error {
+	r.writeMu.Lock()
+	defer r.writeMu.Unlock()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if err := r.err; err != nil {
-		if err == io.EOF {
-			err = ErrWriteOnClosed
-		}
+	if err := r.checkWriteErr(); err != nil {
 		return err
 	}
 	err := r.writeByte(c)
 	for err == ErrIsFull && r.block {
+		// Record the generation before waiting. If Reset() increments the generation,
+		// we will detect it after waking up and continue waiting.
+		myGen := r.generation
 		if !r.waitRead() {
 			return context.DeadlineExceeded
+		}
+		// If generation changed, Reset() happened while we were waiting.
+		// Go back to waiting - the buffer was reset.
+		if myGen != r.generation {
+			err = r.writeByte(c)
+			continue
 		}
 		err = r.setErr(r.writeByte(c), true)
 	}
@@ -608,15 +817,16 @@ func (r *RingBuffer) WriteByte(c byte) error {
 // TryWriteByte writes one byte into buffer without blocking.
 // If it does not succeed to acquire the lock, it returns ErrAcquireLock.
 func (r *RingBuffer) TryWriteByte(c byte) error {
+	if !r.writeMu.TryLock() {
+		return ErrAcquireLock
+	}
+	defer r.writeMu.Unlock()
 	ok := r.mu.TryLock()
 	if !ok {
 		return ErrAcquireLock
 	}
 	defer r.mu.Unlock()
-	if err := r.err; err != nil {
-		if err == io.EOF {
-			err = ErrWriteOnClosed
-		}
+	if err := r.checkWriteErr(); err != nil {
 		return err
 	}
 
@@ -632,7 +842,15 @@ func (r *RingBuffer) writeByte(c byte) error {
 		return r.err
 	}
 	if r.w == r.r && r.isFull {
-		return ErrIsFull
+		// In overwrite mode, discard the oldest byte and write the new one
+		if r.overwrite {
+			r.r++
+			if r.r == r.size {
+				r.r = 0
+			}
+		} else {
+			return ErrIsFull
+		}
 	}
 	r.buf[r.w] = c
 	r.w++
@@ -644,6 +862,8 @@ func (r *RingBuffer) writeByte(c byte) error {
 		r.isFull = true
 	}
 
+	r.signalNotify()
+
 	return nil
 }
 
@@ -651,19 +871,7 @@ func (r *RingBuffer) writeByte(c byte) error {
 func (r *RingBuffer) Length() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-
-	if r.w == r.r {
-		if r.isFull {
-			return r.size
-		}
-		return 0
-	}
-
-	if r.w > r.r {
-		return r.w - r.r
-	}
-
-	return r.size - r.r + r.w
+	return r.length()
 }
 
 // Capacity returns the size of the underlying buffer.
@@ -768,13 +976,13 @@ func (r *RingBuffer) CloseWithError(err error) {
 	if err == nil {
 		err = io.EOF
 	}
-	r.setErr(err, false)
+	r.setErr(err, false) //nolint errcheck
 }
 
 // CloseWriter closes the writer.
 // Reads will return any remaining bytes and io.EOF.
 func (r *RingBuffer) CloseWriter() {
-	r.setErr(io.EOF, false)
+	r.setErr(io.EOF, false) //nolint errcheck
 }
 
 // Flush waits for the buffer to be empty and fully read.
@@ -810,12 +1018,26 @@ func (r *RingBuffer) Reset() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Set error so any readers/writers will return immediately.
-	r.setErr(errors.New("reset called"), true)
 	if r.block {
+		// In blocking mode, increment generation to invalidate current waiters.
+		// They will wake up, see the generation changed, and go back to waiting.
+		// This makes Reset() transparent to waiters - they continue waiting as if nothing happened.
+		//
+		// Note: We don't wait for wg.Wait() in blocking mode since waiters may
+		// block indefinitely. The generation mechanism ensures they handle the reset correctly.
+		r.generation++
 		r.readCond.Broadcast()
 		r.writeCond.Broadcast()
+		r.signalNotify()
+		r.r = 0
+		r.w = 0
+		r.err = nil
+		r.isFull = false
+		return
 	}
+
+	// In non-blocking mode, set error to return immediately to any readers/writers.
+	r.setErr(ErrReset, true) //nolint errcheck
 
 	// Unlock the mutex so readers/writers can finish.
 	r.mu.Unlock()
@@ -863,6 +1085,56 @@ func (rc *readCloser) Close() error {
 	return err
 }
 
+// Notify returns a channel that is signaled whenever data is written to the
+// buffer, or when the buffer is closed or reset.
+//
+// It exists for consumers that cannot simply block in Read. A consumer that must
+// wait on several things at once — new data, plus events from elsewhere — needs
+// every source of wakeup to be selectable, and a blocking read is not. Peek is
+// also non-blocking by design, so a consumer that wants to look at data without
+// consuming it has nothing to wait on. This channel is that wait.
+//
+// The channel has capacity 1 and signals coalesce: it reports that something
+// changed, never how much or how often. A woken consumer must re-inspect the
+// buffer rather than assume anything about its state. A signal may also arrive
+// spuriously, so treat it as a hint to look, not as a promise of data.
+//
+// Signals are delivered regardless of blocking mode.
+//
+// Notify is not a broadcast: a send wakes exactly one receiver, so it is meant
+// for a single waiting consumer. If several goroutines select on the same
+// channel, one signal wakes only one of them and the others may keep waiting.
+//
+// Because a signal is spent by the receive, a wakeup must not be discarded
+// without looking. Re-inspect the buffer before waiting again.
+func (r *RingBuffer) Notify() <-chan struct{} {
+	return r.notify
+}
+
+// signalNotify performs a non-blocking send on the notify channel. Safe to call
+// with r.mu held: the send never blocks, since a pending signal already conveys
+// everything a later one would.
+//
+// Placement differs from writeCond.Broadcast on purpose. Broadcasts live in the
+// exported entry points; notify is signalled from the internal write() and
+// writeByte() funnels instead, for two reasons:
+//
+//   - Coverage. writeByte has four callers and only two of them broadcast; the
+//     rest are covered transitively, which takes tracing to confirm. Signalling
+//     at the funnel means a new caller cannot be missed.
+//   - Blocking mode. Most broadcasts sit inside `if r.block` guards, because the
+//     conds are nil otherwise. Mirroring that placement would silence Notify for
+//     a non-blocking buffer, which consumers are entitled to use.
+//
+// Extra signals cost nothing: the channel has capacity 1 and coalesces, and the
+// documented contract is that a wakeup means "look", not "there is data".
+func (r *RingBuffer) signalNotify() {
+	select {
+	case r.notify <- struct{}{}:
+	default:
+	}
+}
+
 // Peek reads up to len(p) bytes into p without moving the read pointer.
 func (r *RingBuffer) Peek(p []byte) (n int, err error) {
 	if len(p) == 0 {
@@ -879,32 +1151,79 @@ func (r *RingBuffer) Peek(p []byte) (n int, err error) {
 }
 
 func (r *RingBuffer) peek(p []byte) (n int, err error) {
-	if r.w == r.r && !r.isFull {
+	n = r.copyFromBuffer(p)
+	if n == 0 {
 		return 0, ErrIsEmpty
 	}
+	return n, r.readErr(true)
+}
 
-	if r.w > r.r {
-		n = r.w - r.r
-		if n > len(p) {
-			n = len(p)
-		}
-		copy(p, r.buf[r.r:r.r+n])
-		return
+// PeekAt reads up to len(p) bytes into p, starting off bytes past the read
+// pointer, without moving it.
+//
+// The offset is for a consumer that has to run ahead of what it can release.
+// Where bytes stay buffered until something confirms them, the read pointer is
+// wherever confirmation has reached — not where reading should resume — and the
+// two can be far apart. Peek always starts at the read pointer, so such a
+// consumer would otherwise have to ask for everything from there and discard
+// the part it already has, copying the skipped prefix on every call.
+//
+// An offset at or past the end of the buffered data returns 0 and no error: it
+// means the consumer has taken everything there is, which is an ordinary thing
+// for it to ask. That is distinct from an empty buffer, which returns
+// ErrIsEmpty exactly as Peek does.
+func (r *RingBuffer) PeekAt(off int, p []byte) (n int, err error) {
+	if len(p) == 0 || off < 0 {
+		return 0, r.readErr(false)
 	}
 
-	n = r.size - r.r + r.w
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.readErr(true); err != nil {
+		return 0, err
+	}
+
+	held := r.length()
+	if held == 0 {
+		// Nothing buffered at all, which is what Peek reports here too.
+		return 0, ErrIsEmpty
+	}
+	if off >= held {
+		// Buffered, but the consumer has already taken all of it. Not the same
+		// condition as an empty buffer, and not an error: it is what a consumer
+		// that has caught up sees every time it asks.
+		return 0, nil
+	}
+
+	n = held - off
 	if n > len(p) {
 		n = len(p)
 	}
 
-	if r.r+n <= r.size {
-		copy(p, r.buf[r.r:r.r+n])
-	} else {
-		c1 := r.size - r.r
-		copy(p, r.buf[r.r:r.size])
-		c2 := n - c1
-		copy(p[c1:], r.buf[0:c2])
+	start := r.r + off
+	if start >= r.size {
+		start -= r.size
 	}
-
+	if start+n <= r.size {
+		copy(p, r.buf[start:start+n])
+	} else {
+		c1 := r.size - start
+		copy(p, r.buf[start:r.size])
+		copy(p[c1:], r.buf[0:n-c1])
+	}
 	return n, r.readErr(true)
+}
+
+// length is Length without the lock, for callers that already hold it.
+func (r *RingBuffer) length() int {
+	if r.w == r.r {
+		if r.isFull {
+			return r.size
+		}
+		return 0
+	}
+	if r.w > r.r {
+		return r.w - r.r
+	}
+	return r.size - r.r + r.w
 }

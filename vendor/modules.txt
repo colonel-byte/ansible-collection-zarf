@@ -2940,8 +2940,8 @@ github.com/sirupsen/logrus
 # github.com/skeema/knownhosts v1.3.3
 ## explicit; go 1.25.0
 github.com/skeema/knownhosts
-# github.com/smallnest/ringbuffer v0.0.0-20241116012123-461381446e3d
-## explicit; go 1.19
+# github.com/smallnest/ringbuffer v0.2.0
+## explicit; go 1.26
 github.com/smallnest/ringbuffer
 # github.com/sorairolake/lzip-go v0.3.8
 ## explicit; go 1.22
