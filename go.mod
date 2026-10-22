@@ -587,7 +587,7 @@ require (
 	gopkg.in/ini.v1 v1.67.3 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	gorm.io/gorm v1.31.1 // indirect
+	gorm.io/gorm v1.31.2 // indirect
 	helm.sh/helm/v3 v3.22.1 // indirect
 	helm.sh/helm/v4 v4.3.0 // indirect
 	howett.net/plist v1.0.1 // indirect
