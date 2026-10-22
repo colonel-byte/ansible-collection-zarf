@@ -1,0 +1,7 @@
+---
+galaxy_info:
+  author: Allen Conlon
+  description: Deploy a stack or list of Zarf packages to a cluster with component drift detection
+  license: Apache-2.0
+  min_ansible_version: "2.15.0"
+dependencies: []

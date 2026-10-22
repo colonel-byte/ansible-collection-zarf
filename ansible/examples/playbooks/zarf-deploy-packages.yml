@@ -1,0 +1,73 @@
+---
+# Converge a bundle's packages with one task, through the colonel_byte.zarf.deploy_packages role.
+#
+# zarf-bundle-order.yml deploys the same shape of stack by calling the modules step by step, with
+# the drift decisions written out in the playbook. This is the same stack stated as a list: the
+# role inspects each package, compares the components the item asks for against the ones
+# `zarf package list` reports for that package, and runs zarf only where they differ. Running it a
+# second time against an unchanged cluster deploys nothing.
+#
+# Drift detection is per component, so an item that enumerates no components is always deployed --
+# there is nothing to compare. Enumerate them to get the skip.
+#
+# git-server is in the seed set rather than only in the rest set. zarf records the git server's
+# credentials on the first init only when git-server is among the components it was asked for, and
+# a later init onto a cluster whose state holds no git server is refused with `cannot change git
+# server information after initial init`.
+#
+# The role's variables and the keys each list item accepts are documented at
+# https://colonel-byte.github.io/ansible-collection-zarf/ansible/role_deploy_packages.html.
+- name: Converge the init-local-path uds-bundle packages
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    zarf_kubeconfig: /etc/rancher/rke2/rke2.yaml
+    zarf_public_key: /etc/zarf/colonel-byte-zarf-packages.pub
+    zarf_timeout: 15m
+    # Where the deployment result of each item is written, as
+    # <position>-<package file name>.json -- 1-zarf-init-amd64-v0.88.0.json for the first item
+    # below. The position leads the name because the init package appears twice here, and a name
+    # built from the package alone would have the third item overwrite the first item's result.
+    # An item can name the whole path itself with log_dest.
+    zarf_result_dir: /var/log/zarf
+    zarf_init_package: /srv/staging/zarf-init-amd64-v0.88.0.tar.zst
+    zarf_storage_package: /srv/staging/zarf-package-csi-local-path-provider-amd64-0.0.37-upstream.tar.zst
+
+  tasks:
+    - name: Deploy the bundle's packages in order
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.deploy_packages
+      vars:
+        # Proxy mode for the init packages. The role defaults it to zarf's own behaviour, which is
+        # a node port -- fine on a cluster whose nodes are reachable, and slow on one where the
+        # push has to retry.
+        zarf_registry_mode: proxy
+        zarf_packages_to_deploy:
+          # The seed phase: the injector and the seed registry, plus the git server, for the reason
+          # in the header.
+          - path: "{{ zarf_init_package }}"
+            package_type: init
+            components:
+              - zarf-injector
+              - zarf-seed-registry
+              - git-server
+          # The StorageClass the registry's volume claim is satisfied from.
+          - path: "{{ zarf_storage_package }}"
+            components:
+              - local-path-images
+              - local-path-chart
+            # A cluster that already ships a storage provider is the case these two are met in:
+            # Helm refuses to adopt a StorageClass it did not create without the first, and
+            # server-side apply refuses the annotations the existing owner holds without the
+            # second. Neither is defaulted by the role -- taking fields another controller owns is
+            # stated here or not at all.
+            take_ownership: true
+            force_conflicts: true
+          # The rest of the initialisation, now that the cluster can grant a volume.
+          - path: "{{ zarf_init_package }}"
+            package_type: init
+            components:
+              - zarf-registry
+              - zarf-agent
