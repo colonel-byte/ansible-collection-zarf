@@ -1,0 +1,180 @@
+---
+# The bundle's three steps driven declaratively by M(colonel_byte.zarf.deploy_packages), then the
+# same list a second time to prove the role skips what is already deployed.
+#
+# bundle-order.yml walks the same packages by calling the two modules task by task. What this walk
+# covers that it cannot is the role's own logic: that it inspects each package, reads the deployed
+# components out of the `zarf_packages` fact, and decides per item whether anything has to run.
+# The second invocation is the whole point -- every item's components are deployed by then, so
+# nothing should reach zarf, and the role writes no result file for an item it skipped. What each rerun item did
+# is what the Go test asserts, rather than the role's debug message, because
+# a message is prose and a missing file is a decision.
+#
+# The cluster is the one k3d-config-local-storage.yaml describes, where k3s local-storage is left
+# enabled, so the initialisation can come first and the storage provider second. The role can also
+# express the provider-first order that k3d-config.yaml forces -- a deploy onto an uninitialised
+# cluster through the item's C(connected) key -- and no fixture covers that yet. provider-first.yml
+# walks that order with the two modules directly rather than through the role, so it is the shape
+# to copy from and not a test of this role.
+#
+# git-server is in the seed set rather than only in the rest set, and that is zarf v0.88 rather
+# than the bundle's shape. Two of its behaviours meet badly: a first init records the git server's
+# credentials only when the git-server component is in the set it was asked for (cluster.go,
+# `opts.InternalServices.Has(state.GitKey)`), and `zarf init` carries
+# --git-push-username=zarf-git-user as a flag default whether or not anybody asked for it. So a
+# second init onto a cluster whose state holds no git server is read as changing the git server,
+# and refused: `cannot change git server information after initial init`. Deploying git-server in
+# the first step is what makes the state it compares against exist.
+#
+# registry_mode, take_ownership and force_conflicts are stated here rather than defaulted by the
+# role. Proxy mode matters on k3d: nodeport mode pushes through a node port, and that push times
+# out and retries. take_ownership and force_conflicts are on the storage item for the reason
+# bundle-order.yml gives -- this cluster keeps k3s's own local-storage, so a StorageClass named
+# local-path already exists, Helm refuses to adopt an object it did not create without the first,
+# and server-side apply then refuses the annotations k3s's deploy controller owns without the
+# second.
+#
+# The first invocation names no log_dest, so the names come from the role: the item's position in
+# the stack, then the package's file name. That is what the Go test reads, and it is the half of
+# the result naming a hand-written log_dest would hide. The second invocation names its own, so
+# that a file appearing there is a rerun item that deployed when it should have skipped.
+#
+# Nothing here is contacted.
+- name: Deploy the bundle through the deploy_packages role, then again
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    zarf_init_seed_components:
+      - zarf-injector
+      - zarf-seed-registry
+      - git-server
+    zarf_init_rest_components:
+      - zarf-registry
+      - zarf-agent
+    zarf_storage_components:
+      - local-path-images
+      - local-path-chart
+  tasks:
+    - name: Deploy the stack
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.deploy_packages
+      vars:
+        zarf_registry_mode: proxy
+        zarf_packages_to_deploy:
+          - path: "{{ zarf_init_package }}"
+            package_type: init
+            components: "{{ zarf_init_seed_components }}"
+          - path: "{{ zarf_storage_package }}"
+            components: "{{ zarf_storage_components }}"
+            take_ownership: true
+            force_conflicts: true
+          - path: "{{ zarf_init_package }}"
+            package_type: init
+            components: "{{ zarf_init_rest_components }}"
+
+    - name: Deploy the same stack again
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.deploy_packages
+      vars:
+        zarf_registry_mode: proxy
+        zarf_packages_to_deploy:
+          - path: "{{ zarf_init_package }}"
+            package_type: init
+            components: "{{ zarf_init_seed_components }}"
+            log_dest: "{{ zarf_result_dir }}/4-init-rerun.json"
+          - path: "{{ zarf_storage_package }}"
+            components: "{{ zarf_storage_components }}"
+            take_ownership: true
+            force_conflicts: true
+            log_dest: "{{ zarf_result_dir }}/5-storage-rerun.json"
+          - path: "{{ zarf_init_package }}"
+            package_type: init
+            components: "{{ zarf_init_rest_components }}"
+            log_dest: "{{ zarf_result_dir }}/6-reinit-rerun.json"
+
+    # app-fluxcd, which this repository builds for the suite. Its one component is
+    # `required: true`, so an item that names no components deploys exactly it -- the only way to
+    # run the role's omitted-components path against a real zarf. That path used to kill the play:
+    # the components expression tested the value's shape before the default that was meant to
+    # cover an absent key, and Ansible's undefined marker raises from `is iterable` rather than
+    # returning false. Nothing exercised it, because every other item here names components.
+    #
+    # public_key is emptied per item on purpose. The suite passes zarf_public_key as an extra var,
+    # which outranks anything this play sets, and the role then verifies every package against it
+    # -- but this package is built here and unsigned, so the inspection would refuse it. Emptying
+    # the item's key is what turns verification off for this item alone.
+    - name: Deploy a single-component package without naming its component
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.deploy_packages
+      vars:
+        zarf_packages_to_deploy:
+          - path: "{{ zarf_fluxcd_package }}"
+            public_key: ""
+            log_dest: "{{ zarf_result_dir }}/7-fluxcd-no-components.json"
+
+    # The same package, now naming the component it deployed. One item deploys this package, so
+    # the cluster's record of it is complete and the skip settles -- which is the half of drift
+    # detection that does converge, and the counterpart to the two init items above that cannot.
+    - name: Deploy it again, naming the component, which must be skipped
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.deploy_packages
+      vars:
+        zarf_packages_to_deploy:
+          - path: "{{ zarf_fluxcd_package }}"
+            public_key: ""
+            components:
+              - fluxcd-core
+            log_dest: "{{ zarf_result_dir }}/8-fluxcd-named-rerun.json"
+
+    # The package's own prerequisites document, extracted from the package rather than written
+    # inline: requires.packages there names both `init` and `init-slim`, so this is the one run of
+    # a multi-name requirement against a real document and a real `zarf package list`.
+    - name: Check the deployed package's own prerequisites document
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.prerequisites
+      vars:
+        zarf_package: "{{ zarf_fluxcd_package }}"
+        zarf_public_key: ""
+        zarf_verify: never
+
+    - name: The package's own document was satisfied by the cluster it was deployed to
+      ansible.builtin.assert:
+        that:
+          - zarf_prerequisites_unmet == []
+          - "'one of the zarf packages init, init-slim is deployed' in zarf_prerequisites_checked | join(' ')"
+        success_msg: ASSERTED a package's own prerequisites document is satisfied by this cluster
+        fail_msg: the package's own prerequisites document was not satisfied
+
+    # The cluster the role left behind, checked through the format that states requirements rather
+    # than through the API. It is the only run of a multi-name requires.packages entry against a
+    # real `zarf package list` -- the noncluster suite checks it against a recorded one -- and the
+    # several names are what the bundle's slim init makes necessary: the package reports itself as
+    # `init`, and a cluster initialised from the standard package would report the same name.
+    - name: Check a document whose package requirement names several acceptable packages
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.prerequisites
+      vars:
+        zarf_prerequisites:
+          apiVersion: colonel-byte.dev/v1alpha1
+          kind: PackagePrerequisites
+          metadata:
+            package: a-package-that-needs-an-initialised-cluster
+            version: 1.0.0
+          requires:
+            kubernetes:
+              version: ">=1.30.0"
+            packages:
+              - names:
+                  - init
+                  - init-slim
+              - name: csi-local-path-provider
+
+    - name: The alternative requirement was checked and nothing was unmet
+      ansible.builtin.assert:
+        that:
+          - zarf_prerequisites_unmet == []
+          - "'one of the zarf packages init, init-slim is deployed' in zarf_prerequisites_checked | join(' ')"
+          - "'the zarf package csi-local-path-provider is deployed' in zarf_prerequisites_checked | join(' ')"
+        success_msg: ASSERTED the multi-name requirement was met by the cluster the role initialised
+        fail_msg: the multi-name package requirement was not satisfied

@@ -51,6 +51,13 @@ case " $* " in
   *" list "*)
     cat "${ZARF_ANSIBLE_E2E_CLUSTER_DIR}/zarf-package-list.json"
     ;;
+  # Handed over for the same reason as the documentation layer below: inspecting a definition
+  # needs a real package, and the deploy_packages role inspects every item it is given to learn
+  # the package's name and version.
+  *" inspect definition "*)
+    : "${ZARF_ANSIBLE_E2E_REAL_ZARF:?a real zarf is required to inspect a definition}"
+    exec "${ZARF_ANSIBLE_E2E_REAL_ZARF}" "$@"
+    ;;
   # Spelled as one segment rather than as *" inspect "*" documentation "*, which does not match:
   # the first segment consumes the space that the second one then needs in front of its own word.
   *" inspect documentation "*)

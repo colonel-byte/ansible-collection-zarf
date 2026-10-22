@@ -60,11 +60,12 @@ const (
 )
 
 const (
-	providerFirstPlaybook = "test/e2e/cluster/testdata/provider-first.yml"
-	bundleOrderPlaybook   = "test/e2e/cluster/testdata/bundle-order.yml"
-	infoModulesPlaybook   = "test/e2e/cluster/testdata/info-modules.yml"
-	actingModulesPlaybook = "test/e2e/cluster/testdata/acting-modules.yml"
-	packagePublicKey      = "test/e2e/cluster/testdata/colonel-byte-zarf-packages.pub"
+	providerFirstPlaybook  = "test/e2e/cluster/testdata/provider-first.yml"
+	bundleOrderPlaybook    = "test/e2e/cluster/testdata/bundle-order.yml"
+	infoModulesPlaybook    = "test/e2e/cluster/testdata/info-modules.yml"
+	actingModulesPlaybook  = "test/e2e/cluster/testdata/acting-modules.yml"
+	deployPackagesPlaybook = "test/e2e/cluster/testdata/deploy-packages-role.yml"
+	packagePublicKey       = "test/e2e/cluster/testdata/colonel-byte-zarf-packages.pub"
 )
 
 // The module files the suite drives. mage test:endToEndCluster builds them; see
@@ -101,6 +102,17 @@ const (
 	// shape of the bundle; the standard zarf init package has no optional components to pick.
 	initPackageRef  = "oci://ghcr.io/colonel-byte/zarf/init-slim:v0.88.0"
 	initPackageFile = "zarf-init-%s-v0.88.0.tar.zst"
+	// fluxcdPackageSource is the reference package this repository builds for the suite rather
+	// than pulls. It is the one package here with a single component, and that component is
+	// `required: true`, so a deploy that names no components deploys exactly it -- which is the
+	// only way to exercise the role's omitted-components path against a real zarf. Its own
+	// prerequisites are an initialised cluster and Kubernetes 1.30, not Flux, because it is Flux.
+	fluxcdPackageSource = "examples/packages/app-fluxcd"
+	// fluxcdPackageGlob finds what `zarf package create` wrote, rather than naming the version.
+	// metadata.version there is machine-maintained from resources.json by `mage examples:vendor`,
+	// so a hard-coded version is a test that breaks on the next vendor run.
+	fluxcdPackageGlob = "zarf-package-app-fluxcd-%s-*.tar.zst"
+
 	// storagePackage is the uds-bundle's local-path storage provider.
 	storagePackage = "oci://ghcr.io/colonel-byte/zarf/csi-local-path-provider:0.0.37-upstream"
 	// storagePackageFile is what `zarf package pull` writes that reference to.
@@ -118,6 +130,8 @@ const (
 	envInitPackage = "ZARF_ANSIBLE_E2E_INIT_PACKAGE"
 	// envStoragePackage names a storage provider package to use instead of pulling one.
 	envStoragePackage = "ZARF_ANSIBLE_E2E_STORAGE_PACKAGE"
+	// envFluxCDPackage names an app-fluxcd package to use instead of building one.
+	envFluxCDPackage = "ZARF_ANSIBLE_E2E_FLUXCD_PACKAGE"
 	// envKeep leaves the clusters running after the suite, for looking at what the modules did.
 	envKeep = "ZARF_ANSIBLE_E2E_KEEP"
 )
@@ -132,6 +146,7 @@ type environment struct {
 	deployWrapper  string
 	initPackage    string
 	storagePackage string
+	fluxcdPackage  string
 	publicKey      string
 	// collections is the directory handed to Ansible as its collections path. It holds an
 	// ansible_collections symlink into the repository, which is the layout Ansible insists on and
@@ -269,7 +284,58 @@ func resolvePackages(env *environment) string {
 	}
 	env.storagePackage = pkg
 
+	pkg, reason = haveCreatedPackage(env, dir)
+	if reason != "" {
+		return reason
+	}
+	env.fluxcdPackage = pkg
+
 	return ""
+}
+
+// haveCreatedPackage returns the app-fluxcd package, building it when it is not already cached,
+// and why it could not be had. The environment variable wins over both.
+//
+// It is built rather than pulled because nothing publishes it: it is a reference package in this
+// repository, and `mage examples:lint` is all that has ever read it. The create needs the network
+// once, for the four Flux controller images, and then the cache serves it like the pulled ones.
+func haveCreatedPackage(env *environment, cacheDir string) (string, string) {
+	if named := os.Getenv(envFluxCDPackage); named != "" {
+		if _, err := os.Stat(named); err != nil {
+			return "", fmt.Sprintf("%s names %s, which cannot be read: %v", envFluxCDPackage, named, err)
+		}
+		return named, ""
+	}
+
+	dir := filepath.Join(cacheDir, "app-fluxcd")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Sprintf("unable to create %s: %v", dir, err)
+	}
+
+	pattern := filepath.Join(dir, fmt.Sprintf(fluxcdPackageGlob, env.arch))
+	if matches, err := filepath.Glob(pattern); err == nil && len(matches) == 1 {
+		return matches[0], ""
+	}
+
+	source := filepath.Join(env.root, fluxcdPackageSource)
+	log.Printf("building %s into %s", source, dir)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, env.zarf, "package", "create", source,
+		"--confirm", "--architecture", env.arch, "--output-directory", dir, "--no-color")
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Sprintf("unable to build %s: %v; set %s to a package already on disk",
+			fluxcdPackageSource, err, envFluxCDPackage)
+	}
+
+	matches, err := filepath.Glob(pattern)
+	if err != nil || len(matches) != 1 {
+		return "", fmt.Sprintf("the build of %s produced %d packages matching %s, want exactly 1",
+			fluxcdPackageSource, len(matches), pattern)
+	}
+	return matches[0], ""
 }
 
 // havePackage returns the package at name inside dir, pulling ref when it is not already there,
@@ -438,6 +504,7 @@ func (c *cluster) walk(t *testing.T, playbook string) (string, string) {
 		"-e", "zarf_wrapper_dir="+filepath.Join(suite.root, wrapperDir),
 		"-e", "zarf_init_package="+suite.initPackage,
 		"-e", "zarf_storage_package="+suite.storagePackage,
+		"-e", "zarf_fluxcd_package="+suite.fluxcdPackage,
 		// The reference as well as the staged file: zarf_package_pull fetches from a registry, so
 		// it is the one module here that needs the thing the file was pulled from.
 		"-e", "zarf_storage_package_ref="+storagePackage,
