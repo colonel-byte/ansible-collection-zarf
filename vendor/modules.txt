@@ -526,8 +526,8 @@ github.com/anchore/go-lzo
 # github.com/anchore/go-macholibre v0.1.1
 ## explicit; go 1.21
 github.com/anchore/go-macholibre
-# github.com/anchore/go-rpmdb v0.2.0
-## explicit; go 1.22.0
+# github.com/anchore/go-rpmdb v0.2.2
+## explicit; go 1.25.0
 github.com/anchore/go-rpmdb/pkg
 github.com/anchore/go-rpmdb/pkg/bdb
 github.com/anchore/go-rpmdb/pkg/db
@@ -1575,8 +1575,8 @@ github.com/gdamore/encoding
 ## explicit; go 1.24
 github.com/github/go-spdx/v2/spdxexp
 github.com/github/go-spdx/v2/spdxexp/spdxlicenses
-# github.com/glebarez/go-sqlite v1.22.0
-## explicit; go 1.17
+# github.com/glebarez/go-sqlite v1.23.0
+## explicit; go 1.25.0
 github.com/glebarez/go-sqlite
 # github.com/glebarez/sqlite v1.11.0
 ## explicit; go 1.18
