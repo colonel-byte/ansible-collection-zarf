@@ -15,6 +15,8 @@ The job asks for four writes, each for one reason:
 
 The `dockers_v2` pipe builds `containers/ansible/Dockerfile` for `linux/amd64` and `linux/arm64` and pushes `ghcr.io/colonel-byte/zarf-ansible-modules`, so the job also installs QEMU and Buildx and logs into `ghcr.io` with the job token. The same image is built without being pushed on every pull request that touches it -- see [`test-build-containers.yaml`](test-build-containers.yaml.md).
 
+Like that workflow, this one frees disk space before GoReleaser runs: the module binary carries zarf's whole dependency tree and is built for three architectures, which exhausts what `ubuntu-latest` leaves free and fails the build with `disk quota exceeded`. The step drops the runner image's Android, Haskell, .NET, Swift and PowerShell toolchains, none of which a release uses.
+
 Beyond the archives, the workflow publishes provenance. `actions/attest` attests the checksums file, and a second attestation covers an AI-BOM: `.github/ai-bom.json` is rendered with the tag, commit and timestamp filled in by `jq`, then attested and uploaded alongside the release as `dist/ai-bom.json`. Both attestation bundles are uploaded as `.intoto.jsonl` files with `gh release upload --clobber`.
 
 Signing uses cosign with the key and password in the `COSIGN_PRIVATE_KEY` and `COSIGN_PASSWORD` secrets, and Syft is installed for SBOM generation.

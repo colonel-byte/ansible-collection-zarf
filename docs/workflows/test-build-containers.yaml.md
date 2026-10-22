@@ -8,4 +8,6 @@ The Dockerfile cannot be built with a plain `docker build`: it `COPY`s the nfpm-
 
 QEMU and Buildx are installed because the pipe builds `linux/amd64` and `linux/arm64` in one pass, and `ansible-core` because GoReleaser's `before` hook shells out to `ansible-galaxy` for the collection tarball.
 
+The job frees disk space before building, and has to. The snapshot links zarf's dependency tree into a binary of around 269MB and builds it for `amd64`, `arm64` and `riscv64`, so the Go compiler's scratch directory, the staged `dist/` tree and the buildx layers together outgrow the roughly 14GB `ubuntu-latest` leaves free -- the build dies partway through reporting `disk quota exceeded` against `/tmp/go-build`, which names a quota and is in fact the disk. Removing the Android, Haskell, .NET, Swift and PowerShell toolchains the runner image ships and this job never touches reclaims around 25GB. [`release.yaml`](release.yaml.md) builds the same artifacts for real and does the same thing for the same reason.
+
 [`scan-lint.yaml`](scan-lint.yaml.md) runs hadolint over the same Dockerfile. That checks syntax and never builds, so a base image bump that breaks the build is caught here and nowhere else.
