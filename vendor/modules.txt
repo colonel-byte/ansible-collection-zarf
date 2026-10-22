@@ -497,8 +497,9 @@ github.com/alibabacloud-go/tea-utils/service
 # github.com/alibabacloud-go/tea-utils/v2 v2.0.9
 ## explicit; go 1.14
 github.com/alibabacloud-go/tea-utils/v2/service
-# github.com/aliyun/credentials-go v1.4.7
+# github.com/aliyun/credentials-go v1.4.13
 ## explicit; go 1.14
+github.com/aliyun/credentials-go
 github.com/aliyun/credentials-go/credentials
 github.com/aliyun/credentials-go/credentials/internal/http
 github.com/aliyun/credentials-go/credentials/internal/utils
