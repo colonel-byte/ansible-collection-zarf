@@ -115,6 +115,29 @@ repos:
           - schema/package-resources-schema.json
   - repo: local
     hooks:
+      # The aligned table form docs/AGENTS.md and ansible/AGENTS.md require, enforced rather than
+      # remembered. It is only the table rule: nothing else about a Markdown file is touched, so a
+      # page's prose, bullets and emphasis come out of the hook exactly as they were written.
+      # Tables inside fenced code blocks are skipped -- docs/AGENTS.md documents the rule with a
+      # deliberately unaligned "not this" example.
+      - id: markdown-tables
+        name: pad-markdown-tables
+        language: script
+        entry: hack/markdown-tables.py
+        types:
+          - markdown
+        exclude: vendor/.*
+      # The one guarantee the hook above makes beyond padding: it does not touch a table inside a
+      # fenced code block. The root AGENTS.md teaches the rule with a deliberately unaligned "not
+      # this" example, so a formatter that reached into fences would delete the example and leave
+      # the page contradicting itself. --self-check runs such a page through the formatter and
+      # fails if anything inside a fence came out different.
+      - id: markdown-tables-self-check
+        name: markdown-tables-self-check
+        language: script
+        pass_filenames: false
+        always_run: true
+        entry: hack/markdown-tables.py --self-check
       - id: docs-generator
         name: generate-docs
         language: system
