@@ -1555,8 +1555,8 @@ github.com/fluxcd/cli-utils/pkg/object
 # github.com/fluxcd/pkg/apis/acl v0.10.0
 ## explicit; go 1.26.0
 github.com/fluxcd/pkg/apis/acl
-# github.com/fluxcd/pkg/apis/meta v1.31.0
-## explicit; go 1.26.0
+# github.com/fluxcd/pkg/apis/meta v1.36.0
+## explicit; go 1.27.0
 github.com/fluxcd/pkg/apis/meta
 # github.com/fluxcd/source-controller/api v1.9.6
 ## explicit; go 1.26.0
