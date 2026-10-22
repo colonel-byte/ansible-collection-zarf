@@ -54,7 +54,7 @@ func generateSummary() error {
 			// no number and places it ahead of every numbered chapter, which is where the front
 			// page and the security policy belong.
 			title: "Index",
-			extra: "[readme](index.md)\n[security](security.md)",
+			extra: "[readme](index.md)\n[security](security.md)\n[ZEP findings](ZEP-finds.md)",
 		},
 		{
 			title:  "Guides",

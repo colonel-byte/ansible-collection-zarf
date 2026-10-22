@@ -2,6 +2,7 @@
 
 [readme](index.md)
 [security](security.md)
+[ZEP findings](ZEP-finds.md)
 
 -----------
 
@@ -79,6 +80,7 @@
 - [ai-usage](agent/ai-usage.md)
 - [choice-dependabot-title-length](agent/choice-dependabot-title-length.md)
 - [choice-dependabot-vendor-grouping](agent/choice-dependabot-vendor-grouping.md)
+- [choice-deploy-packages-drift-scope](agent/choice-deploy-packages-drift-scope.md)
 - [choice-fuzz-targets](agent/choice-fuzz-targets.md)
 - [choice-gitops-engine-key](agent/choice-gitops-engine-key.md)
 - [choice-package-documentation-module](agent/choice-package-documentation-module.md)
@@ -86,3 +88,6 @@
 - [choice-zarf-ansible-module](agent/choice-zarf-ansible-module.md)
 - [choice-zarf-collection-removal](agent/choice-zarf-collection-removal.md)
 - [choice-zarf-info-modules](agent/choice-zarf-info-modules.md)
+- [todo-deploy-packages-component-selection](agent/todo-deploy-packages-component-selection.md)
+- [todo-deploy-packages-item-contract](agent/todo-deploy-packages-item-contract.md)
+- [todo-roles-are-single-host](agent/todo-roles-are-single-host.md)
