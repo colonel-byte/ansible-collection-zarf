@@ -145,3 +145,208 @@
           - "'cannot evaluate' in zarf_prerequisites_skipped | join(' ')"
         success_msg: ASSERTED a range the role cannot evaluate is skipped and named
         fail_msg: a compound version range was not reported as unevaluated
+
+    - name: A package requirement naming several acceptable packages, one of them deployed
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.prerequisites
+      vars:
+        zarf_binary: "{{ zarf_binary }}"
+        zarf_prerequisites:
+          apiVersion: colonel-byte.dev/v1alpha1
+          kind: PackagePrerequisites
+          metadata:
+            package: a-package-with-alternative-prereqs
+            version: 1.0.0
+          requires:
+            packages:
+              # The cluster has init at v0.85.0 and not init-slim, so naming both is satisfied by
+              # the one it has -- and the constraint is stated once for both rather than per name.
+              - names:
+                  - init-slim
+                  - init
+                version: ">=0.85.0"
+
+    - name: The requirement is satisfied by the name the cluster has, and its version checked
+      ansible.builtin.assert:
+        that:
+          - zarf_prerequisites_unmet == []
+          - zarf_prerequisites_checked | length == 2
+          - "'one of the zarf packages init-slim, init is deployed' in zarf_prerequisites_checked | join(' ')"
+          # The version check follows the deployed package, so it names init and not init-slim.
+          - "'the deployed zarf package init' in zarf_prerequisites_checked | join(' ')"
+          - "'init-slim satisfies' not in zarf_prerequisites_checked | join(' ')"
+        success_msg: ASSERTED a requirement naming several packages is met by the one the cluster has
+        fail_msg: a requirement naming several packages was not satisfied by the deployed one
+
+    - name: A package requirement naming several acceptable packages, none of them deployed
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.prerequisites
+      vars:
+        zarf_binary: "{{ zarf_binary }}"
+        zarf_prerequisites_enforce: false
+        zarf_prerequisites:
+          apiVersion: colonel-byte.dev/v1alpha1
+          kind: PackagePrerequisites
+          metadata:
+            package: a-package-with-unsatisfied-alternatives
+            version: 1.0.0
+          requires:
+            packages:
+              - names:
+                  - foo-pkg
+                  - bar-pkg
+
+    - name: The unsatisfied requirement is reported as unmet, naming every acceptable package
+      ansible.builtin.assert:
+        that:
+          - zarf_prerequisites_unmet | length == 1
+          - "'one of the zarf packages foo-pkg, bar-pkg is required and is not deployed' in zarf_prerequisites_unmet | first"
+        success_msg: ASSERTED a requirement naming several packages is unmet when the cluster has none
+        fail_msg: an unsatisfied requirement naming several packages was not reported as unmet
+
+    # The branch that names what it did not check. It is reached only with zarf_check_packages
+    # false, and it has to name every package the list mentions -- the one a `name` entry names
+    # and every one a `names` entry does.
+    - name: Package requirements of both shapes, with the package check turned off
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.prerequisites
+      vars:
+        zarf_binary: "{{ zarf_binary }}"
+        zarf_check_packages: false
+        zarf_prerequisites:
+          apiVersion: colonel-byte.dev/v1alpha1
+          kind: PackagePrerequisites
+          metadata:
+            package: a-package-whose-packages-are-not-checked
+            version: 1.0.0
+          requires:
+            packages:
+              - name: app-fluxcd
+                version: ">=1.0.0"
+              - names:
+                  - init
+                  - init-slim
+              - names:
+                  - csi-local-path-provider
+                  - csi-rook-ceph
+
+    - name: The unchecked package requirement names every package it did not check
+      ansible.builtin.assert:
+        that:
+          - zarf_prerequisites_unmet == []
+          - zarf_prerequisites_skipped | length == 1
+          - "'zarf_check_packages is false' in zarf_prerequisites_skipped | first"
+          - "'app-fluxcd' in zarf_prerequisites_skipped | first"
+          - "'init-slim' in zarf_prerequisites_skipped | first"
+          - "'csi-rook-ceph' in zarf_prerequisites_skipped | first"
+        success_msg: ASSERTED the skipped package check names every package both shapes mention
+        fail_msg: the skipped package check did not name every package the document mentions
+
+    # The role refuses what the schema refuses. A document handed over through zarf_prerequisites
+    # never met a validator, and the checks read `names` in preference to `name`, so an entry
+    # carrying both would be checked as something other than what it says.
+    - name: A package requirement carrying both name and names
+      block:
+        - name: Include the role with the ambiguously named requirement
+          ansible.builtin.include_role:
+            name: colonel_byte.zarf.prerequisites
+          vars:
+            zarf_binary: "{{ zarf_binary }}"
+            zarf_prerequisites:
+              apiVersion: colonel-byte.dev/v1alpha1
+              kind: PackagePrerequisites
+              metadata:
+                package: a-package-with-an-ambiguous-requirement
+                version: 1.0.0
+              requires:
+                packages:
+                  - name: init
+                    names:
+                      - init
+                      - init-slim
+
+        - name: The role should not have got this far
+          ansible.builtin.fail:
+            msg: >-
+              the prerequisites role accepted an entry carrying both name and names, which it
+              would then check as names alone
+      rescue:
+        - name: The role refused, naming the rule and the entry
+          ansible.builtin.assert:
+            that:
+              - "'exactly one of the two' in ansible_failed_result.msg"
+              - "'init-slim' in ansible_failed_result.msg"
+            success_msg: ASSERTED an entry carrying both name and names is refused
+            fail_msg: the role failed, but not because of the ambiguously named requirement
+
+    # Two requirements constraining the same deployed package. Both have to be evaluated: reading
+    # the constraints off the deployed package and taking the first reported success against one
+    # and never looked at the other, which is a silent pass.
+    - name: Two requirements constraining the same deployed package, one of them unsatisfiable
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.prerequisites
+      vars:
+        zarf_binary: "{{ zarf_binary }}"
+        zarf_prerequisites_enforce: false
+        zarf_prerequisites:
+          apiVersion: colonel-byte.dev/v1alpha1
+          kind: PackagePrerequisites
+          metadata:
+            package: a-package-constraining-init-twice
+            version: 1.0.0
+          requires:
+            packages:
+              - name: init
+                version: ">=0.85.0"
+              - names:
+                  - init
+                  - init-slim
+                version: ">=2.0.0"
+
+    - name: Both constraints on the same package were evaluated, and the unsatisfiable one is unmet
+      ansible.builtin.assert:
+        that:
+          - zarf_prerequisites_checked | select('search', 'the deployed zarf package init') | list | length == 2
+          - zarf_prerequisites_unmet | length == 1
+          - "'>=2.0.0' in zarf_prerequisites_unmet | first"
+        success_msg: ASSERTED every constraint on one deployed package is evaluated, not just the first
+        fail_msg: a second constraint on the same deployed package was dropped
+
+    # The entry carrying both keys and the entry carrying neither cancel out in any count of
+    # namings across the list, so the rule has to be applied per entry.
+    - name: One entry naming a package twice and another naming none
+      block:
+        - name: Include the role with both malformed entries
+          ansible.builtin.include_role:
+            name: colonel_byte.zarf.prerequisites
+          vars:
+            zarf_binary: "{{ zarf_binary }}"
+            zarf_prerequisites:
+              apiVersion: colonel-byte.dev/v1alpha1
+              kind: PackagePrerequisites
+              metadata:
+                package: a-package-whose-entries-cancel-out
+                version: 1.0.0
+              requires:
+                packages:
+                  - name: init
+                    names:
+                      - init
+                      - init-slim
+                  - version: ">=1.0.0"
+
+        - name: The role should not have got this far
+          ansible.builtin.fail:
+            msg: >-
+              the prerequisites role accepted one entry carrying both name and names alongside one
+              carrying neither, so the rule is being counted across the list rather than applied
+              to each entry
+
+      rescue:
+        - name: The role refused, naming both malformed entries
+          ansible.builtin.assert:
+            that:
+              - "'carry both' in ansible_failed_result.msg"
+              - "'carry neither' in ansible_failed_result.msg"
+            success_msg: ASSERTED the naming rule is applied per entry rather than counted
+            fail_msg: the role failed, but not because of the two malformed entries

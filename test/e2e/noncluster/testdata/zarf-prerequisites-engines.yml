@@ -229,3 +229,32 @@
           - "'no version to compare' in zarf_prerequisites_skipped | join(' ')"
         success_msg: ASSERTED a workload version is checked without naming a GitOps engine
         fail_msg: a controller version constraint was not evaluated on its own merits
+
+    # An engine the role has no namespace for. zarf_engine_namespaces exists to be overridden, and
+    # narrowing it used to make a document requiring the other engine vanish: the engine key is
+    # enumerated from the mapping, so one the mapping lacks was never looked at and nothing said so.
+    - name: A document requiring an engine the namespace mapping does not place
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.prerequisites
+      vars:
+        zarf_binary: "{{ zarf_binary }}"
+        zarf_engine_namespaces:
+          fluxcd: flux-system
+        zarf_prerequisites:
+          apiVersion: colonel-byte.dev/v1alpha1
+          kind: PackagePrerequisites
+          metadata:
+            package: a-package-needing-an-engine-the-role-cannot-place
+            version: 1.0.0
+          requires:
+            argocd:
+              version: ">=3.5.0"
+
+    - name: The unplaced engine was reported as unchecked rather than passed
+      ansible.builtin.assert:
+        that:
+          - zarf_prerequisites_unmet == []
+          - "'argocd' in zarf_prerequisites_skipped | join(' ')"
+          - "'zarf_engine_namespaces does not place' in zarf_prerequisites_skipped | join(' ')"
+        success_msg: ASSERTED an engine the namespace mapping does not place is named as unchecked
+        fail_msg: an engine requirement the role cannot place was silently ignored
