@@ -981,7 +981,7 @@ github.com/blang/semver/v4
 # github.com/bmatcuk/doublestar/v2 v2.0.4
 ## explicit; go 1.12
 github.com/bmatcuk/doublestar/v2
-# github.com/bmatcuk/doublestar/v4 v4.10.0
+# github.com/bmatcuk/doublestar/v4 v4.10.3
 ## explicit; go 1.16
 github.com/bmatcuk/doublestar/v4
 # github.com/bodgit/plumbing v1.3.0
