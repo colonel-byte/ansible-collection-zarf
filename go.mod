@@ -430,7 +430,7 @@ require (
 	github.com/otiai10/mint v1.6.3 // indirect
 	github.com/owenrumney/go-sarif v1.1.2-0.20231003122901-1000f5e05554 // indirect
 	github.com/package-url/packageurl-go v0.1.3 // indirect
-	github.com/pandatix/go-cvss v0.6.2 // indirect
+	github.com/pandatix/go-cvss v0.6.4 // indirect
 	github.com/pb33f/go-yaml v0.1.1 // indirect
 	github.com/pb33f/ordered-map/v2 v2.3.2 // indirect
 	github.com/pborman/indent v1.2.1 // indirect
