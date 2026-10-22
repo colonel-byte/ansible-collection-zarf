@@ -103,7 +103,7 @@ require (
 	github.com/anchore/go-logger v0.1.1 // indirect
 	github.com/anchore/go-lzo v0.1.1 // indirect
 	github.com/anchore/go-macholibre v0.1.1 // indirect
-	github.com/anchore/go-rpmdb v0.2.0 // indirect
+	github.com/anchore/go-rpmdb v0.2.2 // indirect
 	github.com/anchore/go-struct-converter v0.2.0-rc2 // indirect
 	github.com/anchore/go-sync v0.1.2 // indirect
 	github.com/anchore/go-version v1.2.2-0.20210903204242-51efa5b487c4 // indirect
