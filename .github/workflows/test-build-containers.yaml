@@ -30,9 +30,6 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      # Read by the Go toolchain under goreleaser; see the step below.
-      GOTMPDIR: ${{ runner.temp }}/go-build
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -43,11 +40,16 @@ jobs:
       # /tmp/go-build.../importcfg while df reports over 100GB free on /. GOTMPDIR moves that
       # scratch onto the runner's work volume, where the free space actually is.
       #
+      # It goes through GITHUB_ENV rather than a job-level env: block because the runner context
+      # is not available there, and a workflow referencing it fails to load at all rather than
+      # failing a step.
+      #
       # df covers every mount rather than one, so the next failure of this kind says which
       # filesystem ran out instead of leaving it to be inferred.
       - name: Keep the Go compiler's scratch off /tmp
         run: |
-          mkdir -p "${GOTMPDIR}"
+          mkdir -p "${RUNNER_TEMP}/go-build"
+          echo "GOTMPDIR=${RUNNER_TEMP}/go-build" >>"${GITHUB_ENV}"
           df -h
 
       - name: Setup golang
