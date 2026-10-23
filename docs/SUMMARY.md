@@ -44,6 +44,7 @@
 
 - [e2e-tests](dev/e2e-tests.md)
 - [mage](dev/mage.md)
+- [nix](dev/nix.md)
 
 
 -----------
