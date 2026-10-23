@@ -207,6 +207,8 @@ requires:
       version: ">=0.85.0"
 ```
 
+When alternative packages have different version histories, group them with `id` so each alternative keeps its own version constraint. See [Grouping alternative package prerequisites with id](prerequisites-package-id-groups.md) for details.
+
 The engine is named by the key -- `requires.fluxcd` or `requires.argocd` -- and the two are mutually exclusive, which the generated schema states as well as the role. The key names the engine rather than a field inside it because the two do not number together: Flux is on 2.x while Argo CD is on 3.x, so a version sitting beside a separate `engine` field could disagree with it, and the dangerous direction of that disagreement is silent. A document meaning "Flux >= 2.9" that named argocd by mistake is satisfied by Argo CD 3.5, because 3.5 >= 2.9 -- the constraint passes against an engine it was never about. Naming the engine with the key leaves nothing for the version to contradict.
 
 Only two things about checking an engine are engine-specific at all.

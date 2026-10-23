@@ -350,3 +350,102 @@
               - "'carry neither' in ansible_failed_result.msg"
             success_msg: ASSERTED the naming rule is applied per entry rather than counted
             fail_msg: the role failed, but not because of the two malformed entries
+
+    # Package requirements grouped by id: satisfied when at least one branch matches deployed package and version.
+    - name: Package requirements grouped by id with one alternative satisfied
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.prerequisites
+      vars:
+        zarf_binary: "{{ zarf_binary }}"
+        zarf_prerequisites:
+          apiVersion: colonel-byte.dev/v1alpha1
+          kind: PackagePrerequisites
+          metadata:
+            package: a-package-with-id-group-satisfied
+            version: 1.0.0
+          requires:
+            packages:
+              - name: csi-rook-ceph
+                version: ">=1.21.0"
+                id: storage
+              - name: csi-local-path-provider
+                version: ">=0.0.30"
+                id: storage
+
+    - name: The id group is reported as satisfied
+      ansible.builtin.assert:
+        that:
+          - zarf_prerequisites_unmet == []
+          - zarf_prerequisites_checked | length == 1
+          - "'one of the alternative zarf packages for storage' in zarf_prerequisites_checked | first"
+        success_msg: ASSERTED an id group is satisfied when one branch matches
+        fail_msg: an id group with a satisfied branch was not reported as satisfied
+
+    # Package requirements grouped by id: unmet when no branch satisfies both deployment and version.
+    - name: Package requirements grouped by id with all alternatives unsatisfied
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.prerequisites
+      vars:
+        zarf_binary: "{{ zarf_binary }}"
+        zarf_prerequisites_enforce: false
+        zarf_prerequisites:
+          apiVersion: colonel-byte.dev/v1alpha1
+          kind: PackagePrerequisites
+          metadata:
+            package: a-package-with-id-group-unmet
+            version: 1.0.0
+          requires:
+            packages:
+              - name: csi-rook-ceph
+                version: ">=1.21.0"
+                id: storage
+              - name: csi-longhorn
+                version: ">=1.13.0"
+                id: storage
+
+    - name: The unsatisfied id group is reported as a single unmet failure naming candidates
+      ansible.builtin.assert:
+        that:
+          - zarf_prerequisites_unmet | length == 1
+          - "'one of the alternative zarf packages for storage (csi-rook-ceph >=1.21.0 or csi-longhorn >=1.13.0) is required' in zarf_prerequisites_unmet | first"
+        success_msg: ASSERTED an unsatisfied id group is reported as a single failure naming all candidates
+        fail_msg: an unsatisfied id group was not reported as expected
+
+    # The third way an id group fails, and the one that used to be reported as a lie. A branch's
+    # package IS deployed; its constraint is a compound range, which this role documents as
+    # unevaluable. The group still fails -- a group's contract is "one of these, at an acceptable
+    # version", and a constraint the role cannot read proves nothing -- but it has to say so
+    # rather than claim nothing is deployed or that a comparison was made and lost.
+    - name: An id group whose only deployed branch carries a range the role cannot evaluate
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.prerequisites
+      vars:
+        zarf_binary: "{{ zarf_binary }}"
+        zarf_prerequisites_enforce: false
+        zarf_prerequisites:
+          apiVersion: colonel-byte.dev/v1alpha1
+          kind: PackagePrerequisites
+          metadata:
+            package: a-package-whose-id-group-cannot-be-verified
+            version: 1.0.0
+          requires:
+            packages:
+              # init is deployed at v0.85.0 on the stub's cluster.
+              - name: init
+                version: ">=0.85.0 <1.0.0"
+                id: storage
+              - name: csi-longhorn
+                version: ">=1.13.0"
+                id: storage
+
+    - name: The group says the constraint could not be read, not that nothing is deployed
+      ansible.builtin.assert:
+        that:
+          - zarf_prerequisites_unmet | length == 1
+          - "'cannot evaluate' in zarf_prerequisites_unmet | first"
+          - "'none of them is deployed' not in zarf_prerequisites_unmet | first"
+          - "'does not satisfy' not in zarf_prerequisites_unmet | first"
+          # The range itself is still named in its own right, which is the actionable half.
+          - "'cannot evaluate' in zarf_prerequisites_skipped | join(' ')"
+        success_msg: ASSERTED an id group names an unreadable constraint rather than asserting absence
+        fail_msg: an id group reported the wrong reason for failing

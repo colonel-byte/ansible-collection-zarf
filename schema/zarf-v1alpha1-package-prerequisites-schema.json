@@ -178,6 +178,14 @@
           "examples": [
             "\u003e=2.9.0"
           ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "ID groups alternative package requirements that carry distinct version constraints.\n\nWhen multiple entries share an ID, at least one of them must have its package deployed and\nsatisfy its version constraint.",
+          "examples": [
+            "storage"
+          ]
         }
       },
       "additionalProperties": false,

@@ -65,6 +65,7 @@
     _zarf_prereq_classes: "{{ _zarf_prereq_cluster.storage_classes | map(attribute='name') | list }}"
     _zarf_prereq_deployed: "{{ _zarf_prereq_packages.packages | default([]) }}"
     _zarf_prereq_version_checks: []
+    _zarf_prereq_version_evaluations: []
     # Both accumulators are emptied here rather than defaulted where they are read. set_fact
     # outlives the role, and a play that includes the role twice -- which the e2e fixtures do --
     # would otherwise have the second document's checks appended to the first document's.
@@ -139,7 +140,8 @@
     _zarf_prereq_package_requirements: >-
       {{ _zarf_prereq_package_requirements
          + [{'names': item.names | default([item.name | default('', true)], true) | select() | list,
-             'version': item.version | default('', true)}] }}
+             'version': item.version | default('', true),
+             'id': item.id | default('', true)}] }}
   loop: "{{ _zarf_prereq_required_packages }}"
   loop_control:
     label: "{{ (item.names | default([item.name | default('', true)], true)) | join(', ') }}"

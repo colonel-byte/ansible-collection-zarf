@@ -214,6 +214,23 @@ func TestRenderedSchemaRefusesAmbiguousPackageRequirements(t *testing.T) {
 			},
 			valid: false,
 		},
+		{
+			name: "grouped requirement with an id",
+			entry: map[string]any{
+				"name":    "csi-rook-ceph",
+				"version": ">=1.21.0",
+				"id":      "storage",
+			},
+			valid: true,
+		},
+		{
+			name: "grouped requirement with an empty id",
+			entry: map[string]any{
+				"name": "csi-rook-ceph",
+				"id":   "",
+			},
+			valid: false,
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			err := compiled.Validate(documentRequiring(testCase.entry))
