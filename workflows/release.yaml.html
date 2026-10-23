@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-f4552cbd.js";
+            window.path_to_searchindex_js = "../searchindex-a9f08667.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-8db5b85d.js"></script>
@@ -200,6 +200,7 @@
 </table>
 </div>
 <p>The <code>dockers_v2</code> pipe builds <code>containers/ansible/Dockerfile</code> for <code>linux/amd64</code> and <code>linux/arm64</code> and pushes <code>ghcr.io/colonel-byte/zarf-ansible-modules</code>, so the job also installs QEMU and Buildx and logs into <code>ghcr.io</code> with the job token. The same image is built without being pushed on every pull request that touches it – see <a href="test-build-containers.yaml.html"><code>test-build-containers.yaml</code></a>.</p>
+<p>Like that workflow, this one sets <code>GOTMPDIR</code> before GoReleaser runs: the module binary carries zarf’s whole dependency tree and is built for three architectures at once, and the compiler scratch that generates overruns the 7.9GB tmpfs mounted at <code>/tmp</code> long before the root filesystem is anywhere near full. Without it the release fails with <code>disk quota exceeded</code> and a <code>df</code> showing plenty of room.</p>
 <p>Beyond the archives, the workflow publishes provenance. <code>actions/attest</code> attests the checksums file, and a second attestation covers an AI-BOM: <code>.github/ai-bom.json</code> is rendered with the tag, commit and timestamp filled in by <code>jq</code>, then attested and uploaded alongside the release as <code>dist/ai-bom.json</code>. Both attestation bundles are uploaded as <code>.intoto.jsonl</code> files with <code>gh release upload --clobber</code>.</p>
 <p>Signing uses cosign with the key and password in the <code>COSIGN_PRIVATE_KEY</code> and <code>COSIGN_PASSWORD</code> secrets, and Syft is installed for SBOM generation.</p>
 
