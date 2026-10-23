@@ -8,6 +8,7 @@
 # Guides
 
 - [package-prerequisites](guides/package-prerequisites.md)
+- [prerequisites-package-id-groups](guides/prerequisites-package-id-groups.md)
 - [zarf-ansible-module](guides/zarf-ansible-module.md)
 
 

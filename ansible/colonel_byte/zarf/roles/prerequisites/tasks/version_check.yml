@@ -20,13 +20,22 @@
   ansible.builtin.set_fact:
     zarf_prerequisites_checked: >-
       {{ zarf_prerequisites_checked
-         + ([item.label ~ ' ' ~ item.constraint] if _vc_evaluable | bool else []) }}
+         + ([item.label ~ ' ' ~ item.constraint] if (_vc_evaluable | bool and (item.id | default('', true) | length == 0)) else []) }}
     zarf_prerequisites_skipped: >-
       {{ zarf_prerequisites_skipped + ([] if _vc_evaluable | bool else [_vc_skipped]) }}
     zarf_prerequisites_unmet: >-
       {{ zarf_prerequisites_unmet
-         + ([] if (not _vc_evaluable | bool) or (_vc_have is version(_vc_want, _vc_op))
+         + ([] if ((item.id | default('', true) | length > 0) or (not _vc_evaluable | bool) or (_vc_have is version(_vc_want, _vc_op)))
             else [item.label ~ ' is ' ~ _vc_have ~ ', and the package requires ' ~ item.constraint]) }}
+    # evaluable is recorded beside satisfied so that the group check can tell a constraint that
+    # was evaluated and failed from one this role could not read at all. Both are unsatisfied, and
+    # they are not the same thing to say to an operator.
+    _zarf_prereq_version_evaluations: >-
+      {{ _zarf_prereq_version_evaluations
+         + ([{'id': item.id, 'label': item.label,
+              'evaluable': _vc_evaluable | bool,
+              'satisfied': (_vc_evaluable | bool) and (_vc_have is version(_vc_want, _vc_op))}]
+            if (item.id | default('', true) | length > 0) else []) }}
   vars:
     _vc_op: "{{ ((item.constraint | regex_search('^\\s*(>=|<=|==|=|>|<)', '\\1')) or ['>=']) | first }}"
     _vc_want: "{{ ((item.constraint | regex_search('v?([0-9]+\\.[0-9]+\\.[0-9]+)', '\\1')) or ['']) | first }}"

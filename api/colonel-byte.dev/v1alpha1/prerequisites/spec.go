@@ -239,15 +239,60 @@ type StorageRequirement struct {
 	AccessModes []string `json:"accessModes,omitempty" jsonschema:"enum=ReadWriteOnce,enum=ReadOnlyMany,enum=ReadWriteMany,enum=ReadWriteOncePod"`
 }
 
-// PackageRequirement is one other Zarf package that must be deployed first.
+// PackageRequirement is one other Zarf package that must be deployed first, named either by the
+// one name it has or by the several names it is published under.
 //
 // The name is the deployed package's name as `zarf package list` reports it, which is what makes
-// this checkable with colonel_byte.zarf.zarf_package_info and no cluster-specific knowledge.
+// this checkable with colonel_byte.zarf.zarf_package_info and no cluster-specific knowledge. It is
+// also why a requirement cannot be stated against a capability instead, which would otherwise be
+// the expressive way to say "any init package": resolving one would mean reading the `provides` of
+// every deployed package, and the cluster reports names, versions and components -- not documents.
 type PackageRequirement struct {
 	// Name is the prerequisite package's metadata.name.
-	Name string `json:"name" jsonschema:"example=app-fluxcd,example=cluster-init"`
+	Name string `json:"name,omitempty" jsonschema:"minLength=1,example=app-fluxcd,example=cluster-init"`
+	// Names are the metadata.name values that satisfy this requirement, any one of which will do.
+	//
+	// It is how a requirement is stated for something that exists under more than one name: the
+	// upstream init package reports itself as `init` and a rebuild of it as `init-slim`, and a
+	// package needing an initialised cluster needs either. Several names rather than several
+	// requirements, because the version constraint belongs to the requirement and not to each
+	// name -- restating it per name is a constraint that gets bumped in one place and not the
+	// other, which is how the two drift.
+	Names []string `json:"names,omitempty" jsonschema:"minItems=1,example=init,example=init-slim"`
 	// Version is a SemVer range the deployed package's version must satisfy.
+	//
+	// Under Names it applies to whichever of them the cluster has, and to each of them if the
+	// cluster somehow has more than one.
 	Version string `json:"version,omitempty" jsonschema:"example=>=2.9.0"`
+	// ID groups alternative package requirements that carry distinct version constraints.
+	//
+	// When multiple entries share an ID, at least one of them must have its package deployed and
+	// satisfy its version constraint.
+	ID string `json:"id,omitempty" jsonschema:"minLength=1,example=storage"`
+}
+
+// JSONSchemaExtend refuses a PackageRequirement that does not name its prerequisite exactly one of
+// the two ways: by the one name, or by the set of names.
+//
+// `oneOf` rather than `anyOf`, and the difference is the rule. Under `anyOf` a requirement
+// carrying both `name` and `names` matches both branches and is accepted, and the consumer then
+// has to pick: colonel_byte.zarf.prerequisites reads `names` in preference to `name`, so the
+// document would say one thing and the check would do another. Under `oneOf` the same document
+// matches two branches and is refused, which is the only answer that does not require the schema
+// and every reader of it to agree on a precedence nobody wrote down. Neither key is also refused:
+// a requirement that names no package is a line with nothing in it.
+//
+// It is the same reasoning as Requires.JSONSchemaExtend above, one keyword apart: a combination
+// that cannot be checked coherently is refused where the document is written.
+func (PackageRequirement) JSONSchemaExtend(schema *jsonschema.Schema) {
+	schema.OneOf = []*jsonschema.Schema{
+		{
+			Required: []string{"name"},
+		},
+		{
+			Required: []string{"names"},
+		},
+	}
 }
 
 // Provides is what the cluster becomes once the package is deployed: the half of the contract the

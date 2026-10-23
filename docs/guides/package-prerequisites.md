@@ -14,20 +14,20 @@ What makes it hard to prevent is that the requirement is known -- by whoever bui
 
 The contract is a `colonel-byte.dev/v1alpha1` `PackagePrerequisites` document. It is YAML, it is validated by a [generated JSON Schema](https://github.com/colonel-byte/ansible-collection-zarf/blob/main/schema/zarf-v1alpha1-package-prerequisites-schema.json), and the Go types it is generated from are in [`api/colonel-byte.dev/v1alpha1/prerequisites`](https://github.com/colonel-byte/ansible-collection-zarf/blob/main/api/colonel-byte.dev/v1alpha1/prerequisites/spec.go).
 
-| Section                | Required | What it states                                                                                                                             |
-| ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `apiVersion`           | yes      | Fixed to `colonel-byte.dev/v1alpha1`.                                                                                                      |
-| `kind`                 | yes      | Fixed to `PackagePrerequisites`.                                                                                                           |
-| `metadata`             | yes      | The package's name and version, and a sentence for a human.                                                                                |
-| `requires`             | yes      | What the cluster must already be.                                                                                                          |
-| `requires.kubernetes`  | no       | A SemVer constraint on the API server's version.                                                                                           |
-| `requires.fluxcd`      | no       | A SemVer constraint on the installed Flux. Mutually exclusive with `requires.argocd`.                                                      |
-| `requires.argocd`      | no       | A SemVer constraint on the installed Argo CD. Mutually exclusive with `requires.fluxcd`.                                                   |
-| `requires.controllers` | no       | The workloads that must be present and available, by name, namespace and kind, each with an optional SemVer constraint on its own version. |
-| `requires.crds`        | no       | The CustomResourceDefinitions that must be established.                                                                                    |
-| `requires.storage`     | no       | A default StorageClass, named StorageClasses, and the access modes claims ask for.                                                         |
-| `requires.packages`    | no       | Other Zarf packages that must be deployed first, with SemVer constraints.                                                                  |
-| `provides`             | no       | The capabilities, CRDs and namespaces this package contributes to the cluster.                                                             |
+| Section                | Required | What it states                                                                                                                                                      |
+| ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apiVersion`           | yes      | Fixed to `colonel-byte.dev/v1alpha1`.                                                                                                                               |
+| `kind`                 | yes      | Fixed to `PackagePrerequisites`.                                                                                                                                    |
+| `metadata`             | yes      | The package's name and version, and a sentence for a human.                                                                                                         |
+| `requires`             | yes      | What the cluster must already be.                                                                                                                                   |
+| `requires.kubernetes`  | no       | A SemVer constraint on the API server's version.                                                                                                                    |
+| `requires.fluxcd`      | no       | A SemVer constraint on the installed Flux. Mutually exclusive with `requires.argocd`.                                                                               |
+| `requires.argocd`      | no       | A SemVer constraint on the installed Argo CD. Mutually exclusive with `requires.fluxcd`.                                                                            |
+| `requires.controllers` | no       | The workloads that must be present and available, by name, namespace and kind, each with an optional SemVer constraint on its own version.                          |
+| `requires.crds`        | no       | The CustomResourceDefinitions that must be established.                                                                                                             |
+| `requires.storage`     | no       | A default StorageClass, named StorageClasses, and the access modes claims ask for.                                                                                  |
+| `requires.packages`    | no       | Other Zarf packages that must be deployed first, with SemVer constraints. An entry names one package with `name`, or every name it is published under with `names`. |
+| `provides`             | no       | The capabilities, CRDs and namespaces this package contributes to the cluster.                                                                                      |
 
 `requires` is required and `provides` is not, which is the asymmetry the format is for: a package that states nothing it requires has no reason to ship the document, while a leaf workload that provides nothing downstream is the common case.
 
@@ -195,6 +195,19 @@ No `fluxcd` or `argocd` key anywhere: the package needs that workload at that ve
 It is the same label and the same comparison the engine sections use, so the same two caveats apply: one comparator and one version, and a workload carrying no version label has the constraint reported as unchecked rather than satisfied. Most charts following the Kubernetes recommended labels set it; a workload nobody stamped does not.
 
 ### Which engine, and why the format asks
+
+An entry under `requires.packages` names its prerequisite with `name`, or with `names` when the package is published under more than one -- the upstream init reports itself as `init` and a rebuild of it as `init-slim`, and a package needing an initialised cluster needs either. Several names rather than several entries, because the version constraint belongs to the requirement and not to each name: restating it per name is a constraint that gets bumped in one place and not the other. An entry carries one of the two keys and never both, which the schema refuses and the role refuses again for a document handed to it directly -- the role reads `names` in preference to `name`, so an entry carrying both would say one thing and be checked as another.
+
+```yaml
+requires:
+  packages:
+    - names:
+        - init
+        - init-slim
+      version: ">=0.85.0"
+```
+
+When alternative packages have different version histories, group them with `id` so each alternative keeps its own version constraint. See [Grouping alternative package prerequisites with id](prerequisites-package-id-groups.md) for details.
 
 The engine is named by the key -- `requires.fluxcd` or `requires.argocd` -- and the two are mutually exclusive, which the generated schema states as well as the role. The key names the engine rather than a field inside it because the two do not number together: Flux is on 2.x while Argo CD is on 3.x, so a version sitting beside a separate `engine` field could disagree with it, and the dangerous direction of that disagreement is silent. A document meaning "Flux >= 2.9" that named argocd by mistake is satisfied by Argo CD 3.5, because 3.5 >= 2.9 -- the constraint passes against an engine it was never about. Naming the engine with the key leaves nothing for the version to contradict.
 
