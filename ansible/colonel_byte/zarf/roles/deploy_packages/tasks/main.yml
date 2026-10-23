@@ -1,0 +1,70 @@
+---
+# Main entry point for colonel_byte.zarf.deploy_packages.
+#
+# Validates input arguments, ensures deployed cluster packages are loaded into facts if needed,
+# and iterates through zarf_packages_to_deploy.
+
+# The drift check reads one cluster, through the role-level zarf_kubeconfig, because zarf_packages
+# is one fact. An item may name its own kubeconfig and the modules honour it, so a stack whose
+# items point at different clusters would be judged against whichever one this query reached -- and
+# a package of the same name and components deployed there would skip the item that was meant for
+# somewhere else. Refused rather than half-handled: a per-cluster zarf_packages is a redesign.
+- name: Check that the stack and the drift check agree on which cluster
+  ansible.builtin.assert:
+    that:
+      - (zarf_packages_to_deploy | selectattr('kubeconfig', 'defined') | list | length == 0)
+        or (zarf_kubeconfig | length > 0)
+    fail_msg: >-
+      an item names its own kubeconfig while zarf_kubeconfig is unset, so the deployed-package
+      query that decides what to skip would read a different cluster from the one the item deploys
+      to. Set zarf_kubeconfig to the cluster the stack converges, or deploy the items whose
+      kubeconfig differs in a play of their own.
+    quiet: true
+  run_once: true
+
+# Created before anything deploys. ansible.builtin.copy does not create a parent directory, so a
+# zarf_result_dir that does not exist used to fail the play *after* the first package had reached
+# the cluster -- leaving the stack half converged for the sake of a log file.
+- name: Ensure the result directory exists
+  ansible.builtin.file:
+    path: "{{ zarf_result_dir }}"
+    state: directory
+    mode: "0700"
+  delegate_to: "{{ zarf_delegate_to }}"
+  run_once: true
+  when: zarf_result_dir | length > 0
+
+# Read unconditionally rather than only when zarf_packages is undefined. The fact outlives the
+# role, so trusting a pre-existing one meant the role's correctness depended on what the caller
+# did beforehand: a play that deployed a package through this role, removed it with
+# zarf_package_remove, and included the role again would skip the item against the list the first
+# include left behind, and report success for a package no longer on the cluster. One
+# `zarf package list` is cheap beside a package deploy.
+- name: Load the currently installed Zarf packages
+  ansible.builtin.include_role:
+    name: colonel_byte.zarf.packages
+
+# Set before the loop so that the post-loop refresh below has something to read when the stack is
+# empty or every item was skipped.
+- name: Note that nothing has been deployed yet
+  ansible.builtin.set_fact:
+    zarf_deploy_packages_changed: false
+  run_once: true
+
+- name: Deploy each package in the stack
+  ansible.builtin.include_tasks: deploy_package.yml
+  loop: "{{ zarf_packages_to_deploy }}"
+  loop_control:
+    label: "package that will be deployed => {{ pkg_item.path }}"
+    loop_var: pkg_item
+    # deploy_package.yml reads ansible_loop to decide whether a later item needs the deployed
+    # package list refreshed before it makes its own skip decision.
+    extended: true
+
+# The zarf_packages fact outlives this role, so it is brought up to date once at the end rather
+# than left reporting the cluster as it was before the stack was deployed. The refresh inside the
+# loop is the narrower one: it exists only for the next item's skip decision.
+- name: Refresh the installed Zarf packages fact once the stack is deployed
+  ansible.builtin.include_role:
+    name: colonel_byte.zarf.packages
+  when: zarf_deploy_packages_changed | bool

@@ -1,0 +1,214 @@
+---
+- name: "Deploy item: {{ pkg_item.path | basename }}"
+  vars:
+    _item_kubeconfig: "{{ (pkg_item.kubeconfig | default(zarf_kubeconfig)) | default('', true) | string }}"
+    _item_public_key: "{{ (pkg_item.public_key | default(zarf_public_key)) | default('', true) | string }}"
+    _item_verify: "{{ pkg_item.verify | default(zarf_verify if (zarf_verify | length > 0) else ('always' if (_item_public_key | length > 0) else omit)) }}"
+    _item_timeout: "{{ (pkg_item.timeout | default(zarf_timeout)) | default('', true) | string }}"
+    _item_package_type: "{{ (pkg_item.package_type | default('package')) | default('package', true) | string }}"
+    # Each of these is `| string`-measured rather than compared, so that a key written with no
+    # value behind it -- `take_ownership:` meaning "say nothing" -- reads as unset rather than
+    # reaching a module's boolean parameter as None. default() only replaces an *undefined* value,
+    # never a null one, which is the trap: YAML gives None and the guard measured it as 4.
+    #
+    # Three settings the role passes through rather than decides. Each is unset by default, and
+    # unset means zarf's own behaviour: a role that quietly turned on --force-conflicts would
+    # override a server-side-apply conflict on every deploy it performed, which is the operator's
+    # call and not the role's. Empty is the sentinel because a boolean has no third state, and
+    # "the item said nothing" has to be distinguishable from "the item said false".
+    _item_take_ownership: "{{ pkg_item.take_ownership | default(zarf_take_ownership) }}"
+    _item_force_conflicts: "{{ pkg_item.force_conflicts | default(zarf_force_conflicts) }}"
+    _item_registry_mode: "{{ pkg_item.registry_mode | default(zarf_registry_mode) }}"
+    _item_connected: "{{ pkg_item.connected | default(zarf_connected) }}"
+    _item_delegate_to: "{{ pkg_item.delegate_to | default(zarf_delegate_to) }}"
+    _item_binary: "{{ pkg_item.zarf_binary | default(zarf_binary) }}"
+  block:
+    # Neither module task matches a third value, so without this the item deploys nothing, writes
+    # no result, and still marks the stack changed -- the only trace being a skipped task.
+    - name: "The item names a package type the role can act on: {{ pkg_item.path | basename }}"
+      ansible.builtin.assert:
+        that:
+          - _item_package_type in ['init', 'package', 'deploy']
+        fail_msg: >-
+          {{ pkg_item.path }} sets package_type to {{ _item_package_type }}; it must be init,
+          package or deploy.
+        quiet: true
+      run_once: true
+
+    - name: "Inspect package definition: {{ pkg_item.path | basename }}"
+      colonel_byte.zarf.zarf_package_inspect:
+        zarf_binary: "{{ _item_binary }}"
+        package: "{{ pkg_item.path }}"
+        public_key: "{{ _item_public_key if (_item_public_key | length > 0) else omit }}"
+        verify: "{{ _item_verify }}"
+        kubeconfig: "{{ _item_kubeconfig if (_item_kubeconfig | length > 0) else omit }}"
+      delegate_to: "{{ _item_delegate_to }}"
+      run_once: true
+      register: _inspect_res
+
+    - name: "Check if required components are already installed"
+      ansible.builtin.set_fact:
+        _target_package_name: "{{ _inspect_res.package_name }}"
+        # `zarf package list --output-format json` keys a deployed package as `package`, and its
+        # deployed components as `components`; the packages role sets that list verbatim.
+        _deployed_components: >-
+          {{ (zarf_packages
+              | selectattr('package', 'defined')
+              | selectattr('package', 'equalto', _inspect_res.package_name)
+              | map(attribute='components') | list | first) | default([], true) }}
+        # The version the cluster reports for this package, against the one the package carries.
+        # Components alone are not enough to decide: an upgraded tarball of a package whose
+        # component names did not change looks identical to what is deployed, and skipping it
+        # would silently decline the upgrade. zarf-bundle-order.yml, the hand-written playbook
+        # this role replaces, compares the version for the same reason.
+        _deployed_version: >-
+          {{ (zarf_packages
+              | selectattr('package', 'defined')
+              | selectattr('package', 'equalto', _inspect_res.package_name)
+              | map(attribute='version') | list | first) | default('', true) }}
+        _required_components: >-
+          {{ (pkg_item.components | default([]))
+             | reject('match', '^-') | list }}
+        _excluded_components: >-
+          {{ (pkg_item.components | default([]))
+             | select('match', '^-')
+             | map('regex_replace', '^-', '') | list }}
+      run_once: true
+
+    # The excluded components are deliberately not part of this. `--components=-git-server` tells
+    # zarf not to deploy git-server; it does not remove one that is already there. So an item
+    # excluding a component an earlier phase deployed would have had this test fail on every run
+    # for ever, with no state the operator could reach to make it pass. What the item asked for is
+    # the components it named, and those are what is compared.
+    #
+    # The `| length > 0` guard stays: an item naming only exclusions has no required set to
+    # compare, because the rest of its set is whatever zarf would choose, so it deploys every run
+    # for the same reason an item naming nothing does.
+    - name: "Determine if deployment should be skipped"
+      ansible.builtin.set_fact:
+        _components_already_present: >-
+          {{ (_required_components | length > 0) and
+             (_deployed_version == _inspect_res.package_version) and
+             (_required_components | difference(_deployed_components) | length == 0) }}
+      run_once: true
+
+    - name: "Report skip status for {{ _target_package_name }}"
+      ansible.builtin.debug:
+        msg: "Skipping {{ _target_package_name }}: required components {{ _required_components }} are already installed in cluster."
+      run_once: true
+      when: _components_already_present | bool
+
+    - name: "Execute deployment when components are missing or drift detected"
+      when: not (_components_already_present | bool)
+      block:
+        - name: "[init] {{ pkg_item.path | basename }}"
+          colonel_byte.zarf.zarf_init:
+            wrapper_binary: "{{ pkg_item.wrapper_binary | default(zarf_init_wrapper) if (pkg_item.wrapper_binary | default(zarf_init_wrapper) | length > 0) else omit }}"
+            init_package: "{{ pkg_item.path }}"
+            # `is defined` leads, and it is load-bearing: Ansible's undefined marker raises
+            # UndefinedError from `is iterable` rather than returning false, because Jinja's
+            # iterable test only catches TypeError. Testing the shape first killed the play on any
+            # item that named no components, with earlier items of the stack already deployed.
+            components: >-
+              {{ pkg_item.components | join(',')
+                 if (pkg_item.components is defined
+                     and pkg_item.components is iterable
+                     and pkg_item.components is not string)
+                 else (pkg_item.components | default(omit)) }}
+            kubeconfig: "{{ _item_kubeconfig if (_item_kubeconfig | length > 0) else omit }}"
+            # The same key and mode the inspection above used. An init package inspected with
+            # --verify=always and then deployed with no key at all is the role taking the
+            # signature seriously for the read and not for the write.
+            public_key: "{{ _item_public_key if (_item_public_key | length > 0) else omit }}"
+            verify: "{{ _item_verify }}"
+            registry_mode: "{{ _item_registry_mode if (_item_registry_mode is not none and _item_registry_mode | string | length > 0) else omit }}"
+            take_ownership: "{{ _item_take_ownership if (_item_take_ownership is not none and _item_take_ownership | string | length > 0) else omit }}"
+            force_conflicts: "{{ _item_force_conflicts if (_item_force_conflicts is not none and _item_force_conflicts | string | length > 0) else omit }}"
+            timeout: "{{ _item_timeout if (_item_timeout | length > 0) else omit }}"
+            set_variables: "{{ pkg_item.set_variables | default(omit) }}"
+          delegate_to: "{{ _item_delegate_to }}"
+          run_once: true
+          register: _pkg_init_result
+          when: _item_package_type == 'init'
+
+        - name: "[deploy] {{ pkg_item.path | basename }}"
+          colonel_byte.zarf.zarf_package_deploy:
+            wrapper_binary: "{{ pkg_item.wrapper_binary | default(zarf_deploy_wrapper) if (pkg_item.wrapper_binary | default(zarf_deploy_wrapper) | length > 0) else omit }}"
+            package: "{{ pkg_item.path }}"
+            # `is defined` leads, and it is load-bearing: Ansible's undefined marker raises
+            # UndefinedError from `is iterable` rather than returning false, because Jinja's
+            # iterable test only catches TypeError. Testing the shape first killed the play on any
+            # item that named no components, with earlier items of the stack already deployed.
+            components: >-
+              {{ pkg_item.components | join(',')
+                 if (pkg_item.components is defined
+                     and pkg_item.components is iterable
+                     and pkg_item.components is not string)
+                 else (pkg_item.components | default(omit)) }}
+            kubeconfig: "{{ _item_kubeconfig if (_item_kubeconfig | length > 0) else omit }}"
+            public_key: "{{ _item_public_key if (_item_public_key | length > 0) else omit }}"
+            verify: "{{ _item_verify }}"
+            connected: "{{ _item_connected if (_item_connected is not none and _item_connected | string | length > 0) else omit }}"
+            take_ownership: "{{ _item_take_ownership if (_item_take_ownership is not none and _item_take_ownership | string | length > 0) else omit }}"
+            force_conflicts: "{{ _item_force_conflicts if (_item_force_conflicts is not none and _item_force_conflicts | string | length > 0) else omit }}"
+            timeout: "{{ _item_timeout if (_item_timeout | length > 0) else omit }}"
+            set_variables: "{{ pkg_item.set_variables | default(omit) }}"
+          delegate_to: "{{ _item_delegate_to }}"
+          run_once: true
+          register: _pkg_deploy_result
+          when: _item_package_type in ['package', 'deploy']
+
+        # Delegated like every other task here: without it the result lands on the inventory
+        # host while zarf ran on zarf_delegate_to, which is invisible for a localhost play and
+        # wrong for any other.
+        - name: Record deployment result to log file
+          ansible.builtin.copy:
+            content: "{{ (_pkg_init_result if _item_package_type == 'init' else _pkg_deploy_result) | to_json }}"
+            dest: "{{ _log_file }}"
+            mode: "0600"
+          delegate_to: "{{ _item_delegate_to }}"
+          run_once: true
+          vars:
+            # The item's position in the stack leads the name, because the package does not
+            # identify the item: a bundle names the same init package twice, once for the seed
+            # phase and once for the rest, and a name built from the package alone would have the
+            # second step overwrite the first step's result. The position also puts the directory
+            # in deployment order when it is listed, which is the order somebody reading it wants.
+            #
+            # The rest is the package's file name with its extension dropped, and anything that is
+            # not a file name character replaced -- an item may name an oci:// reference, whose
+            # basename carries a tag separator.
+            _result_name: >-
+              {{ ansible_loop.index }}-{{ pkg_item.path | basename
+                 | regex_replace('[.]tar[.]zst$', '')
+                 | regex_replace('[^A-Za-z0-9._-]', '-') }}
+            _default_log: "{{ (zarf_result_dir ~ '/' ~ _result_name ~ '.json') if (zarf_result_dir | length > 0) else '' }}"
+            _log_file: "{{ pkg_item.log_dest | default(_default_log) }}"
+          when:
+            - _log_file | length > 0
+            - (_pkg_init_result if _item_package_type == 'init' else _pkg_deploy_result) is defined
+            - not (_pkg_init_result if _item_package_type == 'init' else _pkg_deploy_result).skipped | default(false)
+
+        - name: Note that the stack deployed something
+          ansible.builtin.set_fact:
+            zarf_deploy_packages_changed: true
+          run_once: true
+
+        # Inside the loop rather than only after it, because the next item's skip decision reads
+        # this fact and a bundle routinely names the same package twice -- the second init step is
+        # judged against what the first one deployed. Queried only when a later item names this
+        # same path, rather than after every deploy: a stack of ten distinct packages would
+        # otherwise ask the cluster ten times for a list only the last answer of which is read.
+        #
+        # Two items naming the same package through different paths -- an upgraded tarball of
+        # something already in the stack -- are not caught by comparing paths, and the later item
+        # then decides against a list taken before this deploy. That errs towards deploying
+        # something already deployed rather than towards skipping something that is not, which is
+        # the direction to be wrong in. main.yml refreshes once at the end regardless.
+        - name: Refresh installed Zarf packages fact for a later item naming this package
+          ansible.builtin.include_role:
+            name: colonel_byte.zarf.packages
+          when: >-
+            ansible_loop.allitems[ansible_loop.index:]
+            | map(attribute='path') | select('equalto', pkg_item.path)
+            | list | length > 0
