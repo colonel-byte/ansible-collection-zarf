@@ -22,30 +22,27 @@ jobs:
       attestations: write
       packages: write
     runs-on: ubuntu-latest
+    env:
+      # Read by the Go toolchain under goreleaser; see the step below.
+      GOTMPDIR: ${{ runner.temp }}/go-build
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
-      # The release links zarf's dependency tree into a ~269MB binary and builds it for three
-      # architectures, so the Go compiler's scratch in TMPDIR, plus dist/, plus the buildx layers
-      # outgrow the ~14GB ubuntu-latest leaves free. The build then dies partway through with
-      # "disk quota exceeded" against /tmp/go-build, which reads like a quota and is the disk.
+      # Three parallel builds of a binary carrying zarf's whole dependency tree put several GB
+      # of scratch in the Go compiler's temporary directory, and /tmp on the hosted image is
+      # quota'd separately from the disk: the build dies with "disk quota exceeded" writing
+      # /tmp/go-build.../importcfg while df reports over 100GB free on /. GOTMPDIR moves that
+      # scratch onto the runner's work volume, where the free space actually is.
       #
-      # None of the toolchains below are used by this job, and dropping them reclaims around
-      # 25GB. df runs after them so that the next failure of this kind says how much was free
-      # rather than leaving it to be guessed at.
-      - name: Free disk space
+      # df covers every mount rather than one, so the next failure of this kind says which
+      # filesystem ran out instead of leaving it to be inferred.
+      - name: Keep the Go compiler's scratch off /tmp
         run: |
-          sudo rm -rf \
-            /usr/local/lib/android \
-            /usr/local/.ghcup \
-            /opt/ghc \
-            /usr/share/dotnet \
-            /usr/share/swift \
-            /usr/local/share/powershell
-          df -h /
+          mkdir -p "${GOTMPDIR}"
+          df -h
 
       - name: Setup Syft
         uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
