@@ -1,76 +1,57 @@
 ---
-# The same four packages as bundle-order.yml, in the order a cluster with no StorageClass forces.
+# The same four packages as bundle-order.yml, on a cluster with no StorageClass, which is what
+# forces the order rather than merely permitting it.
 #
 # The cluster is the one k3d-config.yaml describes: the uds-bundles k3d config, verbatim, which
-# disables k3s local-storage. Zarf's registry claims a 20Gi PVC during the seed phase, so on that
-# cluster `zarf init` cannot come first -- it waits on a Pending PVC until the Helm install times
-# out. What can come first is a connected deploy of the storage provider: C(connected: true) tells
-# zarf not to push the package's images, so the deploy needs no registry, and so needs no
-# initialised cluster. The StorageClass it installs is what the initialisation then claims against.
+# disables k3s local-storage. So nothing on this cluster can bind a volume until the storage
+# provider is deployed, and the two phases of `zarf init` are on opposite sides of that line:
 #
-# That is the one thing this walk proves that bundle-order.yml cannot, and it is the reason the
-# verbatim config is kept as a fixture rather than edited to suit the test.
+# | Phase                                  | Claims a volume                                         |
+# | -------------------------------------- | ------------------------------------------------------- |
+# | `zarf-injector`, `zarf-seed-registry`  | No. The seed registry sets `persistence.enabled: false` |
+# | `zarf-registry`, `git-server`          | Yes -- 20Gi for the registry, 10Gi for gitea            |
 #
-# The init package is the bundle's slim one, whose components are all optional, so the two init
-# steps here split the same way the bundle splits them -- the seed phase, then the rest. The
-# idempotence check lives in bundle-order.yml rather than being repeated here; what this walk is
-# for is the order, not the re-run.
+# That is what this walk proves and bundle-order.yml cannot: the seed phase comes first and needs
+# no storage, the provider is deployed through the registry that phase stood up, and only then can
+# the rest of the initialisation claim anything. On bundle-order.yml's cluster k3s already provides
+# a StorageClass, so its third step would have bound a volume whatever order it ran in.
 #
-# Both init steps pin the git server credentials, for the reason bundle-order.yml explains at
-# length: zarf writes a gitServer block on the first init whatever components were asked for, and
-# its guard then refuses a later init that supplies git input disagreeing with it. Setting them on
-# the first init is what makes the second one legal.
+# The provider is deployed **airgapped**, which is the whole point. An earlier version of this walk
+# passed C(connected: true) on that step -- telling zarf not to push the package's images -- so that
+# the deploy needed no registry at all. That made the walk pass while testing the one thing an
+# air-gapped product never does: it reached out for its own images. The seed registry exists exactly
+# so that a package can be pushed before the cluster has persistent storage, and pushing through it
+# is what this now does.
 #
-# The git credentials are not pinned here, and that is zarf v0.88 rather than a preference. A first
-# init records the git server's credentials only when the git-server component is in the set it was
-# asked for -- see cluster.go, `opts.InternalServices.Has(state.GitKey)` -- and the seed phase is
-# not that step. Given on a later init they are therefore a change to state that holds nothing,
-# which zarf refuses: `cannot change git server information after initial init`. Letting zarf
-# generate them is what lets this play be re-run: the re-init branch fills defaults only for a
-# service no earlier init configured, so the second run of the same step agrees with the state the
-# first one wrote. test/e2e/cluster/testdata/acting-modules.yml rotates them afterwards with
-# zarf_update_creds, which is the command zarf's own error names.
-- name: Deploy the storage provider before initialising
+# git-server is in the rest phase, not the seed phase. It was in the seed phase for a reason that no
+# longer holds: `zarf init` carried `--git-push-username=zarf-git-user` as a leaked viper default
+# whatever components were asked for, so a later init onto a cluster whose state held no git server
+# was read as changing the git server and refused with `cannot change git server information after
+# initial init`. internal/zarfmod.pruneInitGitPushUserDefault clears that default, so the git server
+# can be introduced by a later phase -- which it has to be here, because gitea claims a volume and
+# the seed phase runs before there is one to claim.
+#
+# The storage provider is deployed twice, as the bundle does. The seed registry keeps its images in
+# an emptyDir, so what step 2 pushed into it is gone once step 3 replaces it with the persistent
+# registry; step 4 pushes the same package into that one. The already-running provider does not care
+# -- its images are on the nodes by then -- which is why the cluster survives the gap.
+#
+# The idempotence check lives in bundle-order.yml rather than being repeated here; what this walk is
+# for is the order.
+#
+# Nothing here is contacted.
+- name: Initialise the seed phase, then deploy the storage provider the rest of it needs
   hosts: localhost
   connection: local
   gather_facts: false
   vars:
-    # git-server is in the seed set rather than only in the rest set, and that is zarf v0.88
-    # rather than the bundle's shape. Two of its behaviours meet badly: a first init records the
-    # git server's credentials only when the git-server component is in the set it was asked for
-    # (cluster.go, `opts.InternalServices.Has(state.GitKey)`), and `zarf init` carries
-    # --git-push-username=zarf-git-user as a flag default whether or not anybody asked for it --
-    # a viper default another command sets, which root.go's own comment warns about leaking. So a
-    # second init onto a cluster whose state holds no git server is read as changing the git
-    # server, and refused: `cannot change git server information after initial init`. Deploying
-    # git-server in the first step is what makes the state it compares against exist.
-    zarf_init_seed_components: zarf-injector,zarf-seed-registry,git-server
-    zarf_init_rest_components: zarf-registry,zarf-agent
+    # Local to this play rather than shared with bundle-order.yml: this is the only cluster where
+    # the split matters, because it is the only one where a volume cannot be bound at the start.
+    zarf_init_seed_components: zarf-injector,zarf-seed-registry
+    zarf_init_rest_components: zarf-registry,zarf-agent,git-server
     zarf_storage_components: local-path-images,local-path-chart
   tasks:
-    - name: Deploy the storage provider onto the uninitialised cluster
-      colonel_byte.zarf.zarf_package_deploy:
-        wrapper_binary: "{{ zarf_deploy_wrapper }}"
-        package: "{{ zarf_storage_package }}"
-        components: "{{ zarf_storage_components }}"
-        kubeconfig: "{{ zarf_kubeconfig }}"
-        public_key: "{{ zarf_public_key }}"
-        verify: always
-        # Nothing has a registry to push to yet, and the cluster can reach the provider's images
-        # itself. This is what makes the deploy possible before the initialisation.
-        connected: true
-        timeout: "{{ zarf_timeout | default('15m') }}"
-      delegate_to: localhost
-      run_once: true
-      register: step_storage
-
-    - name: Record what the connected deploy reported
-      ansible.builtin.copy:
-        content: "{{ step_storage | to_json }}"
-        dest: "{{ zarf_result_dir }}/1-storage.json"
-        mode: "0600"
-
-    - name: Initialise the cluster
+    - name: Initialise the cluster with the phase that claims no volume
       colonel_byte.zarf.zarf_init:
         wrapper_binary: "{{ zarf_init_wrapper }}"
         components: "{{ zarf_init_seed_components }}"
@@ -85,12 +66,10 @@
     - name: Record what the initialisation reported
       ansible.builtin.copy:
         content: "{{ step_init | to_json }}"
-        dest: "{{ zarf_result_dir }}/2-init.json"
+        dest: "{{ zarf_result_dir }}/1-init.json"
         mode: "0600"
 
-    # The bundle's third and fourth packages: the provider again, now pushed through the registry
-    # the initialisation stood up, and then the init package again.
-    - name: Deploy the storage provider through the initialised registry
+    - name: Deploy the storage provider through the seed registry
       colonel_byte.zarf.zarf_package_deploy:
         wrapper_binary: "{{ zarf_deploy_wrapper }}"
         package: "{{ zarf_storage_package }}"
@@ -98,19 +77,21 @@
         kubeconfig: "{{ zarf_kubeconfig }}"
         public_key: "{{ zarf_public_key }}"
         verify: always
-        take_ownership: true
+        # Airgapped: the package's images are pushed to the registry the seed phase stood up,
+        # which is what a seed registry is for. Nothing here reaches outside the cluster.
+        connected: false
         timeout: "{{ zarf_timeout | default('15m') }}"
       delegate_to: localhost
       run_once: true
-      register: step_restorage
+      register: step_storage
 
-    - name: Record what the second deploy reported
+    - name: Record what the airgapped deploy reported
       ansible.builtin.copy:
-        content: "{{ step_restorage | to_json }}"
-        dest: "{{ zarf_result_dir }}/3-restorage.json"
+        content: "{{ step_storage | to_json }}"
+        dest: "{{ zarf_result_dir }}/2-storage.json"
         mode: "0600"
 
-    - name: Initialise the cluster again
+    - name: Initialise the rest, which can now claim the volumes it needs
       colonel_byte.zarf.zarf_init:
         wrapper_binary: "{{ zarf_init_wrapper }}"
         components: "{{ zarf_init_rest_components }}"
@@ -126,5 +107,29 @@
     - name: Record what the second initialisation reported
       ansible.builtin.copy:
         content: "{{ step_reinit | to_json }}"
-        dest: "{{ zarf_result_dir }}/4-reinit.json"
+        dest: "{{ zarf_result_dir }}/3-reinit.json"
+        mode: "0600"
+
+    # The bundle's fourth package: the provider again, now pushed into the persistent registry
+    # rather than the seed one, whose emptyDir went with it.
+    - name: Deploy the storage provider through the persistent registry
+      colonel_byte.zarf.zarf_package_deploy:
+        wrapper_binary: "{{ zarf_deploy_wrapper }}"
+        package: "{{ zarf_storage_package }}"
+        components: "{{ zarf_storage_components }}"
+        kubeconfig: "{{ zarf_kubeconfig }}"
+        public_key: "{{ zarf_public_key }}"
+        verify: always
+        connected: false
+        take_ownership: true
+        force_conflicts: true
+        timeout: "{{ zarf_timeout | default('15m') }}"
+      delegate_to: localhost
+      run_once: true
+      register: step_restorage
+
+    - name: Record what the second deploy reported
+      ansible.builtin.copy:
+        content: "{{ step_restorage | to_json }}"
+        dest: "{{ zarf_result_dir }}/4-restorage.json"
         mode: "0600"

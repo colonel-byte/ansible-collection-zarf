@@ -45,6 +45,22 @@ var (
 	}
 )
 
+// The split provider-first.yml uses, which is not the one above. On a cluster with no
+// StorageClass the seed phase has to claim no volume, so git-server -- which wants 10Gi for gitea
+// -- moves to the rest phase. That is only possible because internal/zarfmod prunes the leaked
+// --git-push-username default that used to make a later init introducing a git server illegal.
+var (
+	providerFirstSeedComponents = []string{ //nolint:gochecknoglobals
+		"zarf-injector",
+		"zarf-seed-registry",
+	}
+	providerFirstRestComponents = []string{ //nolint:gochecknoglobals
+		"zarf-registry",
+		"zarf-agent",
+		"git-server",
+	}
+)
+
 // storageComponents are the components of the uds-bundle's local-path provider package.
 var storageComponents = []string{ //nolint:gochecknoglobals
 	"local-path-images",
@@ -99,10 +115,16 @@ func TestBundleOrderWalk(t *testing.T) {
 // TestProviderFirstWalk runs the same four packages on the uds-bundles k3d config as it is
 // written, where k3s local-storage is disabled and the cluster therefore has no StorageClass.
 //
-// The order has to change -- the provider is deployed first, connected, so that the registry has
-// somewhere to claim its volume from -- and that reordering is the thing being proved. A
-// connected deploy needs no registry, so it is the one zarf operation that works on a cluster
-// nothing has initialised.
+// The order is forced rather than merely permitted, and that is the thing being proved. The seed
+// phase claims no volume -- the seed registry sets `persistence.enabled: false` -- so it can run
+// on a cluster that can bind nothing; the storage provider is then pushed through the registry it
+// stood up; and only then can the rest of the initialisation claim the registry's 20Gi and
+// gitea's 10Gi. On bundle-order.yml's cluster k3s supplies a StorageClass already, so its steps
+// would have bound a volume whatever order they ran in.
+//
+// Every deploy here is airgapped. An earlier version passed `connected: true` on the first one so
+// that it needed no registry, which made the walk pass while doing the one thing an air-gapped
+// product never does.
 func TestProviderFirstWalk(t *testing.T) {
 	requireSuite(t)
 
@@ -113,10 +135,10 @@ func TestProviderFirstWalk(t *testing.T) {
 
 	out, results := cluster.walk(t, providerFirstPlaybook)
 
-	assertDeployStep(t, readStep(t, results, "1-storage.json"), out)
-	assertInitStep(t, readStep(t, results, "2-init.json"), initSeedComponents, out)
-	assertDeployStep(t, readStep(t, results, "3-restorage.json"), out)
-	assertInitStep(t, readStep(t, results, "4-reinit.json"), initRestComponents, out)
+	assertInitStep(t, readStep(t, results, "1-init.json"), providerFirstSeedComponents, out)
+	assertDeployStep(t, readStep(t, results, "2-storage.json"), out)
+	assertInitStep(t, readStep(t, results, "3-reinit.json"), providerFirstRestComponents, out)
+	assertDeployStep(t, readStep(t, results, "4-restorage.json"), out)
 
 	assertClusterInitialised(t, cluster)
 	assertStorageClass(t, cluster)

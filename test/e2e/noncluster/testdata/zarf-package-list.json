@@ -15,7 +15,7 @@
     "package": "csi-local-path-provider",
     "namespaceOverride": "",
     "version": "0.0.37-upstream",
-    "connectivity": "connected",
+    "connectivity": "airgap",
     "components": [
       "local-path-images",
       "local-path-chart"

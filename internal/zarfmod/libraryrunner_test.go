@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/zarf-dev/zarf/src/cmd"
 	"github.com/zarf-dev/zarf/src/config"
 )
 
@@ -132,5 +133,29 @@ func TestLinkedZarfVersionIsFilledBeforeAnythingReadsIt(t *testing.T) {
 	if name := config.GetInitPackageName(); !strings.Contains(name, config.CLIVersion) {
 		t.Errorf("the init package name is %q, which does not carry the version %q",
 			name, config.CLIVersion)
+	}
+}
+
+// TestPruneInitGitPushUserDefaultClearsLeakedViperDefault proves the runner prunes
+// the leaked default on --git-push-username so that multi-phase zarf inits do not falsely fail
+// with "cannot change git server information after initial init".
+func TestPruneInitGitPushUserDefaultClearsLeakedViperDefault(t *testing.T) {
+	root := cmd.NewZarfCommand()
+	initCmd, _, err := root.Find([]string{"init"})
+	if err != nil {
+		t.Fatalf("unable to find init command: %v", err)
+	}
+	f := initCmd.Flags().Lookup(flagGitPushUsername)
+	if f == nil {
+		t.Fatalf("flag %q not found on init command", flagGitPushUsername)
+	}
+
+	pruneInitGitPushUserDefault(root)
+
+	if got := f.DefValue; got != "" {
+		t.Errorf("init %s default value = %q, want empty", flagGitPushUsername, got)
+	}
+	if got := f.Value.String(); got != "" {
+		t.Errorf("init %s initial value = %q, want empty", flagGitPushUsername, got)
 	}
 }

@@ -27,7 +27,7 @@
           - listed.packages | length == 2
           - (listed.packages | map(attribute='package') | list) == ['init', 'csi-local-path-provider']
           - (listed.packages | map(attribute='version') | list) == ['v0.85.0', '0.0.37-upstream']
-          - (listed.packages | map(attribute='connectivity') | list) == ['airgap', 'connected']
+          - (listed.packages | map(attribute='connectivity') | list) == ['airgap', 'airgap']
           - listed.packages[0].components == ['zarf-injector', 'zarf-seed-registry', 'zarf-registry', 'zarf-agent']
           - listed.packages[1].components == ['local-path-images', 'local-path-chart']
         success_msg: ASSERTED the package list decodes record for record
