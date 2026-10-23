@@ -28,11 +28,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Three parallel builds of a binary carrying zarf's whole dependency tree put several GB
-      # of scratch in the Go compiler's temporary directory, and /tmp on the hosted image is
-      # quota'd separately from the disk: the build dies with "disk quota exceeded" writing
-      # /tmp/go-build.../importcfg while df reports over 100GB free on /. GOTMPDIR moves that
-      # scratch onto the runner's work volume, where the free space actually is.
+      # /tmp on the hosted image is a 7.9G tmpfs, not part of the 145G root filesystem, and
+      # three parallel builds of a binary carrying zarf's whole dependency tree put more than
+      # that in the Go compiler's scratch directory. The build dies with "disk quota exceeded"
+      # writing /tmp/go-build.../importcfg while df reports ~88G free on /, so the message is
+      # true and the obvious reading of it -- that the runner is out of disk -- is wrong.
+      # Freeing disk space does nothing. GOTMPDIR moves the scratch onto the work volume,
+      # which is on /.
       #
       # It goes through GITHUB_ENV rather than a job-level env: block because the runner context
       # is not available there, and a workflow referencing it fails to load at all rather than
