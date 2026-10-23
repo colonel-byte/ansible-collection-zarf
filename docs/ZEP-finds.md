@@ -12,6 +12,7 @@ The through-line is one sentence: **Ansible's contract is idempotency, and zarf 
 | 2   | A deploy reports what it ran, never whether anything changed                           | Blocking                     | No                              |
 | 3   | The component selection a deploy would make is not exposed                             | Serious                      | Only by reimplementing it       |
 | 4   | `required` and `optional` carry inverted defaults between the two package schemas      | Trap                         | Yes, by branching on apiVersion |
+| 5   | Leaked viper default for git-push-username breaks subsequent init when git was omitted | Serious                      | Yes, clear default on the flag  |
 
 ## 1. The deployed-package record is replaced, not merged
 
@@ -93,6 +94,40 @@ Declined to guess. An item that names no components is deployed on every run, an
 `v1alpha1.ZarfComponent.IsRequired()` returns `false` when `Required` is nil; `v1beta1.Component.Optional` is `false` when absent, which means required. `zarf package inspect definition` emits whichever version the package was authored in, so a consumer reading a definition must branch on `apiVersion` to get the sense of the field right -- and a consumer that does not will be exactly wrong, not approximately wrong, on half the packages it meets.
 
 This is working as designed per schema; the finding is that the two are a silent-wrong-answer trap for anything reading definitions generically. A note in the migration guidance would cost nothing and would be read by the next person to write a consumer.
+
+## 5. Leaked viper default for git-push-username breaks subsequent init when git was omitted
+
+In `src/cmd/package.go` (`newPackageMirrorResourcesCommand`), viper registers a default for `init.git.push_username`:
+
+```go
+v.SetDefault(VInitGitPushUser, state.ZarfGitPushUser) // "zarf-git-user"
+```
+
+Because viper is a process-level singleton, `newInitCommand()` in `src/cmd/initialize.go` picks up this default when registering the flag:
+
+```go
+cmd.Flags().StringVar(&o.gitServer.PushUsername, "git-push-username", v.GetString(VInitGitPushUser), lang.CmdInitFlagGitPushUser)
+```
+
+When an initial `zarf init` runs without `git-server` (e.g. in a seed phase before dynamic persistent storage exists), `s.GitServer` in `zarf-state` remains unpopulated (`s.GitServer.PushUsername == ""`). On any subsequent `zarf init`, even if the operator provides no git arguments or excludes `git-server`, Cobra's flag parsing defaults `o.gitServer.PushUsername` to `"zarf-git-user"`.
+
+`validateExistingStateMatchesInput` then evaluates:
+
+```go
+if helpers.IsNotZeroAndNotEqual(gitServer, s.GitServer) {
+    return fmt.Errorf("cannot change git server information after initial init, to update run `zarf tools update-creds git`")
+}
+```
+
+Because `"zarf-git-user"` is non-zero while `s.GitServer.PushUsername` is empty, `helpers.IsNotZeroAndNotEqual` evaluates to `true` and the re-init fails immediately.
+
+### Proposed change
+
+Do not register command-specific defaults into the shared viper instance, or do not treat the default username as an operator-provided change in `validateExistingStateMatchesInput` when `s.GitServer` was not configured by the initial init.
+
+### What we did instead
+
+In `internal/zarfmod/libraryrunner.go`, after `cmd.NewZarfCommand()` constructs the command tree, `pruneInitGitPushUserDefault` clears `DefValue` and resets the flag value to empty on the `init` command if it holds the leaked default. A subsequent in-process init without an explicit `--git-push-username` then leaves `gitServer.PushUsername` empty, allowing `validateExistingStateMatchesInput` to pass.
 
 ## Checked and not a finding
 
