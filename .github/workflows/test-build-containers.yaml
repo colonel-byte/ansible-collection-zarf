@@ -34,6 +34,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # /tmp on the hosted image is a 7.9G tmpfs, not part of the 145G root filesystem, and
+      # three parallel builds of a binary carrying zarf's whole dependency tree put more than
+      # that in the Go compiler's scratch directory. The build dies with "disk quota exceeded"
+      # writing /tmp/go-build.../importcfg while df reports ~88G free on /, so the message is
+      # true and the obvious reading of it -- that the runner is out of disk -- is wrong.
+      # Freeing disk space does nothing. GOTMPDIR moves the scratch onto the work volume,
+      # which is on /.
+      #
+      # It goes through GITHUB_ENV rather than a job-level env: block because the runner context
+      # is not available there, and a workflow referencing it fails to load at all rather than
+      # failing a step.
+      #
+      # df covers every mount rather than one, so the next failure of this kind says which
+      # filesystem ran out instead of leaving it to be inferred.
+      - name: Keep the Go compiler's scratch off /tmp
+        run: |
+          mkdir -p "${RUNNER_TEMP}/go-build"
+          echo "GOTMPDIR=${RUNNER_TEMP}/go-build" >>"${GITHUB_ENV}"
+          df -h
+
       - name: Setup golang
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
