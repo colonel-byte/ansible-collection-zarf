@@ -81,7 +81,8 @@
       {{ _zarf_prereq_version_checks
          + [{'label': 'the deployed zarf package ' ~ _pkg_name,
              'constraint': _constraint,
-             'actual': _deployed_version}] }}
+             'actual': _deployed_version,
+             'id': item.0.id | default('', true)}] }}
   vars:
     # subelements flattens each requirement across the names it accepts, which is the nested
     # iteration Jinja cannot express on its own.
@@ -92,6 +93,34 @@
           | map(attribute='version') | first) | default('', true) }}
   loop: >-
     {{ _zarf_prereq_package_requirements
+       | selectattr('id', 'equalto', '')
+       | selectattr('version', '!=', '') | list | subelements('names') }}
+  loop_control:
+    label: "{{ item.1 }} {{ item.0.version }}"
+  run_once: true
+  when:
+    - zarf_check_packages | bool
+    - _pkg_name in (_zarf_prereq_deployed | map(attribute='package') | list)
+
+# For id groups, evaluate version constraints for deployed candidates so group satisfaction
+# can determine whether any candidate satisfies its version constraint.
+- name: Record the prerequisite package id group version constraints
+  ansible.builtin.set_fact:
+    _zarf_prereq_version_checks: >-
+      {{ _zarf_prereq_version_checks
+         + [{'label': 'the deployed zarf package ' ~ _pkg_name,
+             'constraint': _constraint,
+             'actual': _deployed_version,
+             'id': item.0.id}] }}
+  vars:
+    _pkg_name: "{{ item.1 }}"
+    _constraint: "{{ item.0.version }}"
+    _deployed_version: >-
+      {{ (_zarf_prereq_deployed | selectattr('package', 'equalto', _pkg_name)
+          | map(attribute='version') | first) | default('', true) }}
+  loop: >-
+    {{ _zarf_prereq_package_requirements
+       | rejectattr('id', 'equalto', '')
        | selectattr('version', '!=', '') | list | subelements('names') }}
   loop_control:
     label: "{{ item.1 }} {{ item.0.version }}"

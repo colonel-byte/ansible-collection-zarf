@@ -264,6 +264,11 @@ type PackageRequirement struct {
 	// Under Names it applies to whichever of them the cluster has, and to each of them if the
 	// cluster somehow has more than one.
 	Version string `json:"version,omitempty" jsonschema:"example=>=2.9.0"`
+	// ID groups alternative package requirements that carry distinct version constraints.
+	//
+	// When multiple entries share an ID, at least one of them must have its package deployed and
+	// satisfy its version constraint.
+	ID string `json:"id,omitempty" jsonschema:"minLength=1,example=storage"`
 }
 
 // JSONSchemaExtend refuses a PackageRequirement that does not name its prerequisite exactly one of
