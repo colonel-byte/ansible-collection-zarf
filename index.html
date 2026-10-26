@@ -37,7 +37,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-a9f08667.js";
+            window.path_to_searchindex_js = "searchindex-11ee13a6.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-8db5b85d.js"></script>
@@ -244,7 +244,7 @@ done
 </code></pre>
 <p>Zarf itself is a prerequisite of the read-only modules, which shell out to the installed <code>zarf</code>; the three module files need none, and nothing is installed on the cluster’s nodes. <code>ghcr.io/colonel-byte/zarf-ansible-modules</code> comes with all of it – <code>ansible-core</code>, the collection, the module wrapper with its names linked to it, and a <code>zarf</code> – for a management node that would rather not install any of them:</p>
 <!-- x-release-please-start-version -->
-<pre><code class="language-sh">docker run --rm -v "$PWD:/workspace" ghcr.io/colonel-byte/zarf-ansible-modules:v0.87.0 \
+<pre><code class="language-sh">docker run --rm -v "$PWD:/workspace" ghcr.io/colonel-byte/zarf-ansible-modules:v0.88.0 \
   ansible-playbook -i management.ini playbooks/zarf-bundle-order.yml
 </code></pre>
 <!-- x-release-please-end-version -->

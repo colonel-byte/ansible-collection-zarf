@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-a9f08667.js";
+            window.path_to_searchindex_js = "../searchindex-11ee13a6.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-8db5b85d.js"></script>
@@ -209,7 +209,7 @@ go run ./magefiles/core build:modules          # build/zarfmod, with a symlink p
 <p>A management node needs <code>ansible-core</code>, the collection on Ansible’s collections path, the module wrapper with its names linked to it, and a <code>zarf</code> of its own for the read-only modules. <code>ghcr.io/colonel-byte/zarf-ansible-modules</code> is all four: it installs the release <code>.rpm</code> on top of <code>ansible-core</code> and carries the <code>zarf</code> binary out of zarf’s own agent image. One tag per release, and no <code>latest</code> – a management node is meant to pin the image it runs, the way it pins everything else it carries through the airlock.</p>
 <!-- x-release-please-start-version -->
 <pre><code class="language-sh">docker run --rm -v "$PWD:/workspace" -v "$HOME/.kube:/home/nonroot/.kube:ro" \
-  ghcr.io/colonel-byte/zarf-ansible-modules:v0.87.0 \
+  ghcr.io/colonel-byte/zarf-ansible-modules:v0.88.0 \
   ansible-playbook -i management.ini playbooks/zarf-bundle-order.yml
 </code></pre>
 <!-- x-release-please-end-version -->
