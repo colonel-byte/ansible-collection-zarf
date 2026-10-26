@@ -97,6 +97,7 @@ func (LibraryRunner) Run(ctx context.Context, in Invocation) (Result, error) {
 
 	root := cmd.NewZarfCommand()
 	pruneRootShorthands(root)
+	pruneInitGitPushUserDefault(root)
 	root.SetArgs(in.Args)
 	root.SetOut(lines)
 	root.SetErr(lines)
@@ -169,6 +170,31 @@ func pruneRootShorthands(root *cobra.Command) {
 	root.PersistentFlags().VisitAll(func(f *pflag.Flag) {
 		f.Shorthand = ""
 	})
+}
+
+// pruneInitGitPushUserDefault clears the leaked default value for --git-push-username on zarf init.
+//
+// In zarf's package.go (mirror command registration), viper registers a default for VInitGitPushUser
+// ("zarf-git-user"). Because viper is a process-level singleton, newInitCommand() picks this up when
+// binding the --git-push-username flag. On a multi-phase init where the initial phase omitted git-server,
+// zarf-state holds an empty GitServer struct; a subsequent init without git-push-username set then
+// compares "zarf-git-user" != "" via helpers.IsNotZeroAndNotEqual and fails.
+// Clearing the flag's DefValue and Value restores an empty default when unset.
+func pruneInitGitPushUserDefault(root *cobra.Command) {
+	initCmd, _, err := root.Find([]string{"init"})
+	if err != nil || initCmd == nil {
+		return
+	}
+	f := initCmd.Flags().Lookup(flagGitPushUsername)
+	if f == nil || f.Value.String() != "zarf-git-user" {
+		return
+	}
+	f.DefValue = ""
+	// Set cannot fail for a string flag, and there is nothing to do about it if it ever did: the
+	// value it is being given is the zero value the flag should have had.
+	if err := f.Value.Set(""); err != nil {
+		return
+	}
 }
 
 // lineWriter splits what zarf writes into lines and reports each one.
