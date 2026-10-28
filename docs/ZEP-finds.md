@@ -14,6 +14,7 @@ The through-line is one sentence: **Ansible's contract is idempotency, and zarf 
 | 4   | `required` and `optional` carry inverted defaults between the two package schemas                       | Trap                         | Yes, by branching on apiVersion     |
 | 5   | Leaked viper default for git-push-username breaks subsequent init when git was omitted                  | Serious                      | Yes, clear default on the flag      |
 | 6   | A package action's `./zarf` resolves to the system PATH or the consumer's own binary, never a named one | Serious                      | Yes, by keeping the library default |
+| 7   | `--set-variables` silently truncates any value holding a line break and a second `=`                    | Blocking                     | Yes, by writing a config file       |
 
 ## 1. The deployed-package record is replaced, not merged
 
@@ -157,6 +158,43 @@ Let a library consumer name the binary -- an `ActionsZarfPath`, or an `ActionsCo
 ### What we did instead
 
 We leave `config.ActionsUseSystemZarf` at the `true` that `src/config` initialises it to, which is the deliberate delta: zarf's own `main` sets it `false`, and the obvious reading of "we linked zarf in so there is no child process" says a library consumer should do the same. It must not. `internal/zarfmod/libraryrunner.go` restates the `true` in its `init` rather than relying on the default, so a zarf release that flips the default does not silently break every package action, and the management-node image installs `zarf` at `/usr/local/bin/zarf` so the bare name resolves.
+
+## 7. `--set-variables` silently truncates a value that holds a line break
+
+Zarf declares `--set-variables` and `--set-values` with pflag's `StringToString` (`vendor/github.com/zarf-dev/zarf/src/cmd/package.go`, and the same four lines in `initialize.go` and for `package remove`). That type's `Set` branches on how many `=` the value contains (`vendor/github.com/spf13/pflag/string_to_string.go`):
+
+```go
+n := strings.Count(val, "=")
+switch n {
+case 0:
+	return fmt.Errorf("%s must be formatted as key=value", val)
+case 1:
+	ss = append(ss, strings.Trim(val, `"`))
+default:
+	r := csv.NewReader(strings.NewReader(val))
+	ss, err = r.Read()
+}
+```
+
+`csv.Reader.Read` returns **one record**, and a record ends at the first line break. So any value carrying both a line break and a second `=` arrives at zarf as its first line, with no error and no warning.
+
+A PEM private key supplies both: the line breaks on every line, and the second `=` as base64 padding. Deploying a package whose component templates `###ZARF_VAR_ISTIO_TLS_KEY###` into a Secret therefore writes a Secret holding the 31-byte string `-----BEGIN RSA PRIVATE KEY-----` and nothing else. The first thing an operator sees is a consumer failing much later -- `java.lang.RuntimeException: Missing -----END RSA PRIVATE KEY----- delimiter` out of Keycloak, several components after the one that lost the key.
+
+What makes it worse than an ordinary parsing bug is that it is load-bearing on the padding. A key whose base64 needs no `=` padding takes the `case 1` branch and round-trips perfectly, so the same playbook against the same package works or silently corrupts depending on the key it was given. `TestStringToStringTruncatesAtALineBreak` in `internal/zarfmod/setvariables_test.go` holds both halves of that.
+
+This is a zarf-facing finding rather than an Ansible one: nothing about the module makes it happen, and `zarf package deploy --set-variables TLS_KEY="$(cat key.pem)"` loses the key from an operator's own shell just as completely.
+
+### Proposed change
+
+Do not parse `--set-variables` and `--set-values` with pflag's `StringToString`. A `StringArray` collected into a map, split on the first `=` per occurrence, takes the same command lines and cannot truncate -- `--set-variables` is already repeated per pair in practice, so the comma-separated form the csv branch exists to support is not worth a silently truncated private key. Failing the command on a value the flag cannot represent would also be an improvement on dropping it.
+
+### What we did instead
+
+A map holding a line break is no longer rendered onto the command line at all. `zarfConfigEnv` in `internal/zarfmod/setvariables.go` writes it to a `zarf-config.yaml` under the dotted viper keys zarf reads each flag's default from -- `package.deploy.set`, `package.deploy.set_values`, `package.remove.set_values`, named through zarf's own `cmd.VPkg*` constants -- and points `ZARF_CONFIG` at it for the one command the module runs. Viper parses YAML rather than csv, so the value arrives whole.
+
+Routing is per flag and all-or-nothing. pflag's `Set` *replaces* the map on the flag's first appearance rather than merging into the default it was registered with, so a map split between the config file and the command line would lose the config file's half -- which would be a second silent truncation in the fix for the first.
+
+The file is written `0600` inside a `0700` temporary directory and removed when the command returns, because what lands in it is exactly the material an operator declined to put on a command line.
 
 ## Checked and not a finding
 

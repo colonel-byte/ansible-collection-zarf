@@ -86,6 +86,12 @@ func (c *command) repeated(name string, values []string) {
 // response reports the vector it ran, and a vector whose order comes from Go's map iteration
 // cannot be compared between two runs or asserted in a test.
 func (c *command) pairs(name string, values map[string]string) {
+	// A map holding a line break goes to zarf through a config file instead, and must not also be
+	// rendered here: pflag replaces the whole map on the flag's first appearance, so a single pair
+	// on the command line would discard everything the config file carried. See zarfConfigEnv.
+	if hasMultiline(values) {
+		return
+	}
 	keys := make([]string, 0, len(values))
 	for key := range values {
 		keys = append(keys, key)
