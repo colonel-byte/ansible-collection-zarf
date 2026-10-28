@@ -27,6 +27,9 @@ zarf_deploy_wrapper: ""
 # Path to the directory where deployment result logs are saved.
 zarf_result_dir: ""
 
+# Zarf log level (e.g. warn, info, debug, trace). Left empty, zarf's own default applies.
+zarf_log_level: ""
+
 # Whether zarf adopts cluster resources it did not create. Left empty, zarf's own default applies.
 zarf_take_ownership: ""
 

@@ -38,6 +38,7 @@ Each dictionary entry in `zarf_packages_to_deploy` supports:
 | `public_key`      | `str`           | Public key path override for signature verification.                           |
 | `verify`          | `str`           | Verification mode override (`never`, `if-possible`, `always`).                 |
 | `timeout`         | `str`           | Timeout override (e.g. `15m`, `1h`).                                           |
+| `log_level`       | `str`           | Zarf log level override (e.g. `warn`, `info`, `debug`, `trace`).               |
 | `wrapper_binary`  | `str`           | Wrapper binary path override.                                                  |
 | `registry_mode`   | `str`           | Registry mode for an `init` package: `nodeport`, `proxy` or `external`.        |
 | `connected`       | `bool`          | Whether the cluster pulls the package's images itself. Non-init packages only. |

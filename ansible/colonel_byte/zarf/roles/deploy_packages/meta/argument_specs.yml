@@ -32,6 +32,7 @@ argument_specs:
           - "C(connected): Whether the cluster pulls the package's images itself rather than zarf pushing them. Overrides C(zarf_connected), and applies to non-init packages only."
           - "C(take_ownership): Whether zarf adopts cluster resources it did not create. Overrides C(zarf_take_ownership)."
           - "C(force_conflicts): Whether zarf overrides a server-side-apply conflict. Overrides C(zarf_force_conflicts)."
+          - "C(log_level): Zarf log level for this package (e.g. C(warn), C(info), C(debug), C(trace)). Overrides C(zarf_log_level)."
           - "C(log_dest): Destination file path to write deployment result JSON. Overrides the name the role would build under C(zarf_result_dir)."
           - "C(delegate_to): Host override on which this package operation runs."
           - "C(zarf_binary): Path to C(zarf) binary override for this package."
@@ -76,6 +77,11 @@ argument_specs:
         description:
           - "Directory where deployment result logs are written as JSON. If empty, result files are not written unless C(log_dest) is set on the package item."
           - "The name inside it is the item's position in the stack, then the package's file name without its extension -- C(1-zarf-init-amd64-v0.88.0.json). The position leads it because the package does not identify the item: a bundle names the same init package twice, and a name built from the package alone would have the second step overwrite the first step's result."
+      zarf_log_level:
+        type: str
+        default: ""
+        description:
+          - "Default Zarf log level (e.g. C(warn), C(info), C(debug), C(trace)). Left empty, zarf's own default applies. Can be overridden per package item."
       zarf_take_ownership:
         type: str
         default: ""

@@ -5,6 +5,7 @@
     _item_public_key: "{{ (pkg_item.public_key | default(zarf_public_key)) | default('', true) | string }}"
     _item_verify: "{{ pkg_item.verify | default(zarf_verify if (zarf_verify | length > 0) else ('always' if (_item_public_key | length > 0) else omit)) }}"
     _item_timeout: "{{ (pkg_item.timeout | default(zarf_timeout)) | default('', true) | string }}"
+    _item_log_level: "{{ (pkg_item.log_level | default(zarf_log_level)) | default('', true) | string }}"
     _item_package_type: "{{ (pkg_item.package_type | default('package')) | default('package', true) | string }}"
     # Each of these is `| string`-measured rather than compared, so that a key written with no
     # value behind it -- `take_ownership:` meaning "say nothing" -- reads as unset rather than
@@ -125,6 +126,7 @@
             take_ownership: "{{ _item_take_ownership if (_item_take_ownership is not none and _item_take_ownership | string | length > 0) else omit }}"
             force_conflicts: "{{ _item_force_conflicts if (_item_force_conflicts is not none and _item_force_conflicts | string | length > 0) else omit }}"
             timeout: "{{ _item_timeout if (_item_timeout | length > 0) else omit }}"
+            log_level: "{{ _item_log_level if (_item_log_level | length > 0) else omit }}"
             set_variables: "{{ pkg_item.set_variables | default(omit) }}"
           delegate_to: "{{ _item_delegate_to }}"
           run_once: true
@@ -152,6 +154,7 @@
             take_ownership: "{{ _item_take_ownership if (_item_take_ownership is not none and _item_take_ownership | string | length > 0) else omit }}"
             force_conflicts: "{{ _item_force_conflicts if (_item_force_conflicts is not none and _item_force_conflicts | string | length > 0) else omit }}"
             timeout: "{{ _item_timeout if (_item_timeout | length > 0) else omit }}"
+            log_level: "{{ _item_log_level if (_item_log_level | length > 0) else omit }}"
             set_variables: "{{ pkg_item.set_variables | default(omit) }}"
           delegate_to: "{{ _item_delegate_to }}"
           run_once: true
