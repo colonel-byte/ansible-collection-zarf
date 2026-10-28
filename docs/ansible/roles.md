@@ -2,10 +2,75 @@
 
 | Role                                         | What it does                                                                           |
 | -------------------------------------------- | -------------------------------------------------------------------------------------- |
+| [`deploy_packages`](role_deploy_packages.md) | Deploys a list of Zarf packages with component-level drift detection.                  |
 | [`packages`](role_packages.md)               | Queries the cluster via `zarf package list` and sets the `zarf_packages` fact.         |
 | [`package_inspect`](role_package_inspect.md) | Inspects a Zarf package definition and sets structured metadata facts.                 |
 | [`prerequisites`](role_prerequisites.md)     | Checks a cluster against the prerequisites a package declares, and refuses to proceed. |
 | [`state`](role_state.md)                     | Queries the cluster for the `zarf-state` Secret and sets the parsed `zarf_state` fact. |
+
+## deploy_packages
+
+`deploy_packages` deploys a sequence of Zarf packages while inspecting each package definition and checking the cluster's deployed components to avoid unnecessary deployments.
+
+Skipping settles for a package that one item deploys. It does **not** settle for a package that several items deploy in phases -- the bundle's two-phase init, for instance -- because `zarf package list` reports only the most recent deploy's components, so each phase sees the other's and both re-deploy on every run. Re-deploying reconciles rather than fails, but it is never reported as unchanged. [choice-deploy-packages-drift-scope](../agent/choice-deploy-packages-drift-scope.md) has the reasoning and the alternatives that were declined.
+
+An item is also only skipped when the cluster's version of the package matches the one the item carries, so an upgraded tarball whose component names did not change is not mistaken for what is already deployed.
+
+Skipping is per component, and an item that names no `components` is deployed every run. That is a limit rather than an oversight: with no components named, zarf picks the set itself -- every non-optional component, plus any optional one marked `default`, with `required` and `optional` carrying inverted defaults between the v1alpha1 and v1beta1 package schemas -- and the role does not reimplement that choice to guess what it would be. Naming the components is what turns drift detection on.
+
+The role sets `zarf_deploy_packages_changed` to whether any item reached zarf, and refreshes the `zarf_packages` fact once at the end when one did.
+
+Set `zarf_result_dir` and each item's result is written to `<position>-<package file name>.json` inside it. The position leads the name because the package does not identify the item -- a bundle names the same init package twice, once for the seed phase and once for the rest -- and it puts a listing of the directory in deployment order. `log_dest` on an item overrides the whole path.
+
+`registry_mode`, `connected`, `take_ownership` and `force_conflicts` are settings the role passes through rather than decides. Each has a role-level default (`zarf_registry_mode`, `zarf_connected`, `zarf_take_ownership`, `zarf_force_conflicts`) that a package item can override, and each is unset by default -- which leaves zarf's own behaviour alone. Turning `force_conflicts` on means a deploy takes fields another controller owns, so the role will not do it on an operator's behalf.
+
+The boolean item keys below take `true` or `false`. Their role-level counterparts are typed `str` with an empty choice instead, because a role default needs a third state -- empty means "say nothing and leave zarf's own behaviour alone", which `false` cannot express.
+
+Each dictionary entry in `zarf_packages_to_deploy` supports:
+
+| Key               | Type            | Description                                                                    |
+| ----------------- | --------------- | ------------------------------------------------------------------------------ |
+| `path`            | `str`           | (Required) Path to the Zarf package file or OCI source.                        |
+| `package_type`    | `str`           | Type of package: `init`, `package`, or `deploy` (default: `package`).          |
+| `components`      | `list` of `str` | Components to deploy. Prefix with `-` to exclude (e.g. `-git-server`).         |
+| `set_variables`   | `dict`          | Key-value variable overrides passed to Zarf templates (`--set`).               |
+| `kubeconfig`      | `str`           | Kubeconfig path override for this package.                                     |
+| `public_key`      | `str`           | Public key path override for signature verification.                           |
+| `verify`          | `str`           | Verification mode override (`never`, `if-possible`, `always`).                 |
+| `timeout`         | `str`           | Timeout override (e.g. `15m`, `1h`).                                           |
+| `log_level`       | `str`           | Zarf log level override (e.g. `warn`, `info`, `debug`, `trace`).               |
+| `wrapper_binary`  | `str`           | Wrapper binary path override.                                                  |
+| `registry_mode`   | `str`           | Registry mode for an `init` package: `nodeport`, `proxy` or `external`.        |
+| `connected`       | `bool`          | Whether the cluster pulls the package's images itself. Non-init packages only. |
+| `take_ownership`  | `bool`          | Whether zarf adopts cluster resources it did not create.                       |
+| `force_conflicts` | `bool`          | Whether zarf overrides a server-side-apply conflict.                           |
+| `log_dest`        | `str`           | Result file path, overriding the name built under `zarf_result_dir`.           |
+| `delegate_to`     | `str`           | Target node override for executing inspection and deployment.                  |
+| `zarf_binary`     | `str`           | Path to `zarf` binary override.                                                |
+
+Example:
+
+```yaml
+- name: Deploy package stack
+  ansible.builtin.include_role:
+    name: colonel_byte.zarf.deploy_packages
+  vars:
+    zarf_kubeconfig: /etc/rancher/rke2/rke2.yaml
+    zarf_packages_to_deploy:
+      - path: "{{ zarf_package_dir }}/zarf-init-amd64-v0.88.0.tar.zst"
+        package_type: init
+        components:
+          - k3s
+      - path: "{{ zarf_package_dir }}/zarf-package-csi-rook-ceph-amd64-v1.21.0-upstream.tar.zst"
+        components:
+          - operator-images
+          - cluster-images
+          - operator-seed-chart
+          - cluster-seed-chart
+          - registry-bucket
+        package_type: package
+        set_variables: "{{ zarf_storage_set_variables }}"
+```
 
 ## packages
 

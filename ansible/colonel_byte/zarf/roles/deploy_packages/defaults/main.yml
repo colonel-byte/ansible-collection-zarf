@@ -1,0 +1,51 @@
+---
+# Defaults for colonel_byte.zarf.deploy_packages.
+#
+# The key order in defaults/main.yml determines the table row order in the generated documentation.
+
+# The list of packages to deploy. Each item is a dictionary describing package deployment options.
+zarf_packages_to_deploy: []
+
+# Path to the kubeconfig file used to reach the cluster.
+zarf_kubeconfig: ""
+
+# Path to the public key used to verify package signatures.
+zarf_public_key: ""
+
+# When to verify package signatures: empty string (default), never, if-possible, or always.
+zarf_verify: ""
+
+# Timeout duration for each package operation (e.g. 15m, 1h).
+zarf_timeout: ""
+
+# Path to the wrapper binary for zarf_init tasks.
+zarf_init_wrapper: ""
+
+# Path to the wrapper binary for zarf_package_deploy tasks.
+zarf_deploy_wrapper: ""
+
+# Path to the directory where deployment result logs are saved.
+zarf_result_dir: ""
+
+# Zarf log level (e.g. warn, info, debug, trace). Left empty, zarf's own default applies.
+zarf_log_level: ""
+
+# Whether zarf adopts cluster resources it did not create. Left empty, zarf's own default applies.
+zarf_take_ownership: ""
+
+# Whether zarf overrides a server-side-apply conflict. Left empty, zarf's own default applies.
+zarf_force_conflicts: ""
+
+# How zarf reaches the registry an init package stands up: nodeport, proxy or external. Left
+# empty, zarf's own default applies.
+zarf_registry_mode: ""
+
+# Whether the cluster pulls a package's images itself rather than zarf pushing them to the
+# registry. Left empty, zarf's own default applies. Applies to non-init packages only.
+zarf_connected: ""
+
+# Path to the zarf binary on the delegated host.
+zarf_binary: zarf
+
+# The node on which to execute the inspection and deployment tasks.
+zarf_delegate_to: localhost

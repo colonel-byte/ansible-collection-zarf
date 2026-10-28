@@ -31,6 +31,7 @@
   - [state_info](ansible/module_state_info.md)
   - [update_creds](ansible/module_update_creds.md)
 - [zarf roles](ansible/roles.md)
+  - [deploy_packages](ansible/role_deploy_packages.md)
   - [package_inspect](ansible/role_package_inspect.md)
   - [packages](ansible/role_packages.md)
   - [prerequisites](ansible/role_prerequisites.md)
