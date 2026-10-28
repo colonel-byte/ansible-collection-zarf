@@ -38,10 +38,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-11ee13a6.js";
+            window.path_to_searchindex_js = "searchindex-38132619.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-8db5b85d.js"></script>
+        <script src="toc-3ef04710.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -210,7 +210,7 @@
 <p>The first two converge a cluster and are the proof. <code>zarf_package_remove</code> is the other direction, which ZEP-0072 names and a playbook that only ever adds does not have; <code>zarf_package_pull</code> stages the package a deploy reads, which on an air-gapped node arrives as a file rather than from a registry the cluster can reach; <code>zarf_package_mirror_resources</code> pushes a package’s images and repositories into a registry and git server without deploying, which is what a <code>connected: true</code> deploy needs to have happened first; <code>zarf_update_creds</code> rotates the credentials an initialised cluster holds, and is the write half of <code>zarf_state_info</code>; <code>zarf_kubectl</code> is a passthrough to the kubectl zarf already vendors, which saves a management node a kubectl of its own. All seven are the same binary from <code>cmd/zarfmod</code>, invoked under seven names – <code>argv[0]</code> is what selects the module, which is the proposal’s own design, so each module file is a symlink.</p>
 <p><code>zarf package create</code> is deliberately not among them: it builds an artifact from a definition in a repository, which belongs in a pipeline rather than in a convergence run.</p>
 <p>The other five read a cluster, are not part of the proof, and are plain action plugins with no binary behind them – <a href="#why-the-read-only-zarf-modules-are-python-rather-than-wrapper-binaries">choice-zarf-info-modules</a> records why, and why <code>zarf_state_info</code> redacts.</p>
-<p>There are four roles: <code>packages</code>, <code>package_inspect</code> and <code>state</code> wrap a read-only module apiece, and <a href="#prerequisites-2"><code>prerequisites</code></a> refuses to deploy a package onto a cluster that cannot run it.</p>
+<p>There are five roles: <code>packages</code>, <code>package_inspect</code> and <code>state</code> wrap a read-only module apiece, <a href="#deploy_packages-2"><code>deploy_packages</code></a> manages multi-package stack deployments with drift detection, and <a href="#prerequisites-2"><code>prerequisites</code></a> refuses to deploy a package onto a cluster that cannot run it.</p>
 <h2 id="package-prerequisites"><a class="header" href="#package-prerequisites">Package prerequisites</a></h2>
 <p>A package can state what it needs of a cluster in a machine-readable document carried inside the package itself, and a deployment can refuse to proceed when the cluster does not satisfy it. That is the second thing in this repository: a <code>colonel-byte.dev/v1alpha1</code> <code>PackagePrerequisites</code> format, a <a href="https://github.com/colonel-byte/ansible-collection-zarf/blob/main/schema/zarf-v1alpha1-package-prerequisites-schema.json">generated JSON Schema</a>, and the modules and role that read one.</p>
 <p>It exists for a failure that reports itself as a success. A workload package delivered as a <code>HelmRelease</code> needs a running <code>helm-controller</code> to do anything at all; deploy it onto a cluster without one and zarf applies the manifests, the API server accepts them, <code>zarf package deploy</code> reports a successful deployment, and nothing is ever reconciled.</p>
@@ -342,6 +342,119 @@ go run ./magefiles/core examples:lint            # zarf dev lint over the refere
 <h2 id="security-in-ci"><a class="header" href="#security-in-ci">Security in CI</a></h2>
 <p>Pull requests and <code>main</code> are scanned by CodeQL, dependencies are updated by Dependabot, and supply-chain practices are scored weekly by OpenSSF Scorecard. Results appear in the repository’s Security tab.</p>
 <div style="break-before: page; page-break-before: always;"></div>
+<h1 id="zep-findings"><a class="header" href="#zep-findings">ZEP findings</a></h1>
+<p>A staging ground, not a submission. What follows is what building this proof of <a href="https://github.com/zarf-dev/proposals/pull/73">ZEP-0072</a> turned up about zarf itself – things a native Ansible module cannot work around from the outside, with the evidence for each and a proposed change. It is drafted here so the wording can be argued over in this repository before any of it is put to the ZEP team.</p>
+<p>Every line reference is into the <code>github.com/zarf-dev/zarf</code> version this repository pins in <code>go.mod</code> and vendors, so each one can be opened and read without fetching anything.</p>
+<p>The through-line is one sentence: <strong>Ansible’s contract is idempotency, and zarf does not currently give a consumer enough information to honour it.</strong> Each finding below is a different face of that.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>#</th><th>Finding</th><th>Severity for a native module</th><th>Workaround available?</th></tr>
+</thead>
+<tbody>
+<tr><td>1</td><td>The deployed-package record is replaced per deploy, so a phased deploy cannot converge</td><td>Blocking</td><td>No</td></tr>
+<tr><td>2</td><td>A deploy reports what it ran, never whether anything changed</td><td>Blocking</td><td>No</td></tr>
+<tr><td>3</td><td>The component selection a deploy would make is not exposed</td><td>Serious</td><td>Only by reimplementing it</td></tr>
+<tr><td>4</td><td><code>required</code> and <code>optional</code> carry inverted defaults between the two package schemas</td><td>Trap</td><td>Yes, by branching on apiVersion</td></tr>
+<tr><td>5</td><td>Leaked viper default for git-push-username breaks subsequent init when git was omitted</td><td>Serious</td><td>Yes, clear default on the flag</td></tr>
+<tr><td>6</td><td>A package action’s <code>./zarf</code> resolves to the system PATH or the consumer’s own binary, never a named one</td><td>Serious</td><td>Yes, by keeping the library default</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="1-the-deployed-package-record-is-replaced-not-merged"><a class="header" href="#1-the-deployed-package-record-is-replaced-not-merged">1. The deployed-package record is replaced, not merged</a></h2>
+<p><code>DeployedPackage.DeployedComponents</code> is assigned from the components of the deploy that is happening, and the secret is written fresh:</p>
+<pre><code class="language-go">// vendor/github.com/zarf-dev/zarf/src/pkg/state/state.go, NewDeployedPackage
+deployedPackage := &amp;DeployedPackage{
+	Name:               definition.Metadata.Name,
+	...
+	DeployedComponents: components,
+</code></pre>
+<p><code>Generation</code> beside it is a single <code>int</code> that increments, with no retained history. So after</p>
+<pre><code class="language-sh">zarf init --components zarf-injector,zarf-seed-registry,git-server   # phase one
+zarf init --components zarf-registry,zarf-agent                      # phase two
+</code></pre>
+<p><code>zarf package list</code> reports the init package’s components as <code>zarf-registry, zarf-agent</code> and nothing else. The cluster has all five; its record remembers two.</p>
+<h3 id="why-that-is-blocking-rather-than-untidy"><a class="header" href="#why-that-is-blocking-rather-than-untidy">Why that is blocking rather than untidy</a></h3>
+<p>This is the shape every <code>uds-bundle</code> init takes, because the phases exist for a reason – the seed registry has to exist before a storage provider can be deployed through it, and the full registry needs the StorageClass that provider installs. A consumer that wants to skip work already done has to ask “are these components present”, and the only cluster-side answer is the last phase’s.</p>
+<p>The practical result, which we measured: a role that deploys such a bundle oscillates forever. Phase one’s item sees phase two’s components recorded, deploys, and overwrites the record with phase one’s; phase two’s item then sees phase one’s, deploys, and overwrites it back. <code>changed: true</code> on every run, for every run, with no stable state to reach. The suite that found this is <code>TestDeployPackagesRoleWalk</code> in <code>test/e2e/cluster/</code>.</p>
+<h3 id="proposed-change"><a class="header" href="#proposed-change">Proposed change</a></h3>
+<p>Merge <code>DeployedComponents</code> by component name rather than replacing the list, keeping the newest entry per name. The shape for this already exists: <code>DeployedComponent</code> carries an <code>ObservedGeneration</code>, which is only meaningful if several generations can be represented at once.</p>
+<p>Removal already prunes correctly – <code>vendor/github.com/zarf-dev/zarf/src/pkg/packager/remove.go</code> deletes entries with <code>slices.DeleteFunc</code> and removes the secret when the list empties – so a merge would not strand a component that was taken off the cluster, and would not strand one dropped from a later revision of the package.</p>
+<h3 id="what-we-did-instead"><a class="header" href="#what-we-did-instead">What we did instead</a></h3>
+<p>Nothing that recovers it. The role’s drift detection is documented as converging only for a package deployed in a single phase; a package named by several items in one stack is re-deployed on every run. That is safe – re-deploying reconciles rather than fails, which <code>test/e2e/cluster/testdata/bundle-order.yml</code> asserts deliberately in its fifth step – but it is not idempotent, and it is the limitation this finding would remove. See <a href="#drift-detection-converges-for-a-package-deployed-in-one-phase-and-not-for-one-deployed-in-several">choice-deploy-packages-drift-scope</a>.</p>
+<h2 id="2-a-deploy-reports-what-it-ran-never-whether-anything-changed"><a class="header" href="#2-a-deploy-reports-what-it-ran-never-whether-anything-changed">2. A deploy reports what it ran, never whether anything changed</a></h2>
+<p><code>changed</code> is the single most load-bearing field in an Ansible module result. Handlers fire on it, <code>--check</code> reports against it, drift gates read it, and a module that always says <code>true</code> is a module an operator learns to ignore.</p>
+<p>Zarf reports which components it deployed. It does not report whether deploying them altered the cluster, so a wrapper has no honest way to answer. This repository’s own module says so in <code>docs/agent/choice-zarf-ansible-module.md</code> and signals <code>changed</code> as <code>partial</code> for exactly this reason – the test holding it is <code>assertStepRan</code> in <code>test/e2e/cluster/zarf_init_test.go</code>, which asserts the signal is <code>partial</code> on every successful step:</p>
+<blockquote>
+<p>Partial is the honest answer and the only one a wrapper can give: zarf reports which components it deployed and not whether any of them found the cluster already as it wanted.</p>
+</blockquote>
+<p>Combined with finding 1, the consequence is that <strong>the only path to <code>changed: false</code> anywhere in a zarf Ansible collection is the consumer deciding to skip the deploy entirely</strong> – which is the decision finding 1 makes impossible for a phased package.</p>
+<h3 id="proposed-change-1"><a class="header" href="#proposed-change-1">Proposed change</a></h3>
+<p>Either of these would be enough, and the first is the smaller:</p>
+<ul>
+<li>A per-component outcome on the deploy result distinguishing installed, upgraded and unchanged. Helm already knows this per release; the information exists inside a deploy and is discarded.</li>
+<li>A deploy mode that reports the delta it would apply without applying it, which would also serve <code>--check</code>.</li>
+</ul>
+<p>A native module would map the first onto <code>changed</code> directly, and the second onto check mode, which it currently has to implement as “refuse and report skipped”.</p>
+<h2 id="3-the-component-selection-a-deploy-would-make-is-not-exposed"><a class="header" href="#3-the-component-selection-a-deploy-would-make-is-not-exposed">3. The component selection a deploy would make is not exposed</a></h2>
+<p>With no <code>--components</code>, the set zarf deploys is decided in <code>vendor/github.com/zarf-dev/zarf/src/pkg/packager/filters/deploy.go</code>. Non-interactively it is every non-optional component, plus every optional component marked <code>default</code>, plus for each component group of more than one the member marked <code>default</code> – and a group with no default is an error rather than an empty selection.</p>
+<p>None of that is answerable from outside. <code>zarf package inspect definition</code> returns the authored definition, so a consumer wanting to know “would this item deploy anything new” has to reimplement the filter, across both package schemas, including the group rules. Getting it wrong in the permissive direction means silently declining a deploy that was needed.</p>
+<h3 id="proposed-change-2"><a class="header" href="#proposed-change-2">Proposed change</a></h3>
+<p>Expose the resolved selection – a flag on <code>zarf package inspect definition</code>, or part of the dry-run in finding 2. The authoritative answer is the one the filter itself computes; anything else is a copy that agrees until it does not.</p>
+<h3 id="what-we-did-instead-1"><a class="header" href="#what-we-did-instead-1">What we did instead</a></h3>
+<p>Declined to guess. An item that names no components is deployed on every run, and the reasoning is recorded in <a href="#todo-skip-an-item-that-names-no-components">todo-deploy-packages-component-selection</a> so that nobody reimplements the filter by accident.</p>
+<h2 id="4-required-and-optional-carry-inverted-defaults-between-the-two-package-schemas"><a class="header" href="#4-required-and-optional-carry-inverted-defaults-between-the-two-package-schemas">4. <code>required</code> and <code>optional</code> carry inverted defaults between the two package schemas</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Schema</th><th>Field</th><th>Absent means</th></tr>
+</thead>
+<tbody>
+<tr><td><code>v1alpha1</code></td><td><code>required *bool</code></td><td>optional</td></tr>
+<tr><td><code>v1beta1</code></td><td><code>optional bool</code></td><td>required</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>v1alpha1.ZarfComponent.IsRequired()</code> returns <code>false</code> when <code>Required</code> is nil; <code>v1beta1.Component.Optional</code> is <code>false</code> when absent, which means required. <code>zarf package inspect definition</code> emits whichever version the package was authored in, so a consumer reading a definition must branch on <code>apiVersion</code> to get the sense of the field right – and a consumer that does not will be exactly wrong, not approximately wrong, on half the packages it meets.</p>
+<p>This is working as designed per schema; the finding is that the two are a silent-wrong-answer trap for anything reading definitions generically. A note in the migration guidance would cost nothing and would be read by the next person to write a consumer.</p>
+<h2 id="5-leaked-viper-default-for-git-push-username-breaks-subsequent-init-when-git-was-omitted"><a class="header" href="#5-leaked-viper-default-for-git-push-username-breaks-subsequent-init-when-git-was-omitted">5. Leaked viper default for git-push-username breaks subsequent init when git was omitted</a></h2>
+<p>In <code>src/cmd/package.go</code> (<code>newPackageMirrorResourcesCommand</code>), viper registers a default for <code>init.git.push_username</code>:</p>
+<pre><code class="language-go">v.SetDefault(VInitGitPushUser, state.ZarfGitPushUser) // "zarf-git-user"
+</code></pre>
+<p>Because viper is a process-level singleton, <code>newInitCommand()</code> in <code>src/cmd/initialize.go</code> picks up this default when registering the flag:</p>
+<pre><code class="language-go">cmd.Flags().StringVar(&amp;o.gitServer.PushUsername, "git-push-username", v.GetString(VInitGitPushUser), lang.CmdInitFlagGitPushUser)
+</code></pre>
+<p>When an initial <code>zarf init</code> runs without <code>git-server</code> (e.g. in a seed phase before dynamic persistent storage exists), <code>s.GitServer</code> in <code>zarf-state</code> remains unpopulated (<code>s.GitServer.PushUsername == ""</code>). On any subsequent <code>zarf init</code>, even if the operator provides no git arguments or excludes <code>git-server</code>, Cobra’s flag parsing defaults <code>o.gitServer.PushUsername</code> to <code>"zarf-git-user"</code>.</p>
+<p><code>validateExistingStateMatchesInput</code> then evaluates:</p>
+<pre><code class="language-go">if helpers.IsNotZeroAndNotEqual(gitServer, s.GitServer) {
+    return fmt.Errorf("cannot change git server information after initial init, to update run `zarf tools update-creds git`")
+}
+</code></pre>
+<p>Because <code>"zarf-git-user"</code> is non-zero while <code>s.GitServer.PushUsername</code> is empty, <code>helpers.IsNotZeroAndNotEqual</code> evaluates to <code>true</code> and the re-init fails immediately.</p>
+<h3 id="proposed-change-3"><a class="header" href="#proposed-change-3">Proposed change</a></h3>
+<p>Do not register command-specific defaults into the shared viper instance, or do not treat the default username as an operator-provided change in <code>validateExistingStateMatchesInput</code> when <code>s.GitServer</code> was not configured by the initial init.</p>
+<h3 id="what-we-did-instead-2"><a class="header" href="#what-we-did-instead-2">What we did instead</a></h3>
+<p>In <code>internal/zarfmod/libraryrunner.go</code>, after <code>cmd.NewZarfCommand()</code> constructs the command tree, <code>pruneInitGitPushUserDefault</code> clears <code>DefValue</code> and resets the flag value to empty on the <code>init</code> command if it holds the leaked default. A subsequent in-process init without an explicit <code>--git-push-username</code> then leaves <code>gitServer.PushUsername</code> empty, allowing <code>validateExistingStateMatchesInput</code> to pass.</p>
+<h2 id="6-a-package-actions-zarf-resolves-to-the-system-path-or-to-the-consumers-own-binary-and-nothing-else"><a class="header" href="#6-a-package-actions-zarf-resolves-to-the-system-path-or-to-the-consumers-own-binary-and-nothing-else">6. A package action’s <code>./zarf</code> resolves to the system PATH or to the consumer’s own binary, and nothing else</a></h2>
+<p>Zarf rewrites <code>./zarf </code> inside a package action to whatever <code>utils.GetFinalExecutableCommand</code> returns (<code>vendor/github.com/zarf-dev/zarf/src/pkg/packager/actions/actions.go</code>, <code>actionCmdMutation</code>), and <code>cluster.InjectData</code> builds its <code>tools kubectl</code> invocation from the same call (<code>vendor/github.com/zarf-dev/zarf/src/pkg/cluster/data.go</code>). That function offers three answers and no fourth (<code>vendor/github.com/zarf-dev/zarf/src/pkg/utils/io.go</code>):</p>
+<pre><code class="language-go">if config.ActionsCommandZarfPrefix != "" {
+    return fmt.Sprintf("%s %s", executablePath, config.ActionsCommandZarfPrefix), nil
+}
+if config.ActionsUseSystemZarf {
+    return "zarf", nil
+}
+return executablePath, nil
+</code></pre>
+<p>So an action either runs the bare name <code>zarf</code> resolved on <code>PATH</code>, or runs the consumer’s own executable – optionally under a subcommand prefix. There is no way to say “the zarf at this path”.</p>
+<p>That matters here because this collection’s modules link zarf in as a library rather than shelling out, so <code>executablePath</code> is the module binary. That binary dispatches on <code>argv[0]</code> and reads its parameters as WANT_JSON on stdin; it accepts no zarf command line at all. A package action running <code>./zarf tools kubectl ...</code>, or any component with a data injection, therefore fails outright under <code>ActionsUseSystemZarf = false</code> – and fails inside zarf’s own subprocess, where the module cannot improve the diagnosis.</p>
+<p>It also undercuts the role’s <code>zarf_binary</code> key. An operator who points the modules at <code>/opt/zarf/bin/zarf</code> has said where zarf is, and that answer cannot be passed on: an action still gets <code>zarf</code> from <code>PATH</code>, or nothing.</p>
+<h3 id="proposed-change-4"><a class="header" href="#proposed-change-4">Proposed change</a></h3>
+<p>Let a library consumer name the binary – an <code>ActionsZarfPath</code>, or an <code>ActionsCommandZarfPrefix</code> that may carry an absolute path of its own – so a consumer that is not a zarf CLI can point actions at a real zarf without putting it on <code>PATH</code> under that exact name.</p>
+<h3 id="what-we-did-instead-3"><a class="header" href="#what-we-did-instead-3">What we did instead</a></h3>
+<p>We leave <code>config.ActionsUseSystemZarf</code> at the <code>true</code> that <code>src/config</code> initialises it to, which is the deliberate delta: zarf’s own <code>main</code> sets it <code>false</code>, and the obvious reading of “we linked zarf in so there is no child process” says a library consumer should do the same. It must not. <code>internal/zarfmod/libraryrunner.go</code> restates the <code>true</code> in its <code>init</code> rather than relying on the default, so a zarf release that flips the default does not silently break every package action, and the management-node image installs <code>zarf</code> at <code>/usr/local/bin/zarf</code> so the bare name resolves.</p>
+<h2 id="checked-and-not-a-finding"><a class="header" href="#checked-and-not-a-finding">Checked and not a finding</a></h2>
+<p><strong>The deployed version string is the package’s own <code>metadata.version</code>.</strong> Worth recording because a consumer that skips work already done needs to compare versions, and it was not obvious that the two came from the same place. <code>zarf package list</code> builds its output with <code>Version: pkg.Metadata.Version</code> (<code>vendor/github.com/zarf-dev/zarf/src/cmd/package.go</code>, <code>packageListOptions.run</code>), which is the same field <code>zarf package inspect definition</code> reports, so the two are equal by construction rather than by convention. A package’s flavour appears in the tarball’s file name and in <code>build.flavor</code>, not in the version the cluster reports.</p>
+<div style="break-before: page; page-break-before: always;"></div>
 <h1 id="package-prerequisites-1"><a class="header" href="#package-prerequisites-1">Package prerequisites</a></h1>
 <p>A Zarf package can state what it needs of a cluster, in a document a machine can read, carried inside the package itself. This page is the format, where it lives, and what reads it.</p>
 <h2 id="the-failure-this-exists-for"><a class="header" href="#the-failure-this-exists-for">The failure this exists for</a></h2>
@@ -366,7 +479,7 @@ go run ./magefiles/core examples:lint            # zarf dev lint over the refere
 <tr><td><code>requires.controllers</code></td><td>no</td><td>The workloads that must be present and available, by name, namespace and kind, each with an optional SemVer constraint on its own version.</td></tr>
 <tr><td><code>requires.crds</code></td><td>no</td><td>The CustomResourceDefinitions that must be established.</td></tr>
 <tr><td><code>requires.storage</code></td><td>no</td><td>A default StorageClass, named StorageClasses, and the access modes claims ask for.</td></tr>
-<tr><td><code>requires.packages</code></td><td>no</td><td>Other Zarf packages that must be deployed first, with SemVer constraints.</td></tr>
+<tr><td><code>requires.packages</code></td><td>no</td><td>Other Zarf packages that must be deployed first, with SemVer constraints. An entry names one package with <code>name</code>, or every name it is published under with <code>names</code>.</td></tr>
 <tr><td><code>provides</code></td><td>no</td><td>The capabilities, CRDs and namespaces this package contributes to the cluster.</td></tr>
 </tbody>
 </table>
@@ -502,6 +615,15 @@ documentation:
 <p>No <code>fluxcd</code> or <code>argocd</code> key anywhere: the package needs that workload at that version and has no opinion about what reconciles the cluster. Without it, the only version a document could put on a workload was the engine’s, so a package needing cert-manager v1.14 had to require an engine it does not use purely to get a version field – a prerequisite that refuses clusters for no reason.</p>
 <p>It is the same label and the same comparison the engine sections use, so the same two caveats apply: one comparator and one version, and a workload carrying no version label has the constraint reported as unchecked rather than satisfied. Most charts following the Kubernetes recommended labels set it; a workload nobody stamped does not.</p>
 <h3 id="which-engine-and-why-the-format-asks"><a class="header" href="#which-engine-and-why-the-format-asks">Which engine, and why the format asks</a></h3>
+<p>An entry under <code>requires.packages</code> names its prerequisite with <code>name</code>, or with <code>names</code> when the package is published under more than one – the upstream init reports itself as <code>init</code> and a rebuild of it as <code>init-slim</code>, and a package needing an initialised cluster needs either. Several names rather than several entries, because the version constraint belongs to the requirement and not to each name: restating it per name is a constraint that gets bumped in one place and not the other. An entry carries one of the two keys and never both, which the schema refuses and the role refuses again for a document handed to it directly – the role reads <code>names</code> in preference to <code>name</code>, so an entry carrying both would say one thing and be checked as another.</p>
+<pre><code class="language-yaml">requires:
+  packages:
+    - names:
+        - init
+        - init-slim
+      version: "&gt;=0.85.0"
+</code></pre>
+<p>When alternative packages have different version histories, group them with <code>id</code> so each alternative keeps its own version constraint. See <a href="#grouping-alternative-package-prerequisites-with-id">Grouping alternative package prerequisites with id</a> for details.</p>
 <p>The engine is named by the key – <code>requires.fluxcd</code> or <code>requires.argocd</code> – and the two are mutually exclusive, which the generated schema states as well as the role. The key names the engine rather than a field inside it because the two do not number together: Flux is on 2.x while Argo CD is on 3.x, so a version sitting beside a separate <code>engine</code> field could disagree with it, and the dangerous direction of that disagreement is silent. A document meaning “Flux &gt;= 2.9” that named argocd by mistake is satisfied by Argo CD 3.5, because 3.5 &gt;= 2.9 – the constraint passes against an engine it was never about. Naming the engine with the key leaves nothing for the version to contradict.</p>
 <p>Only two things about checking an engine are engine-specific at all.</p>
 <p>The first is the namespace a controller defaults to: <code>flux-system</code> for Flux, <code>argocd</code> for Argo CD. A document whose controllers name their namespaces never needs the engine for this; one that leaves them off does.</p>
@@ -544,6 +666,68 @@ documentation:
 <p>The descriptions in the schema are the doc comments on those types, which is why they are written as prose for a package author rather than as notes for a Go reader: an editor with YAML schema support shows them while the document is being written.</p>
 <p>Two tests hold the pieces together. <code>TestCommittedSchemasAreCurrent</code> fails when the committed schema stops matching the types – a stale schema does not fail, it validates the wrong document, which is worse than not validating one. <code>TestExampleDocumentsMatchTheTypes</code> decodes each reference package’s document into the types with unknown fields rejected, so an example written against an older shape of the format fails rather than quietly becoming the thing readers copy.</p>
 <p>The version is <code>v1alpha1</code> and means it: the format is a proof alongside <a href="https://github.com/zarf-dev/proposals/pull/73">ZEP-0072</a>, not a published API.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="grouping-alternative-package-prerequisites-with-id"><a class="header" href="#grouping-alternative-package-prerequisites-with-id">Grouping alternative package prerequisites with id</a></h1>
+<p>This guide describes how to use <code>id</code> groups in <code>colonel-byte.dev/v1alpha1</code> <code>PackagePrerequisites</code> documents. It covers how <code>id</code> groups organize alternatives with different version requirements and how the <code>colonel_byte.zarf.prerequisites</code> role evaluates them.</p>
+<h2 id="the-problem-alternatives-with-different-versions"><a class="header" href="#the-problem-alternatives-with-different-versions">The problem: alternatives with different versions</a></h2>
+<p>A package often accepts more than one upstream provider to satisfy a requirement. For example, a package may run on either Rook Ceph or Longhorn for persistent storage.</p>
+<p>When alternatives share the same version history, use <code>names</code>:</p>
+<pre><code class="language-yaml">requires:
+  packages:
+    - names:
+        - init
+        - init-slim
+      version: "&gt;=0.85.0"
+</code></pre>
+<p>The <code>names</code> list applies a single <code>version</code> constraint across every name in the list.</p>
+<p>When alternatives have different version histories, a single version constraint cannot describe both packages. Rook Ceph may need <code>&gt;=1.21.0</code> while Longhorn needs <code>&gt;=1.13.0</code>.</p>
+<h2 id="the-solution-id-groups"><a class="header" href="#the-solution-id-groups">The solution: id groups</a></h2>
+<p>Set an optional <code>id</code> string on each alternative entry under <code>requires.packages</code>:</p>
+<pre><code class="language-yaml">requires:
+  packages:
+    - name: csi-rook-ceph
+      version: "&gt;=1.21.0"
+      id: storage
+    - name: csi-longhorn
+      version: "&gt;=1.13.0"
+      id: storage
+</code></pre>
+<p>Entries with the same <code>id</code> value form a single disjunctive (OR) requirement group.</p>
+<h2 id="evaluation-rules"><a class="header" href="#evaluation-rules">Evaluation rules</a></h2>
+<p>The <code>colonel_byte.zarf.prerequisites</code> role evaluates <code>id</code> groups with the following rules:</p>
+<ol>
+<li><strong>Local scope</strong>: The <code>id</code> key applies only to <code>requires.packages</code>. It does not affect other requirement types.</li>
+<li><strong>Group satisfaction</strong>: The cluster satisfies a group if at least one entry in the group is deployed and meets its version constraint.</li>
+<li><strong>Multiple deployed packages</strong>: When a cluster has multiple packages from the same group installed, the check passes if at least one package meets its constraint. A failing sibling does not fail the group.</li>
+<li><strong>Independent entries</strong>: Entries without an <code>id</code> remain independent requirements. The cluster must satisfy all ungrouped entries.</li>
+<li><strong>A group is stricter than a plain entry.</strong> A plain <code>requires.packages</code> entry whose version is a range this role cannot read – a compound range such as <code>&gt;=1.30.0 &lt;1.34.0</code>, which <a href="#package-prerequisites-1">the format’s one-comparator limit</a> covers – is reported in <code>zarf_prerequisites_skipped</code> and does <strong>not</strong> fail the play, because the package’s presence was proven by a separate check and only its version is unknown. Inside a group there is no such separate proof: the group’s whole contract is “one of these, at an acceptable version”, and a constraint that cannot be read proves nothing about any branch. So a group whose only deployed branch carries an unreadable range <strong>fails</strong>, and says which of the three things went wrong – see the messages below. Keep constraints inside a group to one comparator.</li>
+<li><strong>Names per branch</strong>: An entry inside an <code>id</code> group can still use <code>names</code> to cover aliases for that branch:</li>
+</ol>
+<pre><code class="language-yaml">requires:
+  packages:
+    - names:
+        - csi-rook-ceph
+        - csi-ceph
+      version: "&gt;=1.21.0"
+      id: storage
+    - name: csi-longhorn
+      version: "&gt;=1.13.0"
+      id: storage
+</code></pre>
+<h2 id="error-reporting"><a class="header" href="#error-reporting">Error reporting</a></h2>
+<p>When no branch in an <code>id</code> group meets its requirements, the role records one failure in <code>zarf_prerequisites_unmet</code>. The message names every option in the group, and then says which of three things happened – because “nothing is deployed”, “the wrong version is deployed” and “the constraint could not be read” are different problems with different fixes.</p>
+<p>Nothing in the group is deployed:</p>
+<pre><code class="language-text">one of the alternative zarf packages for storage (csi-rook-ceph &gt;=1.21.0 or csi-longhorn &gt;=1.13.0) is required, and none of them is deployed to this cluster
+</code></pre>
+<p>Something is deployed, and its version was compared and did not satisfy the constraint:</p>
+<pre><code class="language-text">one of the alternative zarf packages for storage (init &gt;=9.0.0 or csi-longhorn &gt;=1.13.0) is required, and what is deployed does not satisfy its version constraint
+</code></pre>
+<p>Something is deployed, and its constraint is a range this role cannot read, so no branch could be verified. The range is named in <code>zarf_prerequisites_skipped</code> as well, which is the half that tells you what to simplify:</p>
+<pre><code class="language-text">one of the alternative zarf packages for storage (init &gt;=0.85.0 &lt;1.0.0 or csi-longhorn &gt;=1.13.0) is required, and what is deployed carries a version range this role cannot evaluate (the deployed zarf package init), so no alternative could be verified
+</code></pre>
+<p>If packages from the group are not installed, the role reports:</p>
+<pre><code class="language-text">one of the alternative zarf packages for storage (csi-rook-ceph or csi-longhorn) is required and is not deployed to this cluster
+</code></pre>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="driving-zarf-from-ansible"><a class="header" href="#driving-zarf-from-ansible">Driving zarf from Ansible</a></h1>
 <p>The <code>colonel_byte.zarf</code> collection initialises a cluster with zarf and deploys zarf packages onto it from a playbook. It is a proof of <a href="https://github.com/zarf-dev/proposals/pull/73">ZEP-0072</a>, which proposes native Ansible module support for zarf. It began in <a href="https://github.com/colonel-byte/cargoship">colonel-byte/cargoship</a>, because the pattern it proposes is the one <code>colonel_byte.cargoship</code> already runs there.</p>
@@ -1613,6 +1797,7 @@ go run ./magefiles/core build:modules          # build/zarfmod, with a symlink p
 <tr><th>Role</th><th>What it does</th></tr>
 </thead>
 <tbody>
+<tr><td><a href="#deploy_packages-2"><code>deploy_packages</code></a></td><td>Deploys a list of Zarf packages with component-level drift detection.</td></tr>
 <tr><td><a href="#packages-2"><code>packages</code></a></td><td>Queries the cluster via <code>zarf package list</code> and sets the <code>zarf_packages</code> fact.</td></tr>
 <tr><td><a href="#package_inspect-3"><code>package_inspect</code></a></td><td>Inspects a Zarf package definition and sets structured metadata facts.</td></tr>
 <tr><td><a href="#prerequisites-2"><code>prerequisites</code></a></td><td>Checks a cluster against the prerequisites a package declares, and refuses to proceed.</td></tr>
@@ -1620,6 +1805,63 @@ go run ./magefiles/core build:modules          # build/zarfmod, with a symlink p
 </tbody>
 </table>
 </div>
+<h2 id="deploy_packages"><a class="header" href="#deploy_packages">deploy_packages</a></h2>
+<p><code>deploy_packages</code> deploys a sequence of Zarf packages while inspecting each package definition and checking the cluster’s deployed components to avoid unnecessary deployments.</p>
+<p>Skipping settles for a package that one item deploys. It does <strong>not</strong> settle for a package that several items deploy in phases – the bundle’s two-phase init, for instance – because <code>zarf package list</code> reports only the most recent deploy’s components, so each phase sees the other’s and both re-deploy on every run. Re-deploying reconciles rather than fails, but it is never reported as unchanged. <a href="#drift-detection-converges-for-a-package-deployed-in-one-phase-and-not-for-one-deployed-in-several">choice-deploy-packages-drift-scope</a> has the reasoning and the alternatives that were declined.</p>
+<p>An item is also only skipped when the cluster’s version of the package matches the one the item carries, so an upgraded tarball whose component names did not change is not mistaken for what is already deployed.</p>
+<p>Skipping is per component, and an item that names no <code>components</code> is deployed every run. That is a limit rather than an oversight: with no components named, zarf picks the set itself – every non-optional component, plus any optional one marked <code>default</code>, with <code>required</code> and <code>optional</code> carrying inverted defaults between the v1alpha1 and v1beta1 package schemas – and the role does not reimplement that choice to guess what it would be. Naming the components is what turns drift detection on.</p>
+<p>The role sets <code>zarf_deploy_packages_changed</code> to whether any item reached zarf, and refreshes the <code>zarf_packages</code> fact once at the end when one did.</p>
+<p>Set <code>zarf_result_dir</code> and each item’s result is written to <code>&lt;position&gt;-&lt;package file name&gt;.json</code> inside it. The position leads the name because the package does not identify the item – a bundle names the same init package twice, once for the seed phase and once for the rest – and it puts a listing of the directory in deployment order. <code>log_dest</code> on an item overrides the whole path.</p>
+<p><code>registry_mode</code>, <code>connected</code>, <code>take_ownership</code> and <code>force_conflicts</code> are settings the role passes through rather than decides. Each has a role-level default (<code>zarf_registry_mode</code>, <code>zarf_connected</code>, <code>zarf_take_ownership</code>, <code>zarf_force_conflicts</code>) that a package item can override, and each is unset by default – which leaves zarf’s own behaviour alone. Turning <code>force_conflicts</code> on means a deploy takes fields another controller owns, so the role will not do it on an operator’s behalf.</p>
+<p>The boolean item keys below take <code>true</code> or <code>false</code>. Their role-level counterparts are typed <code>str</code> with an empty choice instead, because a role default needs a third state – empty means “say nothing and leave zarf’s own behaviour alone”, which <code>false</code> cannot express.</p>
+<p>Each dictionary entry in <code>zarf_packages_to_deploy</code> supports:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Key</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>path</code></td><td><code>str</code></td><td>(Required) Path to the Zarf package file or OCI source.</td></tr>
+<tr><td><code>package_type</code></td><td><code>str</code></td><td>Type of package: <code>init</code>, <code>package</code>, or <code>deploy</code> (default: <code>package</code>).</td></tr>
+<tr><td><code>components</code></td><td><code>list</code> of <code>str</code></td><td>Components to deploy. Prefix with <code>-</code> to exclude (e.g. <code>-git-server</code>).</td></tr>
+<tr><td><code>set_variables</code></td><td><code>dict</code></td><td>Key-value variable overrides passed to Zarf templates (<code>--set</code>).</td></tr>
+<tr><td><code>kubeconfig</code></td><td><code>str</code></td><td>Kubeconfig path override for this package.</td></tr>
+<tr><td><code>public_key</code></td><td><code>str</code></td><td>Public key path override for signature verification.</td></tr>
+<tr><td><code>verify</code></td><td><code>str</code></td><td>Verification mode override (<code>never</code>, <code>if-possible</code>, <code>always</code>).</td></tr>
+<tr><td><code>timeout</code></td><td><code>str</code></td><td>Timeout override (e.g. <code>15m</code>, <code>1h</code>).</td></tr>
+<tr><td><code>log_level</code></td><td><code>str</code></td><td>Zarf log level override (e.g. <code>warn</code>, <code>info</code>, <code>debug</code>, <code>trace</code>).</td></tr>
+<tr><td><code>wrapper_binary</code></td><td><code>str</code></td><td>Wrapper binary path override.</td></tr>
+<tr><td><code>registry_mode</code></td><td><code>str</code></td><td>Registry mode for an <code>init</code> package: <code>nodeport</code>, <code>proxy</code> or <code>external</code>.</td></tr>
+<tr><td><code>connected</code></td><td><code>bool</code></td><td>Whether the cluster pulls the package’s images itself. Non-init packages only.</td></tr>
+<tr><td><code>take_ownership</code></td><td><code>bool</code></td><td>Whether zarf adopts cluster resources it did not create.</td></tr>
+<tr><td><code>force_conflicts</code></td><td><code>bool</code></td><td>Whether zarf overrides a server-side-apply conflict.</td></tr>
+<tr><td><code>log_dest</code></td><td><code>str</code></td><td>Result file path, overriding the name built under <code>zarf_result_dir</code>.</td></tr>
+<tr><td><code>delegate_to</code></td><td><code>str</code></td><td>Target node override for executing inspection and deployment.</td></tr>
+<tr><td><code>zarf_binary</code></td><td><code>str</code></td><td>Path to <code>zarf</code> binary override.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Example:</p>
+<pre><code class="language-yaml">- name: Deploy package stack
+  ansible.builtin.include_role:
+    name: colonel_byte.zarf.deploy_packages
+  vars:
+    zarf_kubeconfig: /etc/rancher/rke2/rke2.yaml
+    zarf_packages_to_deploy:
+      - path: "{{ zarf_package_dir }}/zarf-init-amd64-v0.88.0.tar.zst"
+        package_type: init
+        components:
+          - k3s
+      - path: "{{ zarf_package_dir }}/zarf-package-csi-rook-ceph-amd64-v1.21.0-upstream.tar.zst"
+        components:
+          - operator-images
+          - cluster-images
+          - operator-seed-chart
+          - cluster-seed-chart
+          - registry-bucket
+        package_type: package
+        set_variables: "{{ zarf_storage_set_variables }}"
+</code></pre>
 <h2 id="packages"><a class="header" href="#packages">packages</a></h2>
 <p><code>packages</code> queries installed Zarf packages and exposes them as a structured list under the <code>zarf_packages</code> fact:</p>
 <pre><code class="language-yaml">- name: List installed Zarf packages
@@ -1686,6 +1928,44 @@ go run ./magefiles/core build:modules          # build/zarfmod, with a symlink p
     var: zarf_state_redacted
 </code></pre>
 <div style="break-before: page; page-break-before: always;"></div>
+<h1 id="deploy_packages-2"><a href="#deploy_packages-2" class="header">deploy_packages</a></h1>
+<!-- Page generated by colonel-byte/ansible-collection-zarf; DO NOT EDIT -->
+<h2 id="deploy_packages-1"><a class="header" href="#deploy_packages-1">deploy_packages</a></h2>
+<p>Deploy a list of Zarf packages to a cluster with component-level drift detection.</p>
+<p>Include it as <code>colonel_byte.zarf.deploy_packages</code>.</p>
+<p>Added in <code>colonel_byte.zarf</code> 0.31.0.</p>
+<p>Iterates over a list of Zarf packages to deploy, inspecting each package definition and checking installed cluster components before deploying.</p>
+<p>An item that names components is skipped when every one of them is already deployed on the cluster at the same package version, and no excluded component is. An item that names none is always deployed: the role compares component names, and with none to compare it has nothing to go on.</p>
+<p>Skipping settles for a package that one item deploys. It does not settle for a package that several items deploy in phases, because <code>zarf package list</code> reports only the most recent deploy’s components – so each phase sees the other’s and both re-deploy every run. That reconciles rather than fails; see the <code>choice-deploy-packages-drift-scope</code> page in the book.</p>
+<p>When deployment is executed, invokes <code>zarf_init</code> for packages of type <code>init</code>, or <code>zarf_package_deploy</code> for standard packages. Both verify the package against <code>zarf_public_key</code> when one is named.</p>
+<p>Optionally writes deployment results as JSON files to <code>zarf_result_dir</code>, refreshes the <code>zarf_packages</code> fact once the stack is deployed, and sets <code>zarf_deploy_packages_changed</code> to whether any item reached zarf.</p>
+<p>Every task carries <code>run_once: true</code> and delegates to <code>zarf_delegate_to</code>.</p>
+<h3 id="variables"><a class="header" href="#variables">Variables</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Variable</th><th>Type</th><th>Default</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>zarf_packages_to_deploy</code></td><td><code>list</code> of <code>dict</code></td><td><code>[]</code></td><td>The list of packages to deploy. Each item is a dictionary specifying package deployment parameters. <code>path</code>: (required) Path to the Zarf package tarball or OCI source. <code>package_type</code>: Type of deployment. Set to <code>init</code> to invoke <code>zarf_init</code>, or <code>package</code> / <code>deploy</code> (default: <code>package</code>) to invoke <code>zarf_package_deploy</code>. <code>components</code>: List of component names to deploy. Prefix with <code>-</code> to exclude (e.g. <code>-git-server</code>). Naming them is also what lets the item be skipped. Left unset, zarf chooses the components itself – every non-optional one, plus any optional one marked default, resolved per package API version – and the role does not work out what that set would be, so the item is deployed every run. <code>set_variables</code>: Dictionary of template variable overrides passed as <code>--set key=val</code>. <code>kubeconfig</code>: Kubeconfig path override for this package. <code>public_key</code>: Public key path override for signature verification. <code>verify</code>: Verification mode override (<code>never</code>, <code>if-possible</code>, <code>always</code>). <code>timeout</code>: Timeout override for this package deployment. <code>wrapper_binary</code>: Wrapper binary override for this package. <code>registry_mode</code>: Registry mode override for <code>init</code> packages (<code>nodeport</code>, <code>proxy</code>, <code>external</code>). <code>connected</code>: Whether the cluster pulls the package’s images itself rather than zarf pushing them. Overrides <code>zarf_connected</code>, and applies to non-init packages only. <code>take_ownership</code>: Whether zarf adopts cluster resources it did not create. Overrides <code>zarf_take_ownership</code>. <code>force_conflicts</code>: Whether zarf overrides a server-side-apply conflict. Overrides <code>zarf_force_conflicts</code>. <code>log_level</code>: Zarf log level for this package (e.g. <code>warn</code>, <code>info</code>, <code>debug</code>, <code>trace</code>). Overrides <code>zarf_log_level</code>. <code>log_dest</code>: Destination file path to write deployment result JSON. Overrides the name the role would build under <code>zarf_result_dir</code>. <code>delegate_to</code>: Host override on which this package operation runs. <code>zarf_binary</code>: Path to <code>zarf</code> binary override for this package.</td></tr>
+<tr><td><code>zarf_kubeconfig</code></td><td><code>str</code></td><td><code>""</code></td><td>Default path to the kubeconfig file used to reach the cluster. Can be overridden per package item.</td></tr>
+<tr><td><code>zarf_public_key</code></td><td><code>str</code></td><td><code>""</code></td><td>Default path to the public key used to verify package signatures. Can be overridden per package item.</td></tr>
+<tr><td><code>zarf_verify</code></td><td><code>str</code></td><td><code>""</code></td><td>When to verify package signatures. Left empty, requires a signature if <code>zarf_public_key</code> is specified. One of ``, <code>never</code>, <code>if-possible</code>, <code>always</code>.</td></tr>
+<tr><td><code>zarf_timeout</code></td><td><code>str</code></td><td><code>""</code></td><td>Default timeout duration for package deployment tasks (e.g. <code>15m</code>, <code>1h</code>). Can be overridden per package item.</td></tr>
+<tr><td><code>zarf_init_wrapper</code></td><td><code>str</code></td><td><code>""</code></td><td>Default wrapper binary path for <code>zarf_init</code> tasks.</td></tr>
+<tr><td><code>zarf_deploy_wrapper</code></td><td><code>str</code></td><td><code>""</code></td><td>Default wrapper binary path for <code>zarf_package_deploy</code> tasks.</td></tr>
+<tr><td><code>zarf_result_dir</code></td><td><code>str</code></td><td><code>""</code></td><td>Directory where deployment result logs are written as JSON. If empty, result files are not written unless <code>log_dest</code> is set on the package item. The name inside it is the item’s position in the stack, then the package’s file name without its extension – <code>1-zarf-init-amd64-v0.88.0.json</code>. The position leads it because the package does not identify the item: a bundle names the same init package twice, and a name built from the package alone would have the second step overwrite the first step’s result.</td></tr>
+<tr><td><code>zarf_log_level</code></td><td><code>str</code></td><td><code>""</code></td><td>Default Zarf log level (e.g. <code>warn</code>, <code>info</code>, <code>debug</code>, <code>trace</code>). Left empty, zarf’s own default applies. Can be overridden per package item.</td></tr>
+<tr><td><code>zarf_take_ownership</code></td><td><code>str</code></td><td><code>""</code></td><td>Whether zarf adopts cluster resources it did not create, which Helm otherwise refuses to do. Can be overridden per package item. Left empty, zarf’s own default applies. Empty is the third state a boolean does not have: it is what distinguishes a stack that said nothing from one that said false. One of ``, <code>true</code>, <code>false</code>.</td></tr>
+<tr><td><code>zarf_force_conflicts</code></td><td><code>str</code></td><td><code>""</code></td><td>Whether zarf overrides a server-side-apply conflict rather than failing on it. Can be overridden per package item. Left empty, zarf’s own default applies. Turning it on means the deploy takes fields another controller owns, so it is stated by whoever is deploying rather than assumed by this role. One of ``, <code>true</code>, <code>false</code>.</td></tr>
+<tr><td><code>zarf_registry_mode</code></td><td><code>str</code></td><td><code>""</code></td><td>How zarf reaches the registry an <code>init</code> package stands up. Can be overridden per package item, and applies to <code>init</code> packages only. Left empty, zarf’s own default applies. One of ``, <code>nodeport</code>, <code>proxy</code>, <code>external</code>.</td></tr>
+<tr><td><code>zarf_connected</code></td><td><code>str</code></td><td><code>""</code></td><td>Whether the cluster pulls a package’s images itself rather than zarf pushing them to the registry. Can be overridden per package item, and applies to non-init packages only. A connected deploy needs no registry, so it is the one deploy that works on a cluster nothing has initialised – which is what lets a storage provider be deployed before the initialisation that claims a volume from it. Left empty, zarf’s own default applies. One of ``, <code>true</code>, <code>false</code>.</td></tr>
+<tr><td><code>zarf_binary</code></td><td><code>str</code></td><td><code>zarf</code></td><td>Path to the <code>zarf</code> binary on the delegated host.</td></tr>
+<tr><td><code>zarf_delegate_to</code></td><td><code>str</code></td><td><code>localhost</code></td><td>The node on which to execute inspection and deployment tasks.</td></tr>
+</tbody>
+</table>
+</div>
+<div style="break-before: page; page-break-before: always;"></div>
 <h1 id="package_inspect-3"><a href="#package_inspect-3" class="header">package_inspect</a></h1>
 <!-- Page generated by colonel-byte/ansible-collection-zarf; DO NOT EDIT -->
 <h2 id="package_inspect-1"><a class="header" href="#package_inspect-1">package_inspect</a></h2>
@@ -1697,7 +1977,7 @@ go run ./magefiles/core build:modules          # build/zarfmod, with a symlink p
 <p>Sets the <code>zarf_package_definition</code>, <code>zarf_package_name</code>, <code>zarf_package_version</code>, <code>zarf_package_flavor</code>, and <code>zarf_package_documentation</code> facts.</p>
 <p><code>zarf_package_documentation</code> is the package’s <code>documentation:</code> mapping: documentation keys to paths inside the package’s own source tree. It is empty for a package that declares none. Reading the file one of them names is <code>colonel_byte.zarf.zarf_package_documentation</code>, and checking a cluster against a <code>prerequisites</code> key is the <code>prerequisites</code> role.</p>
 <p>Every task carries <code>run_once: true</code> and delegates to <code>zarf_delegate_to</code>.</p>
-<h3 id="variables"><a class="header" href="#variables">Variables</a></h3>
+<h3 id="variables-1"><a class="header" href="#variables-1">Variables</a></h3>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -1723,7 +2003,7 @@ go run ./magefiles/core build:modules          # build/zarfmod, with a symlink p
 <p>Added in <code>colonel_byte.zarf</code> 0.31.0.</p>
 <p>Queries the cluster via <code>zarf package list</code> and sets the resulting package list as the <code>zarf_packages</code> fact.</p>
 <p>Every task carries <code>run_once: true</code> and delegates to <code>zarf_delegate_to</code>.</p>
-<h3 id="variables-1"><a class="header" href="#variables-1">Variables</a></h3>
+<h3 id="variables-2"><a class="header" href="#variables-2">Variables</a></h3>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -1749,7 +2029,7 @@ go run ./magefiles/core build:modules          # build/zarfmod, with a symlink p
 <p>Sets the <code>zarf_prerequisites_document</code>, <code>zarf_prerequisites_checked</code>, <code>zarf_prerequisites_unmet</code>, and <code>zarf_prerequisites_skipped</code> facts. A package carrying no document is not a failure: nothing is checked and <code>zarf_prerequisites_checked</code> is empty.</p>
 <p><code>requires.storage.accessModes</code> is reported in <code>zarf_prerequisites_skipped</code> rather than checked. What a provisioner will bind is not discoverable without creating a PersistentVolumeClaim, and a check that cannot be made is better named than quietly passed.</p>
 <p>Every task carries <code>run_once: true</code> and delegates to <code>zarf_delegate_to</code>.</p>
-<h3 id="variables-2"><a class="header" href="#variables-2">Variables</a></h3>
+<h3 id="variables-3"><a class="header" href="#variables-3">Variables</a></h3>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -1780,7 +2060,7 @@ go run ./magefiles/core build:modules          # build/zarfmod, with a symlink p
 <p>Queries the cluster for the <code>zarf-state</code> Secret via <code>zarf tools kubectl</code> and sets the parsed state as the <code>zarf_state</code> fact.</p>
 <p>The credentials the Secret holds are withheld unless <code>zarf_include_credentials</code> is set. The paths that were withheld are set as the <code>zarf_state_redacted</code> fact.</p>
 <p>Every task carries <code>run_once: true</code>, <code>no_log</code> from <code>zarf_no_log</code>, and delegates to <code>zarf_delegate_to</code>.</p>
-<h3 id="variables-3"><a class="header" href="#variables-3">Variables</a></h3>
+<h3 id="variables-4"><a class="header" href="#variables-4">Variables</a></h3>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -1815,7 +2095,7 @@ go run ./magefiles/core build:modules          # build/zarfmod, with a symlink p
 <li><strong>They read the playbook, the fixture and the plugin before running anything.</strong> Go’s test cache keys on the files the test process opens, and everything these tests exercise is opened by the <code>ansible-playbook</code> child. Without those reads, editing a plugin leaves a passing result cached – which is the shape of mistake that gets a credential leak marked as fixed.</li>
 </ul>
 <h2 id="teste2ecluster"><a class="header" href="#teste2ecluster"><code>test/e2e/cluster</code></a></h2>
-<p>Needs <code>k3d</code>, a <code>zarf</code> on <code>PATH</code>, <code>ansible-playbook</code>, Docker, and the network to pull three packages on the first run. It builds the module wrapper first, stands up two k3d clusters, and walks <code>zarf_init</code> and <code>zarf_package_deploy</code> across each. The other five acting modules run against the cluster the first walk leaves behind.</p>
+<p>Needs <code>k3d</code>, a <code>zarf</code> on <code>PATH</code>, <code>ansible-playbook</code>, Docker, and the network on the first run – to pull three packages, and to build a fourth from <code>examples/packages/app-fluxcd</code>, whose four Flux controller images come from ghcr.io. It builds the module wrapper first, stands up two k3d clusters, and walks <code>zarf_init</code> and <code>zarf_package_deploy</code> across each. The other five acting modules run against the cluster the first walk leaves behind.</p>
 <pre><code class="language-sh">go run ./magefiles/core test:endToEndCluster
 </code></pre>
 <p>Both walks deploy the two packages of the <a href="https://github.com/colonel-byte/uds-bundles/blob/main/upstream/init-local-path/uds-bundle.yaml"><code>init-local-path</code> uds-bundle</a>, pinned in <code>main_test.go</code>. The init package is that bundle’s <em>slim</em> init, whose five components are all optional, and that is what shapes the walk: each step names the components it wants, so the bundle’s alternation of seed phase, storage provider, the rest of init, storage provider again is four steps rather than two. <code>bundle-order.yml</code> adds a fifth the bundle has not got – the second init again, unchanged – because a playbook that cannot be re-run is not a playbook. See <a href="#how-the-zarf-ansible-modules-reach-zarf">choice-zarf-ansible-module</a> for the two tag traps that came with those packages.</p>
@@ -1826,12 +2106,14 @@ go run ./magefiles/core build:modules          # build/zarfmod, with a symlink p
 <tr><th>Variable</th><th>What it does</th></tr>
 </thead>
 <tbody>
+<tr><td><code>ZARF_ANSIBLE_E2E_FLUXCD_PACKAGE</code></td><td>Names an app-fluxcd package to use instead of building one. Set it for an offline run.</td></tr>
 <tr><td><code>ZARF_ANSIBLE_E2E_INIT_PACKAGE</code></td><td>Names an init package to use instead of pulling one. Set it for an offline run, or to test a package built from a branch. It must be a slim init whose components are optional – each walk step names the components it wants, so the standard zarf-dev init package, whose components are all required, deploys everything on the first step.</td></tr>
 <tr><td><code>ZARF_ANSIBLE_E2E_STORAGE_PACKAGE</code></td><td>The same, for the storage provider package.</td></tr>
 <tr><td><code>ZARF_ANSIBLE_E2E_KEEP</code></td><td>Leaves both clusters running afterwards, for looking at what the modules did.</td></tr>
 </tbody>
 </table>
 </div>
+<p><code>app-fluxcd</code> is the one package the suite builds rather than pulls, because nothing publishes it: it is a reference package in this repository, and until now <code>mage examples:lint</code> was all that read it. It earns the build by being the only package here with a single component that is <code>required: true</code>, which is what lets a deploy that names no components deploy exactly one known thing – the <code>deploy_packages</code> role’s omitted-components path, which has no other way to be exercised against a real zarf. The suite finds what the build wrote by globbing for the architecture rather than naming the version, because <code>metadata.version</code> there is machine-maintained from <code>resources.json</code>.</p>
 <p>Packages are cached under <code>build/tmp/zarf-e2e</code> between runs, so the downloads happen once. The init package is cached in a subdirectory of its own, which matters: <code>zarf package pull</code> names a <code>ZarfInitConfig</code> after its kind and version, so the slim init and the standard zarf-dev one both land as <code>zarf-init-&lt;arch&gt;-v0.88.0.tar.zst</code>, and a flat cache that had ever held the standard one would serve it to every walk. <code>test:cleanClusters</code> removes the clusters a run interrupted before its own cleanup left behind.</p>
 <h3 id="the-acting-modules-the-walks-do-not-cover"><a class="header" href="#the-acting-modules-the-walks-do-not-cover">The acting modules the walks do not cover</a></h3>
 <p><code>testdata/acting-modules.yml</code> runs after the bundle-order walk, on the cluster that walk initialised, and covers the half of those five modules that cannot be faked:</p>
@@ -2145,6 +2427,39 @@ vendor/github.com/containerd/typeurl/v2/types_gogo.go:24:2: cannot find module p
 <p>A grouped update is one pull request and therefore one revert. When a bump breaks something, <code>git revert</code> takes the other two hundred modules back with it, and finding which one was at fault means bisecting within the branch rather than reading the title. The previous layout bought that isolation, and it was paid for daily in re-vendoring; the grouped layout pays only when a bump actually breaks, which is rarer.</p>
 <p>Security advisories are unaffected. Dependabot opens those outside the group regardless of this configuration, which is what the <code>open-pull-requests-limit: 5</code> headroom is for.</p>
 <div style="break-before: page; page-break-before: always;"></div>
+<h1 id="drift-detection-converges-for-a-package-deployed-in-one-phase-and-not-for-one-deployed-in-several"><a class="header" href="#drift-detection-converges-for-a-package-deployed-in-one-phase-and-not-for-one-deployed-in-several">Drift detection converges for a package deployed in one phase, and not for one deployed in several</a></h1>
+<p><code>colonel_byte.zarf.deploy_packages</code> skips an item whose components the cluster already reports as deployed. For a package that one item deploys, that works and the second run of a play is a no-op. For a package that several items deploy in phases – which is what every <code>uds-bundle</code> init is – it never settles, and the role re-deploys on every run.</p>
+<p>This is a limit of what the cluster knows, not a bug in the role, and it is written down because the code looks like it ought to work and the obvious fixes are worse than the limit.</p>
+<h2 id="what-happens"><a class="header" href="#what-happens">What happens</a></h2>
+<p>The bundle’s init is two items: the seed phase, then the rest. <code>zarf package list</code> reports the components of the <strong>most recent</strong> deploy of a package, because <code>NewDeployedPackage</code> in <code>vendor/github.com/zarf-dev/zarf/src/pkg/state/state.go</code> assigns <code>DeployedComponents: components</code> from the deploy that is happening and the secret is written fresh. There is no union and no history; <code>Generation</code> is a single incrementing <code>int</code>.</p>
+<p>So on the second run of the same stack:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Item</th><th>What the cluster reports</th><th>What the item asks for</th><th>Decision</th></tr>
+</thead>
+<tbody>
+<tr><td>init, phase one</td><td><code>zarf-registry, zarf-agent</code></td><td><code>zarf-injector, zarf-seed-registry, git-server</code></td><td>deploys, record becomes phase one</td></tr>
+<tr><td>storage</td><td><code>local-path-images, local-path-chart</code></td><td>the same two</td><td>skips</td></tr>
+<tr><td>init, phase two</td><td><code>zarf-injector, zarf-seed-registry, git-server</code></td><td><code>zarf-registry, zarf-agent</code></td><td>deploys, record becomes phase two</td></tr>
+</tbody>
+</table>
+</div>
+<p>The two init items hand the record back and forth. There is no run after which both are satisfied.</p>
+<p><code>TestDeployPackagesRoleWalk</code> is what found this, and it asserts the behaviour above rather than the behaviour we wanted, so that the day zarf starts retaining the union the test fails and says so.</p>
+<h2 id="why-the-alternatives-are-worse"><a class="header" href="#why-the-alternatives-are-worse">Why the alternatives are worse</a></h2>
+<p><strong>Verify against the cluster instead of zarf’s record.</strong> The appealing one, and it does not reach. Helm releases do accumulate – two deploys of the storage provider leave <code>local-path-provider.v1</code> and <code>.v2</code> – but they do not map onto components. In the init package <code>zarf-seed-registry</code> and <code>zarf-registry</code> declare the <em>same</em> release name, <code>zarf-docker-registry</code>, so Helm cannot tell the two phases apart; and <code>zarf-injector</code> declares no chart and no manifest at all, so there is nothing of it to find. Three of the five components are unanswerable this way. Closing the gap would mean a rule per component – “injector means look for these pods” – which is the cluster-specific knowledge this collection exists to avoid, and which would be wrong for the next package.</p>
+<p><strong>Union what the role deployed earlier in the same play.</strong> Makes the second role invocation in one playbook skip, and changes nothing for the case that matters: a scheduled converge is a <em>fresh</em> run with no memory of the last one. It would turn a test green while leaving the behaviour it claims to prove broken, which is worse than the limit.</p>
+<p><strong>A marker the role owns.</strong> A ConfigMap recording what the role deployed would genuinely make the phased case idempotent across runs, and the collection already ships a vendored kubectl that could read and write it. It was declined because it is a second source of truth: it goes stale the moment anybody runs <code>zarf package remove</code>, or deploys the same package by hand, and a drift check that trusts a stale marker skips work that was needed. The failure mode of the limit is a wasted deploy; the failure mode of a stale marker is a cluster nobody converged.</p>
+<h2 id="what-this-costs-concretely"><a class="header" href="#what-this-costs-concretely">What this costs, concretely</a></h2>
+<ul>
+<li>A phased package re-deploys on every run, which is <code>changed: true</code> forever and the deploy’s wall-clock time each converge.</li>
+<li><code>changed</code> is therefore not a drift signal for such a package. Nothing else in the collection can supply one: the modules report <code>changedSignal: partial</code> on every successful step, because zarf tells them which components it deployed and not whether any of them found the cluster already as wanted – see <a href="#how-the-zarf-ansible-modules-reach-zarf">choice-zarf-ansible-module</a>.</li>
+<li>Nothing is at risk on the cluster. Re-deploying reconciles rather than fails, which <code>test/e2e/cluster/testdata/bundle-order.yml</code> proves on purpose in its fifth step: “a playbook that cannot be run twice is not a playbook”.</li>
+</ul>
+<h2 id="before-reversing-this"><a class="header" href="#before-reversing-this">Before reversing this</a></h2>
+<p>The limit disappears if zarf merges <code>DeployedComponents</code> instead of replacing it, at which point the role’s existing logic is correct with no change. That is drafted as finding 1 of <a href="#zep-findings">ZEP findings</a>. Check whether it landed before assuming the role needs work.</p>
+<div style="break-before: page; page-break-before: always;"></div>
 <h1 id="why-there-are-two-fuzz-targets-and-why-they-are-not-under-fuzz"><a class="header" href="#why-there-are-two-fuzz-targets-and-why-they-are-not-under-fuzz">Why there are two fuzz targets, and why they are not under <code>fuzz/</code></a></h1>
 <p>This repository has two Go fuzz targets, both in <code>internal/zarfmod</code>, beside the code they exercise. This is the record of why those two and not others, and why a <code>fuzz/</code> directory was considered and rejected.</p>
 <h2 id="why-fuzzing-at-all"><a class="header" href="#why-fuzzing-at-all">Why fuzzing at all</a></h2>
@@ -2247,6 +2562,267 @@ document whose controllers name their namespaces never needs the engine; one tha
 <p>Three simplifications against the original, each affordable because what lives here is a reference package rather than a published one: one flavor rather than <code>upstream</code> and <code>minimus</code>; one copy of the pinned tag, which the target writes into both <code>zarf.yaml</code> and the kustomizations rather than three copies that must agree; and generated kustomizations, which is what lets the version label be stamped from the pin.</p>
 <p>The image lists are rewritten by line surgery rather than by a YAML round trip. <code>zarf.yaml</code> there is a hand-written teaching artifact full of comments, and a marshaller would reformat it and drop every one of them. The risk of that choice – a pattern that reaches past the component it was given – is what <code>TestReplaceImagesRewritesOneComponent</code> is for, and the blank-line case in it is a regression it already caught: a list pattern that also matched blank lines ate the separator between components, which reflowed the file on the first run and was a no-op on every run after, so the damage was invisible in the second diff.</p>
 <p>The pin’s owner is a documented manual bump – edit <code>tag</code>, run <code>examples:vendor</code> and <code>examples:images</code> – which is the third answer <a href="../magefiles/AGENTS.html"><code>magefiles/AGENTS.md</code></a> allows. A target that read the upstream’s latest release and wrote it back was written and then dropped: it is a reference package nothing deploys, and the pin moving without being asked is the opposite of what pinning it was for. The <code>renovate</code> annotation in <code>resources.json</code> is carried over from the repository that has Renovate configured; nothing here reads it.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="ordering-a-directory-of-zarf-packages-into-a-deployment-dag-from-prerequisites"><a class="header" href="#ordering-a-directory-of-zarf-packages-into-a-deployment-dag-from-prerequisites">Ordering a directory of Zarf packages into a deployment DAG from prerequisites</a></h1>
+<p>This document records the architectural decisions, constraints, and trade-offs for automatically ordering a directory of Zarf package archives into a Directed Acyclic Graph (DAG) for deployment, using each package’s embedded prerequisites configuration.</p>
+<h2 id="the-problem-and-goal"><a class="header" href="#the-problem-and-goal">The problem and goal</a></h2>
+<p>Today, playbooks deploying stacks of Zarf packages (e.g. through <code>deploy_packages</code>) require authors to specify an explicit deployment list or numeric step prefix. When operators receive a directory of arbitrary Zarf package tarballs, manually sorting them requires unpacking or inspecting each package to deduce dependency order (e.g. init packages, CRDs, service meshes, storage, application workloads).</p>
+<p>Because packages in this ecosystem carry <code>PackagePrerequisites</code> (<code>colonel-byte.dev/v1alpha1</code>) inside their embedded <code>documentation.prerequisites</code> mapping, a bundle planner can extract these documents without deploying anything, build a dependency graph, verify that the graph is acyclic, and emit a topological deployment order.</p>
+<h2 id="static-inspection-vs-runtime-deployment"><a class="header" href="#static-inspection-vs-runtime-deployment">Static inspection vs runtime deployment</a></h2>
+<p>The primary virtue of the <code>PackagePrerequisites</code> design is offline planning:</p>
+<ul>
+<li><code>zarf package inspect documentation</code> extracts the embedded <code>docs/prerequisites.yaml</code> directly from the package archive without access to a Kubernetes cluster or network.</li>
+<li><code>zarf_package_documentation</code> already implements non-destructive inspection and YAML decoding of documentation keys for single packages.</li>
+<li>A directory-level planner reads every archive in the target directory, extracts its prerequisites document (or handles packages without one), and constructs the dependency model entirely in memory before any cluster mutation occurs.</li>
+</ul>
+<p>Inspecting many large archives introduces disk I/O and process overhead from running <code>zarf package inspect documentation</code> across tarballs. A realistic planner caches extracted documents by archive checksum/mtime to avoid redundant unpacking across runs.</p>
+<h2 id="dependency-resolution-mechanics"><a class="header" href="#dependency-resolution-mechanics">Dependency resolution mechanics</a></h2>
+<p>Each inspected package carries:</p>
+<ul>
+<li>Identity: <code>metadata.package</code> and <code>metadata.version</code> in <code>PackagePrerequisites</code> (mapping to the concrete archive path in the directory).</li>
+<li>Provides: <code>provides.capabilities</code>, <code>provides.crds</code>, <code>provides.namespaces</code>.</li>
+<li>Requires: <code>requires.packages</code> (with <code>name</code>, <code>names</code>, and optional group <code>id</code>), <code>requires.crds</code>, <code>requires.storage_classes</code>, and engine/controller requirements.</li>
+</ul>
+<p>In a directory bundle, edges in the DAG are constructed primarily via package dependencies:</p>
+<ol>
+<li>
+<p><strong>Direct package edges (<code>requires.packages[].name</code>)</strong>:
+If package $B$ requires package $A$ by name, directed edge $A \to B$ is added ($A$ must deploy before $B$). If a version constraint is declared, the bundle planner verifies whether $A$’s version in the directory satisfies $B$’s constraint.</p>
+</li>
+<li>
+<p><strong>Alias edges (<code>requires.packages[].names</code>)</strong>:
+If package $B$ allows <code>names: [init, init-slim]</code>, and the directory contains a package matching an alias (e.g. <code>init</code>), an edge is added from that package to $B$. If multiple satisfying packages are present in the directory, the planner flags the bundle as ambiguous unless disambiguated by explicit configuration.</p>
+</li>
+<li>
+<p><strong>Alternative group edges (<code>requires.packages[].id</code>)</strong>:
+When a consumer package declares alternative requirements sharing an <code>id</code> in <code>requires.packages</code> (e.g. <code>csi-rook-ceph</code> vs <code>csi-longhorn</code> grouped under <code>id: storage</code>), the requirement is a disjunction on the consumer side. If exactly one provider from that group exists in the directory, an edge is created from that provider to the consumer. If multiple candidate providers in the group are present in the directory, the planner refuses the ambiguity unless the operator explicitly selects the target provider.</p>
+</li>
+<li>
+<p><strong>Transitive CRD and capability resolution</strong>:
+Packages can also declare <code>requires.crds</code>. If package $A$ lists CRD $C$ in <code>provides.crds</code> and package $B$ lists $C$ in <code>requires.crds</code>, an implicit dependency edge $A \to B$ exists even if $B$ does not explicitly name $A$ in <code>requires.packages</code>.</p>
+</li>
+</ol>
+<h2 id="edge-cases-and-failure-modes"><a class="header" href="#edge-cases-and-failure-modes">Edge cases and failure modes</a></h2>
+<ul>
+<li><strong>Cycles</strong>: If circular dependencies exist ($A \to B \to A$), topological sort fails. The planner reports the cycle trace clearly and aborts before deploying any package.</li>
+</ul>
+<pre><code class="language-mermaid">flowchart TD
+    PkgA[Package A&lt;br/&gt;requires: B] --&gt; PkgB[Package B&lt;br/&gt;requires: A]
+    PkgB --&gt; PkgA
+</code></pre>
+<ul>
+<li><strong>Phased component limits</strong>: DAG planning at the archive level cannot resolve intra-package cyclic bootstrap sequences where the same package archive is deployed in multiple component phases (such as <code>init</code> seed components $\to$ storage provider $\to$ <code>init</code> full components, as recorded in <code>choice-deploy-packages-drift-scope.md</code>). Such bootstrap sequences remain the domain of explicit multi-phase playbooks.</li>
+<li><strong>Missing prerequisites</strong>: If package $B$ requires a package or CRD not provided by any package in the directory, the planner distinguishes two modes:
+<ol>
+<li><em>Standalone bundle mode</em>: Reject the plan because the bundle is self-contained and incomplete.</li>
+<li><em>Cluster-aware planning mode</em>: Check if the missing prerequisite is already satisfied on the target cluster (via <code>zarf_package_info</code> / <code>zarf_cluster_info</code>). If already satisfied on the cluster, the requirement is satisfied and does not need a local provider in the DAG.</li>
+</ol>
+</li>
+</ul>
+<pre><code class="language-mermaid">flowchart TD
+    PkgC[Package C&lt;br/&gt;requires: cluster-storage] -.-&gt;|Satisfied on Cluster?| Clust[(Target Cluster&lt;br/&gt;zarf_package_info)]
+    PkgC -.-&gt;|Missing in Bundle?| Fail[Abort or Query Cluster]
+</code></pre>
+<ul>
+<li><strong>Packages without prerequisites</strong>: A package in the directory with no prerequisites document or an empty <code>requires</code> has in-degree 0 (no prerequisites) and out-degree 0 (unless another package requires it). Independent nodes are sorted deterministically using lexical package name ordering as a tie-breaker.</li>
+<li><strong>Multiple packages in the same <code>id</code> group</strong>: When a directory contains multiple provider archives that satisfy the same consumer <code>id</code> group (e.g. both <code>csi-rook-ceph</code> and <code>csi-longhorn</code> for <code>id: storage</code>):
+<ol>
+<li><em>Default fail-fast rule</em>: The planner refuses the plan and errors out immediately. Attempting to deploy both mutually exclusive providers, or arbitrarily picking one without operator intent, risks conflicting storage classes or incorrect infrastructure.</li>
+<li><em>Cluster precedence (existing installation preference)</em>: If one candidate from the group is already deployed on the cluster (e.g. <code>csi-longhorn</code> is already installed and healthy), cluster-aware mode prefers the existing installation. The requirement is satisfied by the cluster, avoiding an unnecessary redeployment or duplicate provider rollout.</li>
+<li><em>Priority / weight ranking</em>: If offline bundles must choose between multiple candidate providers without operator intervention, package requirements or inventory configuration can declare an explicit weight or priority (e.g. <code>priority: 100</code> on <code>rook-ceph</code> vs <code>priority: 50</code> on <code>longhorn</code>). In the absence of an explicit priority or existing cluster deployment, equal-priority candidates remain a hard ambiguity failure.</li>
+</ol>
+</li>
+</ul>
+<pre><code class="language-mermaid">flowchart TD
+    Alt1["Package X&lt;br/&gt;csi-rook-ceph (priority: 100)"]
+    Alt2["Package Y&lt;br/&gt;csi-longhorn (priority: 50)"]
+    Consumer["Package Z&lt;br/&gt;requires id: storage"]
+    Cluster[("Installed on Cluster:&lt;br/&gt;csi-longhorn")]
+    Alt1 -.-&gt;|"Both in folder: Ambiguous failure&lt;br/&gt;unless prioritized or installed"| Consumer
+    Alt2 -.-&gt;|"Prefer existing install or weight"| Consumer
+    Cluster -.-&gt;|"Precedence to installed"| Consumer
+</code></pre>
+<ul>
+<li><strong>Multiple versions of the same package</strong>: When the directory holds multiple versions of a single package (e.g. <code>operator-cert-manager</code> v1.13.0 and v1.14.0):
+<ol>
+<li><em>Default selection</em>: The planner selects the highest version present.</li>
+<li><em>Constraint conflict risk</em>: If a dependent package requires a specific or constrained lower version (e.g. <code>&lt;=1.13.5</code>), selecting the highest available version (v1.14.0) causes the version check to fail.</li>
+<li><em>Planner resolution options</em>: The planner can evaluate version constraints against available candidate archives before picking the latest version that satisfies all consumers’ constraints, or fail fast and require the operator to prune superseded archives from the directory.</li>
+</ol>
+</li>
+</ul>
+<pre><code class="language-mermaid">flowchart TD
+    VLow["Package M v1.13.0"]
+    VHigh["Package M v1.14.0&lt;br/&gt;Highest candidate"]
+    Dep["Package N&lt;br/&gt;requires: M &lt;=1.13.5"]
+    VHigh -.-&gt;|"Default to highest"| Dep
+    Dep -.-&gt;|"Constraint Fails!"| Error["Version Conflict"]
+</code></pre>
+<ul>
+<li><strong>Multiple architectures in the bundle directory</strong>: Air-gapped delivery directories often stage archives for multiple CPU architectures side-by-side (e.g. <code>zarf-package-app-amd64-v1.0.0.tar.zst</code> and <code>zarf-package-app-arm64-v1.0.0.tar.zst</code>). Keying graph nodes strictly by package identity creates duplicate node collisions unless architecture is pruned first.
+<ol>
+<li><em>Architecture disambiguation</em>: The planner filters candidate archives by target architecture before building vertices. In cluster-aware mode, the architecture is queried from the cluster nodes (<code>kubernetes.io/arch</code>); in offline mode, it is provided explicitly (defaulting to the delegate host architecture).</li>
+</ol>
+</li>
+</ul>
+<pre><code class="language-mermaid">flowchart TD
+    ArchA["Package A (amd64)"]
+    ArchB["Package A (arm64)"]
+    Planner{"Target Arch Filter&lt;br/&gt;(amd64)"}
+    NodeA["DAG Node: Package A&lt;br/&gt;path: app-amd64.tar.zst"]
+    Ignored["Ignored Archive"]
+    ArchA --&gt; Planner
+    ArchB --&gt; Planner
+    Planner --&gt;|Matches| NodeA
+    Planner --&gt;|Mismatches| Ignored
+</code></pre>
+<ul>
+<li><strong>Package flavors and variant selection</strong>: Packages can be built under distinct flavors (e.g. <code>flavor: upstream</code> vs <code>flavor: hardened</code> or vendor-specific variants). Unlike architecture, flavor selection may be an intentional deployment requirement for a cluster stack.
+<ol>
+<li><em>Bundle ambiguity</em>: When multiple flavors of the same package and version exist in the folder, the planner requires an explicit flavor selector; otherwise, it fails fast on ambiguity.</li>
+<li><em>Upstream Zarf state limitation &amp; RFC</em>: Today, Zarf’s cluster state secret (<code>zarf package list</code>) does not record or report the deployed package flavor. A cluster-aware planner cannot determine which flavor is currently running on the cluster. Recording and exposing deployed flavor data requires an upstream Zarf RFC (ZEP) to include build flavor in deployed package state. Until upstream tracks flavor on-cluster, cluster-aware checks cannot assert flavor parity without external package inspection.</li>
+</ol>
+</li>
+</ul>
+<pre><code class="language-mermaid">flowchart TD
+    FlavorA["Package A (flavor: hardened)"]
+    FlavorB["Package A (flavor: upstream)"]
+    Selector{"Flavor Selector / Override"}
+    Chosen["Selected for DAG"]
+    StateCheck{"Cluster-Aware Check:&lt;br/&gt;zarf package list"}
+    RFC["Upstream RFC Needed:&lt;br/&gt;State secret lacks flavor"]
+    FlavorA --&gt; Selector
+    FlavorB --&gt; Selector
+    Selector --&gt; Chosen
+    Chosen --&gt; StateCheck
+    StateCheck -.-&gt;|Flavor not in state!| RFC
+</code></pre>
+<ul>
+<li><strong>Asynchronous CRD and StorageClass readiness races</strong>: While Zarf deploys package archives sequentially, Kubernetes registers CRDs and CSI storage drivers asynchronously. If package $A$ installs a CRD or CSI driver and package $B$ immediately creates Custom Resources or PersistentVolumeClaims, the Kubernetes API server may reject $B$’s manifests with webhook timeouts or missing resource errors.
+<ol>
+<li><em>Topological ordering vs readiness barrier</em>: The DAG planner establishes deployment order ($A \to B$), but execution must enforce a readiness barrier between dependent steps (e.g. awaiting CRD <code>Established</code> condition or CSI controller availability) before initiating $B$’s deployment.</li>
+</ol>
+</li>
+</ul>
+<pre><code class="language-mermaid">flowchart TD
+    StepA["Deploy Package A&lt;br/&gt;installs CRD / StorageClass"]
+    Barrier{"Readiness Barrier&lt;br/&gt;wait CRD Established&lt;br/&gt;wait CSI Available"}
+    StepB["Deploy Package B&lt;br/&gt;applies CR / PVC"]
+    StepA --&gt; Barrier
+    Barrier --&gt;|Ready| StepB
+    Barrier -.-&gt;|Timeout / Not Ready| Abort["Abort Deploy"]
+</code></pre>
+<ul>
+<li><strong>Partial or unhealthy cluster state</strong>: In cluster-aware planning mode, a package may appear in <code>zarf package list</code>, but a previous deployment failed midway or omitted required components.
+<ol>
+<li><em>Health and component completeness check</em>: Rather than assuming package presence in <code>zarf package list</code> satisfies an edge, cluster-aware planning must verify that required components are deployed and controller workloads meet availability constraints (<code>minAvailable &gt;= 1</code>). If unhealthy or incomplete, the edge must remain active in the local deployment DAG to re-reconcile the package.</li>
+</ol>
+</li>
+</ul>
+<pre><code class="language-mermaid">flowchart TD
+    ClusterList["zarf package list:&lt;br/&gt;Package A present"]
+    HealthCheck{"Health &amp; Component&lt;br/&gt;Completeness Check"}
+    Satisfied["Edge Satisfied&lt;br/&gt;Skip local deploy"]
+    Reconcile["Keep Edge Active&lt;br/&gt;Re-reconcile Package A"]
+    ClusterList --&gt; HealthCheck
+    HealthCheck --&gt;|Healthy &amp; Complete| Satisfied
+    HealthCheck --&gt;|Degraded or Incomplete| Reconcile
+</code></pre>
+<ul>
+<li><strong>Directory hygiene and non-archive artifacts</strong>: Staging directories frequently hold non-package artifacts (<code>.sha256</code> checksums, <code>.sig</code> Cosign signatures, <code>README.md</code>, or unrelated files). Furthermore, Zarf packages already embed internal checksums and metadata specifications.
+<ol>
+<li><em>Archive filtering</em>: The planner must strictly filter for valid archive extensions (<code>*.tar.zst</code>, <code>*.tar</code>) and ignore non-tarball companion files.</li>
+<li><em>Graceful warning on non-Zarf tarballs</em>: When an archive in the directory cannot be parsed by Zarf (e.g. an arbitrary tarball missing <code>zarf.yaml</code> or failing internal checksum validation), the planner warns or ignores the file rather than aborting the entire bundle plan.</li>
+</ol>
+</li>
+</ul>
+<h2 id="output-shape-and-execution-contract"><a class="header" href="#output-shape-and-execution-contract">Output shape and execution contract</a></h2>
+<p>The DAG planner emits a linear, topologically ordered list of package items compatible with <code>deploy_packages</code> (<code>zarf_packages_to_deploy</code>), mapping each resolved node to its concrete archive path.</p>
+<p>Because Zarf mutates cluster state sequentially through a single kubeconfig and Ansible tasks are serialized with <code>run_once: true</code> on the delegated host, execution against the cluster is serialized in topological order rather than run concurrently.</p>
+<h2 id="visualizing-the-dependency-graph"><a class="header" href="#visualizing-the-dependency-graph">Visualizing the dependency graph</a></h2>
+<pre><code class="language-mermaid">flowchart TD
+    subgraph Phase1 [Phase 1: Foundation]
+        Init[init / init-slim]
+    end
+
+    subgraph Phase2 [Phase 2: Platform &amp; Engine]
+        Flux[app-fluxcd&lt;br/&gt;provides: gitops-engine]
+    end
+
+    subgraph Phase3 [Phase 3: Shared Infrastructure]
+        CertManager[operator-cert-manager&lt;br/&gt;provides: cert-manager CRDs]
+        Storage[csi-rook-ceph&lt;br/&gt;satisfies id: storage]
+    end
+
+    subgraph Phase4 [Phase 4: Workloads &amp; Addons]
+        ExtSecrets[operator-external-secrets]
+        App[workload-app]
+    end
+
+    Init --&gt; Flux
+    Flux --&gt; CertManager
+    Init --&gt; Storage
+    CertManager --&gt; ExtSecrets
+    Flux --&gt; ExtSecrets
+    Storage --&gt; App
+    ExtSecrets --&gt; App
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="why-prerequisite-packages-accept-name-or-names-and-how-id-groups-alternatives"><a class="header" href="#why-prerequisite-packages-accept-name-or-names-and-how-id-groups-alternatives">Why prerequisite packages accept <code>name</code> or <code>names</code>, and how <code>id</code> groups alternatives</a></h1>
+<p><code>PackagePrerequisites</code> (<code>colonel-byte.dev/v1alpha1</code>) allows each entry under <code>requires.packages</code> to specify either a single package <code>name</code> or a list of acceptable <code>names</code>. This records why <code>names</code> exists beside <code>name</code>, why they are mutually exclusive, and how grouping by <code>id</code> extends this to alternative packages that carry distinct version constraints.</p>
+<h2 id="why-names-exists-beside-name"><a class="header" href="#why-names-exists-beside-name">Why <code>names</code> exists beside <code>name</code></a></h2>
+<p>A prerequisite package often exists under multiple published names that provide identical cluster capability. The canonical example is upstream Zarf’s <code>init</code> package versus rebuilds such as <code>init-slim</code>: a downstream package requiring an initialized cluster can run on either.</p>
+<p>The expressive alternative – stating capabilities in <code>provides</code> and requiring a capability – cannot be evaluated on cluster because Kubernetes and <code>zarf package list</code> track package names, versions, and components, not <code>PackagePrerequisites</code> documents. The name is the only token <code>zarf_package_info</code> can read from the cluster without out-of-band package inspection.</p>
+<p>Declaring separate <code>requires.packages</code> entries for each alias does not work:</p>
+<ul>
+<li>Multiple requirements would mean <em>all</em> of them must be present, when the author means <em>any</em> of them satisfies the requirement.</li>
+<li>Attaching version constraints across multiple alternative requirements causes duplicate constraints that drift when one is updated and another is forgotten. <code>names</code> keeps the version constraint bound to the requirement itself, applying whichever matching package is found on the cluster.</li>
+</ul>
+<h2 id="why-oneof-mutual-exclusivity-not-precedence-or-anyof"><a class="header" href="#why-oneof-mutual-exclusivity-not-precedence-or-anyof">Why <code>oneOf</code> mutual exclusivity, not precedence or <code>anyOf</code></a></h2>
+<p>A requirement that carries both <code>name</code> and <code>names</code> creates ambiguity:</p>
+<ul>
+<li>Under <code>anyOf</code>, a document with both keys is valid schema, forcing consumers to invent precedence rules. If the role reads <code>names</code> first, an author writing <code>name: cluster-init</code> and <code>names: [init, init-slim]</code> would have <code>name</code> silently ignored.</li>
+<li>Under <code>oneOf</code>, a document declaring both keys or neither key is rejected immediately at schema validation time.</li>
+</ul>
+<p>Because playbooks can pass prerequisite documents directly to the <code>prerequisites</code> role without running schema validation first, the role repeats this check explicitly in <code>roles/prerequisites/tasks/collect.yml</code>:</p>
+<ul>
+<li>It asserts that no package entry defines both <code>name</code> and <code>names</code>.</li>
+<li>It asserts that no package entry defines neither <code>name</code> nor <code>names</code>.</li>
+<li>It asserts that <code>names</code> is non-empty and <code>name</code> is non-empty (<code>minLength=1</code> and <code>minItems=1</code>).</li>
+</ul>
+<h2 id="how-the-role-evaluates-them-today"><a class="header" href="#how-the-role-evaluates-them-today">How the role evaluates them today</a></h2>
+<p>In <code>collect.yml</code>, the role immediately normalizes every entry into an internal <code>names</code> list:</p>
+<pre><code class="language-jinja2">'names': item.names | default([item.name | default('', true)], true) | select() | list
+</code></pre>
+<p>This normalization means downstream task logic (<code>check_resources.yml</code> and <code>check_versions.yml</code>) only handles a single list structure:</p>
+<ul>
+<li>Resource checks verify that at least one name in <code>names</code> appears in deployed packages on the cluster.</li>
+<li>Version checks apply the constraint against whichever matching package name is deployed.</li>
+</ul>
+<h2 id="grouping-alternatives-with-distinct-versions-via-id"><a class="header" href="#grouping-alternatives-with-distinct-versions-via-id">Grouping alternatives with distinct versions via <code>id</code></a></h2>
+<p>The existing <code>names: [a, b]</code> mechanism binds a single <code>version</code> constraint across all names in that list. When alternatives have different version histories – such as two distinct storage providers satisfying a common requirement:</p>
+<pre><code class="language-yaml">requires:
+  packages:
+    - name: csi-rook-ceph
+      version: "&gt;=1.21.0"
+      id: storage
+    - name: csi-longhorn
+      version: "&gt;=1.13.0"
+      id: storage
+</code></pre>
+<p>A single <code>version</code> field under <code>names: [csi-rook-ceph, csi-longhorn]</code> cannot express <code>&gt;=1.21.0</code> for Rook Ceph and <code>&gt;=1.13.0</code> for Longhorn simultaneously.</p>
+<h3 id="why-id-instead-of-requirescapabilities"><a class="header" href="#why-id-instead-of-requirescapabilities">Why <code>id</code> instead of <code>requires.capabilities</code></a></h3>
+<p><code>provides.capabilities</code> exists in the format for bundlers and orchestrators that inspect package documents ahead of time. However, on a running cluster, <code>zarf package list</code> only reports deployed package names and versions; it does not read or query capability declarations. <code>id</code> solves this by grouping concrete package names that can be checked directly against the cluster’s installed package inventory, while keeping separate version ranges per package.</p>
+<h3 id="semantics-of-id-grouping"><a class="header" href="#semantics-of-id-grouping">Semantics of <code>id</code> grouping</a></h3>
+<ul>
+<li><strong>Local scope</strong>: <code>id</code> is scoped strictly within <code>requires.packages</code>. It groups alternative entries in that list and does not collide with other requirement types.</li>
+<li><strong>Group satisfaction</strong>: An <code>id</code> group represents a disjunction (OR). A group is satisfied if <strong>at least one</strong> branch in the group has its package deployed on the cluster <strong>and</strong> satisfies its specific version constraint.</li>
+<li><strong>Handling multiple installed packages</strong>: If multiple packages from the same <code>id</code> group are deployed on the cluster (e.g. both Rook Ceph and Longhorn are present), the requirement is satisfied if at least one satisfies its constraint. An obsolete or failing sibling does not fail the group if another branch meets its constraint.</li>
+<li><strong>Ungrouped requirements</strong>: Entries without an <code>id</code> remain independent requirements that must each be present on the cluster (the existing behavior).</li>
+<li><strong>Structure per entry</strong>: Each entry in an <code>id</code> group may use either <code>name</code> or <code>names</code>. For example, an entry in the group can still use <code>names: [csi-rook-ceph, csi-ceph]</code> if a specific branch has aliases sharing a single version constraint.</li>
+<li><strong>Schema &amp; Go types</strong>: <code>ID string</code> (<code>minLength=1</code>) is an optional field on <code>PackageRequirement</code>. The existing <code>oneOf</code> between <code>name</code> and <code>names</code> remains intact.</li>
+<li><strong>Error reporting</strong>: If no branch in an <code>id</code> group is satisfied, the failure is reported as a single grouped unmet prerequisite naming all candidate packages and their constraints, rather than separate missing package failures.</li>
+</ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="why-the-collections-version-tracks-zarfs"><a class="header" href="#why-the-collections-version-tracks-zarfs">Why the collection’s version tracks zarf’s</a></h1>
 <p><code>colonel_byte.zarf</code> is versioned to loosely follow the version of zarf it is written against, rather than counting its own releases from zero. The collection released as <code>0.87.0</code> is the one to install beside zarf <code>v0.87.x</code>.</p>
@@ -2435,6 +3011,111 @@ ok: [localhost] =&gt; {
 </ul>
 <h2 id="one-thing-that-did-not-generalise"><a class="header" href="#one-thing-that-did-not-generalise">One thing that did not generalise</a></h2>
 <p><code>--no-color</code> is rendered by <code>zarf_package_info</code> and <code>zarf_package_inspect</code>, which parse zarf’s stdout as JSON and YAML respectively and cannot have colour codes in it. It is not rendered by <code>zarf_state_info</code>, and not for want of tidiness: <code>zarf tools kubectl</code> hands its arguments to kubectl, which answers <code>unknown flag: --no-color</code> and exits. It is in each <code>command_parts</code> rather than in the shared base class for that reason, with the reason written at the point where its absence looks like an oversight.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="todo-skip-an-item-that-names-no-components"><a class="header" href="#todo-skip-an-item-that-names-no-components">TODO: skip an item that names no components</a></h1>
+<p><code>colonel_byte.zarf.deploy_packages</code> decides whether to deploy an item by comparing the components the item asks for against the components <code>zarf package list</code> reports for that package. An item that names no <code>components</code> is deployed every run, because there is nothing to compare.</p>
+<p>This is written down rather than fixed because the fix is not the small one it looks like, and because the way it is currently wrong is the safe way: an item that deploys when it did not need to wastes time, and an item that skips when it was needed leaves a cluster the operator believes is converged and is not. Anything done here has to keep that asymmetry.</p>
+<h2 id="what-this-page-said-before-and-why-it-was-wrong"><a class="header" href="#what-this-page-said-before-and-why-it-was-wrong">What this page said before, and why it was wrong</a></h2>
+<p>The first version of this page said an item naming no components “is always deployed”. It was not: it <strong>killed the play</strong>, part-way through the stack, with the earlier items already deployed.</p>
+<p>Both the init and the deploy task rendered <code>components</code> as</p>
+<pre><code class="language-yaml">{{ pkg_item.components | join(',') if (pkg_item.components is iterable and pkg_item.components is not string)
+   else (pkg_item.components | default(omit)) }}
+</code></pre>
+<p>and the shape test ran before the <code>| default(omit)</code> that was supposed to cover an absent key. Ansible’s undefined marker raises <code>UndefinedError</code> from <code>is iterable</code> rather than returning false, because Jinja’s iterable test only catches <code>TypeError</code>, so the error escaped the conditional entirely:</p>
+<pre><code>Error while resolving value for 'msg': object of type 'dict' has no attribute 'components'
+</code></pre>
+<p>The fix is <code>pkg_item.components is defined</code> leading the test, and Jinja’s <code>and</code> short-circuits so nothing after it is reached. What is worth keeping from the episode is why it survived review: every item in <code>ansible/examples/playbooks/zarf-deploy-packages.yml</code> and in <code>test/e2e/cluster/testdata/deploy-packages-role.yml</code> names components, so no test ever rendered the branch, and the page documenting the limitation described a behaviour nobody had run.</p>
+<p><strong>The lesson for whoever picks this up:</strong> the omitted-<code>components</code> path needs a test before it needs a feature. A check-mode run of the role against the noncluster stub exercises every expression in it in seconds, with no cluster and no network – that is where this belonged.</p>
+<h2 id="where-the-behaviour-is"><a class="header" href="#where-the-behaviour-is">Where the behaviour is</a></h2>
+<p><code>ansible/colonel_byte/zarf/roles/deploy_packages/tasks/deploy_package.yml</code>, the <code>Determine if deployment should be skipped</code> task:</p>
+<pre><code class="language-yaml">_components_already_present: &gt;-
+  {{ (_required_components | length &gt; 0) and
+     (_required_components | difference(_deployed_components) | length == 0) and
+     (_excluded_components | intersect(_deployed_components) | length == 0) }}
+</code></pre>
+<p><code>_required_components</code> is the item’s <code>components</code> with the <code>-</code>-prefixed exclusions removed. The <code>| length &gt; 0</code> guard is the whole of this issue: with no components named, the expression is false and the item deploys.</p>
+<p>The <code>_deployed_version</code> clause beside it is a separate rule and not part of this issue: it refuses to skip when the cluster’s version of the package differs from the one the item carries, so that an upgraded tarball whose component names did not change is not mistaken for what is already deployed.</p>
+<h2 id="what-a-fix-has-to-work-out"><a class="header" href="#what-a-fix-has-to-work-out">What a fix has to work out</a></h2>
+<p>The question is what zarf would deploy for a package with no <code>--components</code>, and that is <code>selectOptionalComponent</code> and the loop above it in <code>vendor/github.com/zarf-dev/zarf/src/pkg/packager/filters/deploy.go</code>. Non-interactively – which is what the modules are, they pass <code>--confirm</code> – the selected set is:</p>
+<ul>
+<li>every component that is not optional, and</li>
+<li>every optional component carrying <code>default: true</code>, and</li>
+<li>for each component <em>group</em> of more than one, the member carrying <code>default: true</code>; a group with no default is an error rather than an empty selection.</li>
+</ul>
+<p>Three things make that hard to rebuild from the inspected definition:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Obstacle</th><th>Why it bites</th></tr>
+</thead>
+<tbody>
+<tr><td>The two package schemas invert the field</td><td><code>v1alpha1</code> components carry <code>required *bool</code>, and absent means <strong>optional</strong> – see <code>IsRequired()</code> in <code>vendor/github.com/zarf-dev/zarf/src/api/v1alpha1/component.go</code>. <code>v1beta1</code> components carry <code>optional bool</code>, and absent means <strong>required</strong> – <code>vendor/github.com/zarf-dev/zarf/src/api/v1beta1/component.go</code>. A rule written for one schema silently inverts on the other.</td></tr>
+<tr><td><code>zarf package inspect definition</code> emits the authored version</td><td>The role reads <code>_inspect_res.definition</code>, which is whichever apiVersion the package was written in, so both shapes reach the role and it would have to branch on <code>definition.apiVersion</code>.</td></tr>
+<tr><td><code>default: true</code> and groups</td><td>An optional component is selected when it is <code>default</code>, so “the required ones” is not the answer either. Groups need the default-member rule on top.</td></tr>
+</tbody>
+</table>
+</div>
+<p>A Jinja expression that got any of those wrong would report a package as fully deployed when it was not, which is the failure direction this must not have.</p>
+<h2 id="if-it-is-picked-up"><a class="header" href="#if-it-is-picked-up">If it is picked up</a></h2>
+<p>Do not write it as one more expression in <code>_components_already_present</code>. Two routes, in order of preference:</p>
+<ol>
+<li><strong>Ask zarf.</strong> The honest answer is the one zarf itself computes. There is no <code>zarf package deploy --dry-run</code> that prints the selection today; if one appears, or if the filter is exposed through a library call the wrapper binary could make, that is the fix – the wrapper already links zarf in, so a module parameter that returned the selection would put the computation in the one place that cannot drift from it.</li>
+<li><strong>Resolve it in the inspect step, in Go.</strong> <code>zarf_package_inspect</code> is a Python action plugin today, so this would mean a new parameter on a wrapper module rather than on it. The same objection applies to anything that reimplements the filter – it has to be the filter, not a copy of it.</li>
+</ol>
+<p>Either way it needs a test per schema version, over a package with an optional-and-default component and over one with a group. <code>test/e2e/noncluster/</code> is where that belongs: the stub serves <code>inspect</code>, so no cluster is needed.</p>
+<p>Until then: <strong>naming the components in the item is what turns drift detection on</strong>, and that is what <code>docs/ansible/roles.md</code> and the role’s <code>argument_specs.yml</code> say.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="todo-the-per-item-keys-of-zarf_packages_to_deploy-are-prose-not-a-contract"><a class="header" href="#todo-the-per-item-keys-of-zarf_packages_to_deploy-are-prose-not-a-contract">TODO: the per-item keys of <code>zarf_packages_to_deploy</code> are prose, not a contract</a></h1>
+<p><code>zarf_packages_to_deploy</code> is declared in <code>ansible/colonel_byte/zarf/roles/deploy_packages/meta/argument_specs.yml</code> as <code>type: list</code>, <code>elements: dict</code>, and nothing else. The sixteen keys an item may carry are a list of prose bullets under one <code>description</code>. Ansible validates none of them.</p>
+<p>So <code>path</code> is not enforced as required, no key is type-coerced, and <code>package_type</code>, <code>verify</code>, <code>registry_mode</code> and the three boolean pass-throughs get no <code>choices</code> check – even though their role-level counterparts, declared a few lines further down in the same file, have all of that.</p>
+<h2 id="what-it-cost-already"><a class="header" href="#what-it-cost-already">What it cost already</a></h2>
+<p>Three separate defects traced back to this, all found in review and all now patched defensively in the tasks rather than at the boundary:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Symptom</th><th>Patched as</th></tr>
+</thead>
+<tbody>
+<tr><td><code>package_type: deploy_package</code> deployed nothing, wrote no result, and still marked the stack changed</td><td>an <code>assert</code> at the top of <code>deploy_package.yml</code></td></tr>
+<tr><td><code>timeout:</code> written with no value reached <code>| length</code> as <code>None</code> and failed the task</td><td><code>| default('', true) | string</code> on every per-item string</td></tr>
+<tr><td><code>take_ownership:</code> written with no value reached a boolean module parameter as <code>None</code></td><td><code>is not none</code> added to each three-state guard</td></tr>
+</tbody>
+</table>
+</div>
+<p>Each patch is correct and each is a guard that an <code>options:</code> sub-spec would make unnecessary, with a better error: Ansible names the key and the expected type, where an assert names only what the role thought to check for.</p>
+<h2 id="why-it-was-not-just-done"><a class="header" href="#why-it-was-not-just-done">Why it was not just done</a></h2>
+<p>The obvious fix is to convert the bullets into an <code>options:</code> block under <code>zarf_packages_to_deploy</code>. Ansible would then validate every item key, and the role’s own guards could go.</p>
+<p><strong>The documentation generator would silently drop it.</strong> <code>docOption</code> in <code>magefiles/pkg/gen/docs/ansible.go</code> has fields for <code>type</code>, <code>elements</code>, <code>required</code>, <code>default</code>, <code>choices</code>, <code>description</code> and the <code>cli_flag</code> extension – and nothing for <code>options</code> or <code>suboptions</code>. <code>orderedOptions</code> decodes each option body through that struct, so a nested block is parsed and discarded. The generated <code>docs/ansible/role_deploy_packages.md</code> would lose the item keys entirely, which is worse than prose.</p>
+<p>Writing both – an <code>options:</code> block for validation and the bullets for the page – would leave the item contract stated twice in one file, which is the duplication <a href="../ansible/colonel_byte/zarf/AGENTS.html"><code>ansible/colonel_byte/zarf/AGENTS.md</code></a> names a single source of truth to avoid.</p>
+<h2 id="what-a-real-fix-is"><a class="header" href="#what-a-real-fix-is">What a real fix is</a></h2>
+<p>Two parts, in this order:</p>
+<ol>
+<li><strong>Teach the generator suboptions.</strong> Add an <code>Options goyaml.MapSlice</code> field to <code>docOption</code>, recurse in <code>orderedOptions</code>, and render a nested option as an indented sub-table or a second table under the parent’s row. <code>magefiles/pkg/gen/docs/ansible_role.go</code>’s <code>writeRoleDoc</code> builds the rows; that is where the shape is decided. The module pages would get the same ability for free, which no module needs today.</li>
+<li><strong>Convert the bullets</strong>, delete them from the <code>description</code>, and then remove the three defensive guards above – the assert on <code>package_type</code>, the <code>| default('', true) | string</code> wrappers, and the <code>is not none</code> clauses – because argument validation covers all three and reports better.</li>
+</ol>
+<p>Step 1 is the real work and it is the one with no caller asking for it, which is why this is written down rather than done. Step 2 without step 1 regresses the published page.</p>
+<h2 id="related"><a class="header" href="#related">Related</a></h2>
+<ul>
+<li>The role’s remaining per-item gap of a different kind is in <a href="#todo-skip-an-item-that-names-no-components">todo-deploy-packages-component-selection</a>: what an item that names no <code>components</code> should be compared against.</li>
+<li><a href="#drift-detection-converges-for-a-package-deployed-in-one-phase-and-not-for-one-deployed-in-several">choice-deploy-packages-drift-scope</a> records why skipping settles for a single-phase package and not a phased one.</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="todo-the-roles-say-once-fifteen-times-and-nothing-tests-it-with-two-hosts"><a class="header" href="#todo-the-roles-say-once-fifteen-times-and-nothing-tests-it-with-two-hosts">TODO: the roles say “once” fifteen times and nothing tests it with two hosts</a></h1>
+<p>Every role in this collection delegates its work to one node and marks the tasks <code>run_once: true</code>. Nothing in the repository runs any of them against a play with more than one host, so the whole design is unexercised: every playbook under <code>test/e2e/noncluster/testdata/</code> and <code>test/e2e/cluster/testdata/</code>, and every example under <code>ansible/examples/playbooks/</code>, is <code>hosts: localhost</code> with <code>connection: local</code>.</p>
+<p>This is not a hypothetical shape. The collection’s own scope statement in <a href="../ansible/colonel_byte/zarf/AGENTS.html"><code>ansible/colonel_byte/zarf/AGENTS.md</code></a> says zarf talks to one cluster from the node it runs on, and a management-node play that targets a fleet of clusters – one host per cluster – is the obvious way an operator would use it. That play has never been run.</p>
+<h2 id="what-is-uncertain"><a class="header" href="#what-is-uncertain">What is uncertain</a></h2>
+<p><code>colonel_byte.zarf.deploy_packages</code> is the sharpest case. <code>tasks/main.yml</code> loops <code>include_tasks: deploy_package.yml</code> with <strong>no</strong> <code>run_once</code>, while almost every task inside the included file has one. So the loop is entered once per host and the inner tasks are what stop zarf running once per host.</p>
+<p>Under the <code>linear</code> strategy the hosts move in lockstep and a <code>run_once</code> task’s facts propagate to the rest of the play, so this is expected to work. Under <code>strategy: free</code> the hosts desynchronise, and then <code>_components_already_present</code> – a fact, set <code>run_once</code>, read by a task that is itself <code>run_once</code> – is read by whichever host arrived first against whichever item’s value was written last. The same question applies to the three <code>include_tasks</code> in the <code>prerequisites</code> role’s <code>main.yml</code> and the one in its <code>check_versions.yml</code>.</p>
+<p>The milder version of the same doubt is cosmetic: if <code>run_once</code> inside a per-host include fires once per expansion rather than once per play, <code>zarf_prerequisites_checked</code> gains a copy of every message per host and the final assert’s message is N times as long. Wrong-looking rather than wrong, since what matters is whether the unmet list is empty.</p>
+<h2 id="why-it-is-written-down-rather-than-settled"><a class="header" href="#why-it-is-written-down-rather-than-settled">Why it is written down rather than settled</a></h2>
+<p>It needs a two-host play to settle, and a conclusion drawn from one is only as good as the strategy it ran under – <code>linear</code> passing says nothing about <code>free</code>. That is a fixture plus a decision about which strategies the collection claims to support, and nothing claims any today.</p>
+<p>There is a second reason to be careful: <code>run_once: true</code> on the <code>include_tasks</code> itself would be smaller than fifteen inner ones and is probably more robust, but it is a behaviour change to how facts propagate, and making it without a multi-host test is trading an untested design for a different untested design.</p>
+<h2 id="what-a-real-fix-is-1"><a class="header" href="#what-a-real-fix-is-1">What a real fix is</a></h2>
+<ol>
+<li><strong>A fixture with two hosts.</strong> The noncluster suite can do it with an inline inventory of two aliases both resolving to localhost, run once under <code>linear</code> and once under <code>strategy: free</code>. That is cheap – the stub serves both – and it is what turns every statement above into a fact.</li>
+<li><strong>Then decide.</strong> Either move <code>run_once</code> up to the includes, or state the supported strategies in <code>meta/argument_specs.yml</code> and leave the tasks alone. Both are small once the fixture exists; neither is safe before it.</li>
+</ol>
+<p>Until then, treat the roles as single-host. <code>meta/main.yml</code> claims <code>min_ansible_version: "2.15.0"</code>, which widens the uncertainty rather than narrowing it: ansible-core 2.19 rewrote the templating engine, and every templating behaviour this repository has verified was verified on 2.20.</p>
 
                     </main>
 

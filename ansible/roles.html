@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-11ee13a6.js";
+            window.path_to_searchindex_js = "../searchindex-38132619.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-8db5b85d.js"></script>
+        <script src="../toc-3ef04710.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -189,6 +189,7 @@
 <tr><th>Role</th><th>What it does</th></tr>
 </thead>
 <tbody>
+<tr><td><a href="role_deploy_packages.html"><code>deploy_packages</code></a></td><td>Deploys a list of Zarf packages with component-level drift detection.</td></tr>
 <tr><td><a href="role_packages.html"><code>packages</code></a></td><td>Queries the cluster via <code>zarf package list</code> and sets the <code>zarf_packages</code> fact.</td></tr>
 <tr><td><a href="role_package_inspect.html"><code>package_inspect</code></a></td><td>Inspects a Zarf package definition and sets structured metadata facts.</td></tr>
 <tr><td><a href="role_prerequisites.html"><code>prerequisites</code></a></td><td>Checks a cluster against the prerequisites a package declares, and refuses to proceed.</td></tr>
@@ -196,6 +197,63 @@
 </tbody>
 </table>
 </div>
+<h2 id="deploy_packages"><a class="header" href="#deploy_packages">deploy_packages</a></h2>
+<p><code>deploy_packages</code> deploys a sequence of Zarf packages while inspecting each package definition and checking the cluster’s deployed components to avoid unnecessary deployments.</p>
+<p>Skipping settles for a package that one item deploys. It does <strong>not</strong> settle for a package that several items deploy in phases – the bundle’s two-phase init, for instance – because <code>zarf package list</code> reports only the most recent deploy’s components, so each phase sees the other’s and both re-deploy on every run. Re-deploying reconciles rather than fails, but it is never reported as unchanged. <a href="../agent/choice-deploy-packages-drift-scope.html">choice-deploy-packages-drift-scope</a> has the reasoning and the alternatives that were declined.</p>
+<p>An item is also only skipped when the cluster’s version of the package matches the one the item carries, so an upgraded tarball whose component names did not change is not mistaken for what is already deployed.</p>
+<p>Skipping is per component, and an item that names no <code>components</code> is deployed every run. That is a limit rather than an oversight: with no components named, zarf picks the set itself – every non-optional component, plus any optional one marked <code>default</code>, with <code>required</code> and <code>optional</code> carrying inverted defaults between the v1alpha1 and v1beta1 package schemas – and the role does not reimplement that choice to guess what it would be. Naming the components is what turns drift detection on.</p>
+<p>The role sets <code>zarf_deploy_packages_changed</code> to whether any item reached zarf, and refreshes the <code>zarf_packages</code> fact once at the end when one did.</p>
+<p>Set <code>zarf_result_dir</code> and each item’s result is written to <code>&lt;position&gt;-&lt;package file name&gt;.json</code> inside it. The position leads the name because the package does not identify the item – a bundle names the same init package twice, once for the seed phase and once for the rest – and it puts a listing of the directory in deployment order. <code>log_dest</code> on an item overrides the whole path.</p>
+<p><code>registry_mode</code>, <code>connected</code>, <code>take_ownership</code> and <code>force_conflicts</code> are settings the role passes through rather than decides. Each has a role-level default (<code>zarf_registry_mode</code>, <code>zarf_connected</code>, <code>zarf_take_ownership</code>, <code>zarf_force_conflicts</code>) that a package item can override, and each is unset by default – which leaves zarf’s own behaviour alone. Turning <code>force_conflicts</code> on means a deploy takes fields another controller owns, so the role will not do it on an operator’s behalf.</p>
+<p>The boolean item keys below take <code>true</code> or <code>false</code>. Their role-level counterparts are typed <code>str</code> with an empty choice instead, because a role default needs a third state – empty means “say nothing and leave zarf’s own behaviour alone”, which <code>false</code> cannot express.</p>
+<p>Each dictionary entry in <code>zarf_packages_to_deploy</code> supports:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Key</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>path</code></td><td><code>str</code></td><td>(Required) Path to the Zarf package file or OCI source.</td></tr>
+<tr><td><code>package_type</code></td><td><code>str</code></td><td>Type of package: <code>init</code>, <code>package</code>, or <code>deploy</code> (default: <code>package</code>).</td></tr>
+<tr><td><code>components</code></td><td><code>list</code> of <code>str</code></td><td>Components to deploy. Prefix with <code>-</code> to exclude (e.g. <code>-git-server</code>).</td></tr>
+<tr><td><code>set_variables</code></td><td><code>dict</code></td><td>Key-value variable overrides passed to Zarf templates (<code>--set</code>).</td></tr>
+<tr><td><code>kubeconfig</code></td><td><code>str</code></td><td>Kubeconfig path override for this package.</td></tr>
+<tr><td><code>public_key</code></td><td><code>str</code></td><td>Public key path override for signature verification.</td></tr>
+<tr><td><code>verify</code></td><td><code>str</code></td><td>Verification mode override (<code>never</code>, <code>if-possible</code>, <code>always</code>).</td></tr>
+<tr><td><code>timeout</code></td><td><code>str</code></td><td>Timeout override (e.g. <code>15m</code>, <code>1h</code>).</td></tr>
+<tr><td><code>log_level</code></td><td><code>str</code></td><td>Zarf log level override (e.g. <code>warn</code>, <code>info</code>, <code>debug</code>, <code>trace</code>).</td></tr>
+<tr><td><code>wrapper_binary</code></td><td><code>str</code></td><td>Wrapper binary path override.</td></tr>
+<tr><td><code>registry_mode</code></td><td><code>str</code></td><td>Registry mode for an <code>init</code> package: <code>nodeport</code>, <code>proxy</code> or <code>external</code>.</td></tr>
+<tr><td><code>connected</code></td><td><code>bool</code></td><td>Whether the cluster pulls the package’s images itself. Non-init packages only.</td></tr>
+<tr><td><code>take_ownership</code></td><td><code>bool</code></td><td>Whether zarf adopts cluster resources it did not create.</td></tr>
+<tr><td><code>force_conflicts</code></td><td><code>bool</code></td><td>Whether zarf overrides a server-side-apply conflict.</td></tr>
+<tr><td><code>log_dest</code></td><td><code>str</code></td><td>Result file path, overriding the name built under <code>zarf_result_dir</code>.</td></tr>
+<tr><td><code>delegate_to</code></td><td><code>str</code></td><td>Target node override for executing inspection and deployment.</td></tr>
+<tr><td><code>zarf_binary</code></td><td><code>str</code></td><td>Path to <code>zarf</code> binary override.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Example:</p>
+<pre><code class="language-yaml">- name: Deploy package stack
+  ansible.builtin.include_role:
+    name: colonel_byte.zarf.deploy_packages
+  vars:
+    zarf_kubeconfig: /etc/rancher/rke2/rke2.yaml
+    zarf_packages_to_deploy:
+      - path: "{{ zarf_package_dir }}/zarf-init-amd64-v0.88.0.tar.zst"
+        package_type: init
+        components:
+          - k3s
+      - path: "{{ zarf_package_dir }}/zarf-package-csi-rook-ceph-amd64-v1.21.0-upstream.tar.zst"
+        components:
+          - operator-images
+          - cluster-images
+          - operator-seed-chart
+          - cluster-seed-chart
+          - registry-bucket
+        package_type: package
+        set_variables: "{{ zarf_storage_set_variables }}"
+</code></pre>
 <h2 id="packages"><a class="header" href="#packages">packages</a></h2>
 <p><code>packages</code> queries installed Zarf packages and exposes them as a structured list under the <code>zarf_packages</code> fact:</p>
 <pre><code class="language-yaml">- name: List installed Zarf packages
@@ -270,7 +328,7 @@
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../ansible/role_package_inspect.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../ansible/role_deploy_packages.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -284,7 +342,7 @@
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../ansible/role_package_inspect.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../ansible/role_deploy_packages.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

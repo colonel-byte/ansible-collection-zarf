@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-11ee13a6.js";
+            window.path_to_searchindex_js = "../searchindex-38132619.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-8db5b85d.js"></script>
+        <script src="../toc-3ef04710.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -200,7 +200,7 @@
 <li><strong>They read the playbook, the fixture and the plugin before running anything.</strong> Go’s test cache keys on the files the test process opens, and everything these tests exercise is opened by the <code>ansible-playbook</code> child. Without those reads, editing a plugin leaves a passing result cached – which is the shape of mistake that gets a credential leak marked as fixed.</li>
 </ul>
 <h2 id="teste2ecluster"><a class="header" href="#teste2ecluster"><code>test/e2e/cluster</code></a></h2>
-<p>Needs <code>k3d</code>, a <code>zarf</code> on <code>PATH</code>, <code>ansible-playbook</code>, Docker, and the network to pull three packages on the first run. It builds the module wrapper first, stands up two k3d clusters, and walks <code>zarf_init</code> and <code>zarf_package_deploy</code> across each. The other five acting modules run against the cluster the first walk leaves behind.</p>
+<p>Needs <code>k3d</code>, a <code>zarf</code> on <code>PATH</code>, <code>ansible-playbook</code>, Docker, and the network on the first run – to pull three packages, and to build a fourth from <code>examples/packages/app-fluxcd</code>, whose four Flux controller images come from ghcr.io. It builds the module wrapper first, stands up two k3d clusters, and walks <code>zarf_init</code> and <code>zarf_package_deploy</code> across each. The other five acting modules run against the cluster the first walk leaves behind.</p>
 <pre><code class="language-sh">go run ./magefiles/core test:endToEndCluster
 </code></pre>
 <p>Both walks deploy the two packages of the <a href="https://github.com/colonel-byte/uds-bundles/blob/main/upstream/init-local-path/uds-bundle.yaml"><code>init-local-path</code> uds-bundle</a>, pinned in <code>main_test.go</code>. The init package is that bundle’s <em>slim</em> init, whose five components are all optional, and that is what shapes the walk: each step names the components it wants, so the bundle’s alternation of seed phase, storage provider, the rest of init, storage provider again is four steps rather than two. <code>bundle-order.yml</code> adds a fifth the bundle has not got – the second init again, unchanged – because a playbook that cannot be re-run is not a playbook. See <a href="../agent/choice-zarf-ansible-module.html">choice-zarf-ansible-module</a> for the two tag traps that came with those packages.</p>
@@ -211,12 +211,14 @@
 <tr><th>Variable</th><th>What it does</th></tr>
 </thead>
 <tbody>
+<tr><td><code>ZARF_ANSIBLE_E2E_FLUXCD_PACKAGE</code></td><td>Names an app-fluxcd package to use instead of building one. Set it for an offline run.</td></tr>
 <tr><td><code>ZARF_ANSIBLE_E2E_INIT_PACKAGE</code></td><td>Names an init package to use instead of pulling one. Set it for an offline run, or to test a package built from a branch. It must be a slim init whose components are optional – each walk step names the components it wants, so the standard zarf-dev init package, whose components are all required, deploys everything on the first step.</td></tr>
 <tr><td><code>ZARF_ANSIBLE_E2E_STORAGE_PACKAGE</code></td><td>The same, for the storage provider package.</td></tr>
 <tr><td><code>ZARF_ANSIBLE_E2E_KEEP</code></td><td>Leaves both clusters running afterwards, for looking at what the modules did.</td></tr>
 </tbody>
 </table>
 </div>
+<p><code>app-fluxcd</code> is the one package the suite builds rather than pulls, because nothing publishes it: it is a reference package in this repository, and until now <code>mage examples:lint</code> was all that read it. It earns the build by being the only package here with a single component that is <code>required: true</code>, which is what lets a deploy that names no components deploy exactly one known thing – the <code>deploy_packages</code> role’s omitted-components path, which has no other way to be exercised against a real zarf. The suite finds what the build wrote by globbing for the architecture rather than naming the version, because <code>metadata.version</code> there is machine-maintained from <code>resources.json</code>.</p>
 <p>Packages are cached under <code>build/tmp/zarf-e2e</code> between runs, so the downloads happen once. The init package is cached in a subdirectory of its own, which matters: <code>zarf package pull</code> names a <code>ZarfInitConfig</code> after its kind and version, so the slim init and the standard zarf-dev one both land as <code>zarf-init-&lt;arch&gt;-v0.88.0.tar.zst</code>, and a flat cache that had ever held the standard one would serve it to every walk. <code>test:cleanClusters</code> removes the clusters a run interrupted before its own cleanup left behind.</p>
 <h3 id="the-acting-modules-the-walks-do-not-cover"><a class="header" href="#the-acting-modules-the-walks-do-not-cover">The acting modules the walks do not cover</a></h3>
 <p><code>testdata/acting-modules.yml</code> runs after the bundle-order walk, on the cluster that walk initialised, and covers the half of those five modules that cannot be faked:</p>

@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-11ee13a6.js";
+            window.path_to_searchindex_js = "../searchindex-38132619.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-8db5b85d.js"></script>
+        <script src="../toc-3ef04710.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -206,7 +206,7 @@
 <tr><td><code>requires.controllers</code></td><td>no</td><td>The workloads that must be present and available, by name, namespace and kind, each with an optional SemVer constraint on its own version.</td></tr>
 <tr><td><code>requires.crds</code></td><td>no</td><td>The CustomResourceDefinitions that must be established.</td></tr>
 <tr><td><code>requires.storage</code></td><td>no</td><td>A default StorageClass, named StorageClasses, and the access modes claims ask for.</td></tr>
-<tr><td><code>requires.packages</code></td><td>no</td><td>Other Zarf packages that must be deployed first, with SemVer constraints.</td></tr>
+<tr><td><code>requires.packages</code></td><td>no</td><td>Other Zarf packages that must be deployed first, with SemVer constraints. An entry names one package with <code>name</code>, or every name it is published under with <code>names</code>.</td></tr>
 <tr><td><code>provides</code></td><td>no</td><td>The capabilities, CRDs and namespaces this package contributes to the cluster.</td></tr>
 </tbody>
 </table>
@@ -342,6 +342,15 @@ documentation:
 <p>No <code>fluxcd</code> or <code>argocd</code> key anywhere: the package needs that workload at that version and has no opinion about what reconciles the cluster. Without it, the only version a document could put on a workload was the engine’s, so a package needing cert-manager v1.14 had to require an engine it does not use purely to get a version field – a prerequisite that refuses clusters for no reason.</p>
 <p>It is the same label and the same comparison the engine sections use, so the same two caveats apply: one comparator and one version, and a workload carrying no version label has the constraint reported as unchecked rather than satisfied. Most charts following the Kubernetes recommended labels set it; a workload nobody stamped does not.</p>
 <h3 id="which-engine-and-why-the-format-asks"><a class="header" href="#which-engine-and-why-the-format-asks">Which engine, and why the format asks</a></h3>
+<p>An entry under <code>requires.packages</code> names its prerequisite with <code>name</code>, or with <code>names</code> when the package is published under more than one – the upstream init reports itself as <code>init</code> and a rebuild of it as <code>init-slim</code>, and a package needing an initialised cluster needs either. Several names rather than several entries, because the version constraint belongs to the requirement and not to each name: restating it per name is a constraint that gets bumped in one place and not the other. An entry carries one of the two keys and never both, which the schema refuses and the role refuses again for a document handed to it directly – the role reads <code>names</code> in preference to <code>name</code>, so an entry carrying both would say one thing and be checked as another.</p>
+<pre><code class="language-yaml">requires:
+  packages:
+    - names:
+        - init
+        - init-slim
+      version: "&gt;=0.85.0"
+</code></pre>
+<p>When alternative packages have different version histories, group them with <code>id</code> so each alternative keeps its own version constraint. See <a href="prerequisites-package-id-groups.html">Grouping alternative package prerequisites with id</a> for details.</p>
 <p>The engine is named by the key – <code>requires.fluxcd</code> or <code>requires.argocd</code> – and the two are mutually exclusive, which the generated schema states as well as the role. The key names the engine rather than a field inside it because the two do not number together: Flux is on 2.x while Argo CD is on 3.x, so a version sitting beside a separate <code>engine</code> field could disagree with it, and the dangerous direction of that disagreement is silent. A document meaning “Flux &gt;= 2.9” that named argocd by mistake is satisfied by Argo CD 3.5, because 3.5 &gt;= 2.9 – the constraint passes against an engine it was never about. Naming the engine with the key leaves nothing for the version to contradict.</p>
 <p>Only two things about checking an engine are engine-specific at all.</p>
 <p>The first is the namespace a controller defaults to: <code>flux-system</code> for Flux, <code>argocd</code> for Argo CD. A document whose controllers name their namespaces never needs the engine for this; one that leaves them off does.</p>
@@ -389,11 +398,11 @@ documentation:
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../security.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../ZEP-finds.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../guides/zarf-ansible-module.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../guides/prerequisites-package-id-groups.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -403,11 +412,11 @@ documentation:
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../security.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../ZEP-finds.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../guides/zarf-ansible-module.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../guides/prerequisites-package-id-groups.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

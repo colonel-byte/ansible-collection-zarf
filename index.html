@@ -37,10 +37,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-11ee13a6.js";
+            window.path_to_searchindex_js = "searchindex-38132619.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-8db5b85d.js"></script>
+        <script src="toc-3ef04710.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -212,7 +212,7 @@
 <p>The first two converge a cluster and are the proof. <code>zarf_package_remove</code> is the other direction, which ZEP-0072 names and a playbook that only ever adds does not have; <code>zarf_package_pull</code> stages the package a deploy reads, which on an air-gapped node arrives as a file rather than from a registry the cluster can reach; <code>zarf_package_mirror_resources</code> pushes a package’s images and repositories into a registry and git server without deploying, which is what a <code>connected: true</code> deploy needs to have happened first; <code>zarf_update_creds</code> rotates the credentials an initialised cluster holds, and is the write half of <code>zarf_state_info</code>; <code>zarf_kubectl</code> is a passthrough to the kubectl zarf already vendors, which saves a management node a kubectl of its own. All seven are the same binary from <code>cmd/zarfmod</code>, invoked under seven names – <code>argv[0]</code> is what selects the module, which is the proposal’s own design, so each module file is a symlink.</p>
 <p><code>zarf package create</code> is deliberately not among them: it builds an artifact from a definition in a repository, which belongs in a pipeline rather than in a convergence run.</p>
 <p>The other five read a cluster, are not part of the proof, and are plain action plugins with no binary behind them – <a href="agent/choice-zarf-info-modules.html">choice-zarf-info-modules</a> records why, and why <code>zarf_state_info</code> redacts.</p>
-<p>There are four roles: <code>packages</code>, <code>package_inspect</code> and <code>state</code> wrap a read-only module apiece, and <a href="ansible/role_prerequisites.html"><code>prerequisites</code></a> refuses to deploy a package onto a cluster that cannot run it.</p>
+<p>There are five roles: <code>packages</code>, <code>package_inspect</code> and <code>state</code> wrap a read-only module apiece, <a href="ansible/role_deploy_packages.html"><code>deploy_packages</code></a> manages multi-package stack deployments with drift detection, and <a href="ansible/role_prerequisites.html"><code>prerequisites</code></a> refuses to deploy a package onto a cluster that cannot run it.</p>
 <h2 id="package-prerequisites"><a class="header" href="#package-prerequisites">Package prerequisites</a></h2>
 <p>A package can state what it needs of a cluster in a machine-readable document carried inside the package itself, and a deployment can refuse to proceed when the cluster does not satisfy it. That is the second thing in this repository: a <code>colonel-byte.dev/v1alpha1</code> <code>PackagePrerequisites</code> format, a <a href="https://github.com/colonel-byte/ansible-collection-zarf/blob/main/schema/zarf-v1alpha1-package-prerequisites-schema.json">generated JSON Schema</a>, and the modules and role that read one.</p>
 <p>It exists for a failure that reports itself as a success. A workload package delivered as a <code>HelmRelease</code> needs a running <code>helm-controller</code> to do anything at all; deploy it onto a cluster without one and zarf applies the manifests, the API server accepts them, <code>zarf package deploy</code> reports a successful deployment, and nothing is ever reconciled.</p>
