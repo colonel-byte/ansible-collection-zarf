@@ -68,6 +68,7 @@
             components:
               - a-file
             timeout:
+            log_level:
             kubeconfig:
             public_key:
             take_ownership:
