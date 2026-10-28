@@ -123,10 +123,14 @@ func (LibraryRunner) Run(ctx context.Context, in Invocation) (Result, error) {
 // reader goes first is a silent wrong answer, not a failure. Go has already initialised the zarf
 // packages this one imports by the time this runs, so there is nothing to race with.
 func init() {
-	// What zarf's own main sets. Left at its default, a zarf used as a library shells out to
-	// whatever zarf is on PATH to run a package's actions, which is the child process linking
-	// zarf in exists to not be.
-	config.ActionsUseSystemZarf = false
+	// The deliberate delta from what zarf's own main sets, and the one place a module keeps a
+	// child process on purpose. `./zarf ` in a package action, and the `tools kubectl` a data
+	// injection builds, both resolve through utils.GetFinalExecutableCommand: left false it
+	// expands to the running executable, which is this binary -- and this binary dispatches on
+	// argv[0] and reads WANT_JSON, so it serves no zarf command line at all. Restated here
+	// rather than left to src/config's default so a zarf release flipping that default cannot
+	// break every action silently. See finding 6 in docs/ZEP-finds.md.
+	config.ActionsUseSystemZarf = true
 
 	// zarf stamps CLIVersion in with ldflags at release time, so linked in as a library it reads
 	// "unset-development-only". That is not cosmetic: config.GetInitPackageName builds the init

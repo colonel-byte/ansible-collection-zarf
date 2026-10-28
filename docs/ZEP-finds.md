@@ -6,13 +6,14 @@ Every line reference is into the `github.com/zarf-dev/zarf` version this reposit
 
 The through-line is one sentence: **Ansible's contract is idempotency, and zarf does not currently give a consumer enough information to honour it.** Each finding below is a different face of that.
 
-| #   | Finding                                                                                | Severity for a native module | Workaround available?           |
-| --- | -------------------------------------------------------------------------------------- | ---------------------------- | ------------------------------- |
-| 1   | The deployed-package record is replaced per deploy, so a phased deploy cannot converge | Blocking                     | No                              |
-| 2   | A deploy reports what it ran, never whether anything changed                           | Blocking                     | No                              |
-| 3   | The component selection a deploy would make is not exposed                             | Serious                      | Only by reimplementing it       |
-| 4   | `required` and `optional` carry inverted defaults between the two package schemas      | Trap                         | Yes, by branching on apiVersion |
-| 5   | Leaked viper default for git-push-username breaks subsequent init when git was omitted | Serious                      | Yes, clear default on the flag  |
+| #   | Finding                                                                                                 | Severity for a native module | Workaround available?               |
+| --- | ------------------------------------------------------------------------------------------------------- | ---------------------------- | ----------------------------------- |
+| 1   | The deployed-package record is replaced per deploy, so a phased deploy cannot converge                  | Blocking                     | No                                  |
+| 2   | A deploy reports what it ran, never whether anything changed                                            | Blocking                     | No                                  |
+| 3   | The component selection a deploy would make is not exposed                                              | Serious                      | Only by reimplementing it           |
+| 4   | `required` and `optional` carry inverted defaults between the two package schemas                       | Trap                         | Yes, by branching on apiVersion     |
+| 5   | Leaked viper default for git-push-username breaks subsequent init when git was omitted                  | Serious                      | Yes, clear default on the flag      |
+| 6   | A package action's `./zarf` resolves to the system PATH or the consumer's own binary, never a named one | Serious                      | Yes, by keeping the library default |
 
 ## 1. The deployed-package record is replaced, not merged
 
@@ -128,6 +129,34 @@ Do not register command-specific defaults into the shared viper instance, or do 
 ### What we did instead
 
 In `internal/zarfmod/libraryrunner.go`, after `cmd.NewZarfCommand()` constructs the command tree, `pruneInitGitPushUserDefault` clears `DefValue` and resets the flag value to empty on the `init` command if it holds the leaked default. A subsequent in-process init without an explicit `--git-push-username` then leaves `gitServer.PushUsername` empty, allowing `validateExistingStateMatchesInput` to pass.
+
+## 6. A package action's `./zarf` resolves to the system PATH or to the consumer's own binary, and nothing else
+
+Zarf rewrites `./zarf ` inside a package action to whatever `utils.GetFinalExecutableCommand` returns (`vendor/github.com/zarf-dev/zarf/src/pkg/packager/actions/actions.go`, `actionCmdMutation`), and `cluster.InjectData` builds its `tools kubectl` invocation from the same call (`vendor/github.com/zarf-dev/zarf/src/pkg/cluster/data.go`). That function offers three answers and no fourth (`vendor/github.com/zarf-dev/zarf/src/pkg/utils/io.go`):
+
+```go
+if config.ActionsCommandZarfPrefix != "" {
+    return fmt.Sprintf("%s %s", executablePath, config.ActionsCommandZarfPrefix), nil
+}
+if config.ActionsUseSystemZarf {
+    return "zarf", nil
+}
+return executablePath, nil
+```
+
+So an action either runs the bare name `zarf` resolved on `PATH`, or runs the consumer's own executable -- optionally under a subcommand prefix. There is no way to say "the zarf at this path".
+
+That matters here because this collection's modules link zarf in as a library rather than shelling out, so `executablePath` is the module binary. That binary dispatches on `argv[0]` and reads its parameters as WANT_JSON on stdin; it accepts no zarf command line at all. A package action running `./zarf tools kubectl ...`, or any component with a data injection, therefore fails outright under `ActionsUseSystemZarf = false` -- and fails inside zarf's own subprocess, where the module cannot improve the diagnosis.
+
+It also undercuts the role's `zarf_binary` key. An operator who points the modules at `/opt/zarf/bin/zarf` has said where zarf is, and that answer cannot be passed on: an action still gets `zarf` from `PATH`, or nothing.
+
+### Proposed change
+
+Let a library consumer name the binary -- an `ActionsZarfPath`, or an `ActionsCommandZarfPrefix` that may carry an absolute path of its own -- so a consumer that is not a zarf CLI can point actions at a real zarf without putting it on `PATH` under that exact name.
+
+### What we did instead
+
+We leave `config.ActionsUseSystemZarf` at the `true` that `src/config` initialises it to, which is the deliberate delta: zarf's own `main` sets it `false`, and the obvious reading of "we linked zarf in so there is no child process" says a library consumer should do the same. It must not. `internal/zarfmod/libraryrunner.go` restates the `true` in its `init` rather than relying on the default, so a zarf release that flips the default does not silently break every package action, and the management-node image installs `zarf` at `/usr/local/bin/zarf` so the bare name resolves.
 
 ## Checked and not a finding
 
