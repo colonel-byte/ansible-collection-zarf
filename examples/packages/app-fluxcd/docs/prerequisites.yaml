@@ -18,11 +18,13 @@ requires:
   kubernetes:
     version: ">=1.30.0"
   packages:
-    # The initialised cluster itself. The name is `init` rather than anything longer because that
-    # is what `zarf package list` reports the init package as, and a name in this list is only
-    # useful if it is the name a consumer can look up -- see the packages role, which is where the
-    # prerequisites role gets the deployed list from.
-    - name: init
+    # The initialised cluster itself. `zarf package list` reports either the standard `init` or
+    # the bundle's `init-slim`, and either satisfies the requirement -- the name is what the
+    # cluster reports, so the requirement names both rather than guessing which was used. The
+    # constraint belongs to the requirement and is stated once for both.
+    - names:
+        - init
+        - init-slim
       version: ">=0.85.0"
 
 provides:

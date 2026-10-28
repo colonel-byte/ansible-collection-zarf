@@ -38,6 +38,19 @@
     _zarf_prereq_engines: >-
       {{ zarf_engine_namespaces.keys() | select('in', zarf_prerequisites_document.requires
                                                       | default({})) | list }}
+    # The engine sections this format defines, which is what makes an override of
+    # zarf_engine_namespaces detectable. Without it, a fleet that narrowed the mapping to one
+    # engine made a document requiring the other vanish: the key is enumerated from the mapping,
+    # so an engine the mapping lacks is never looked at, and nothing said so. It is the format's
+    # list rather than the operator's, so it is not a role variable; a third engine added to
+    # api/colonel-byte.dev/v1alpha1/prerequisites/spec.go belongs here too, and
+    # TestEveryRequirementIsNamedByTheRole is what will say so.
+    # The list is written into the expression rather than beside it: keys of one set_fact cannot
+    # read each other, so a sibling fact holding it is undefined by the time this renders.
+    _zarf_prereq_unknown_engines: >-
+      {{ ['fluxcd', 'argocd']
+         | select('in', zarf_prerequisites_document.requires | default({}))
+         | reject('in', zarf_engine_namespaces.keys() | list) | list }}
     _zarf_prereq_controllers: "{{ zarf_prerequisites_document.requires.controllers | default([]) }}"
     _zarf_prereq_storage: "{{ zarf_prerequisites_document.requires.storage | default({}) }}"
     _zarf_prereq_required_crds: "{{ zarf_prerequisites_document.requires.crds | default([]) }}"
@@ -52,12 +65,30 @@
     _zarf_prereq_classes: "{{ _zarf_prereq_cluster.storage_classes | map(attribute='name') | list }}"
     _zarf_prereq_deployed: "{{ _zarf_prereq_packages.packages | default([]) }}"
     _zarf_prereq_version_checks: []
+    _zarf_prereq_version_evaluations: []
+    # Both accumulators are emptied here rather than defaulted where they are read. set_fact
+    # outlives the role, and a play that includes the role twice -- which the e2e fixtures do --
+    # would otherwise have the second document's checks appended to the first document's.
+    _zarf_prereq_package_requirements: []
   run_once: true
 
 # A package is reconciled by one GitOps engine. The schema refuses a document requiring both,
 # and so does this -- a document reaches the role through zarf_prerequisites without ever
 # meeting a validator, and picking one of the two silently is the kind of guess this role
 # exists not to make.
+# A check that cannot be made is named rather than quietly passed, which is the rule the rest of
+# this role follows. An engine the mapping does not place has no namespace to look in, so the
+# requirement is reported as unexamined instead of being dropped.
+- name: Note any GitOps engine the role has no namespace for
+  ansible.builtin.set_fact:
+    zarf_prerequisites_skipped: >-
+      {{ zarf_prerequisites_skipped
+         + ['requires names the ' ~ (_zarf_prereq_unknown_engines | join(', ')) ~ ' engine, which
+            zarf_engine_namespaces does not place, so its version and controllers were not
+            checked'] }}
+  run_once: true
+  when: _zarf_prereq_unknown_engines | length > 0
+
 - name: Check that the document requires at most one GitOps engine
   ansible.builtin.assert:
     that:
@@ -65,6 +96,69 @@
     fail_msg: >-
       the prerequisites document requires {{ _zarf_prereq_engines | join(' and ') }} at once,
       and a package is reconciled by one of them. Name the one this package needs.
+    quiet: "{{ zarf_quiet | bool }}"
+  run_once: true
+
+# A requires.packages entry names its package either by `name` or by `names`, and exactly one of
+# the two. The schema refuses an entry that carries both or neither, and so does this, for the
+# same reason as the engine check above -- the checks below read `names` in preference to `name`,
+# so an entry carrying both would say one thing and be checked as another, and an entry carrying
+# neither would be read for a name that is not there.
+#
+# Checked per entry, not counted across the list. A count of namings against a count of entries
+# is satisfied by one entry carrying both keys and another carrying neither -- the two cancel --
+# and the first of those is then checked as its `names` with its `name` silently discarded, which
+# is exactly the document the schema refuses.
+- name: Check that each prerequisite package is named exactly one way
+  ansible.builtin.assert:
+    that:
+      - _zarf_prereq_packages_naming_twice | length == 0
+      - _zarf_prereq_packages_naming_nothing | length == 0
+    fail_msg: >-
+      every entry under requires.packages carries name or names, and exactly one of the two.
+      {{ _zarf_prereq_packages_naming_twice | length }} carry both
+      ({{ _zarf_prereq_packages_naming_twice }}) and
+      {{ _zarf_prereq_packages_naming_nothing | length }} carry neither
+      ({{ _zarf_prereq_packages_naming_nothing }}).
+    quiet: "{{ zarf_quiet | bool }}"
+  vars:
+    _zarf_prereq_packages_naming_twice: >-
+      {{ _zarf_prereq_required_packages
+         | selectattr('name', 'defined') | selectattr('names', 'defined') | list }}
+    _zarf_prereq_packages_naming_nothing: >-
+      {{ _zarf_prereq_required_packages
+         | rejectattr('name', 'defined') | rejectattr('names', 'defined') | list }}
+  run_once: true
+
+# Every entry restated as the list of names that satisfy it, so that the checks ask "is any of
+# these deployed" and "does what is deployed satisfy the constraint" without either of them
+# re-deriving which names an entry accepts. It is a loop because Jinja cannot add a computed key
+# to each mapping in a list without one, and it is here rather than in both check files because
+# deriving it twice is how the two come to disagree.
+- name: Restate each package requirement as the names that satisfy it
+  ansible.builtin.set_fact:
+    _zarf_prereq_package_requirements: >-
+      {{ _zarf_prereq_package_requirements
+         + [{'names': item.names | default([item.name | default('', true)], true) | select() | list,
+             'version': item.version | default('', true),
+             'id': item.id | default('', true)}] }}
+  loop: "{{ _zarf_prereq_required_packages }}"
+  loop_control:
+    label: "{{ (item.names | default([item.name | default('', true)], true)) | join(', ') }}"
+  run_once: true
+
+# `names: []` and `name: ""` both satisfy the exactly-one-key rule above and then name nothing,
+# which reaches an operator as "one of the zarf packages  is required and is not deployed". The
+# schema states minItems and minLength for the same reason; this is the half that catches a
+# document handed straight to the role.
+- name: Check that every prerequisite package requirement names a package
+  ansible.builtin.assert:
+    that:
+      - _zarf_prereq_package_requirements | selectattr('names', 'equalto', []) | list | length == 0
+    fail_msg: >-
+      an entry under requires.packages names no package at all. An empty names list, or an empty
+      name, states a requirement with no subject:
+      {{ _zarf_prereq_required_packages }}
     quiet: "{{ zarf_quiet | bool }}"
   run_once: true
 

@@ -64,27 +64,70 @@
   run_once: true
   when: _zarf_prereq_engine_version | length > 0
 
-# One entry per prerequisite package that states a version. The deployed version comes from the
-# list `zarf package list` reported, and is empty when the package is not deployed at all --
-# which the presence check below reports, so that an absent package is one message and not two.
+# One entry per (acceptable package name, constraint) pair the cluster actually has deployed.
+#
+# Driven from the pairs rather than from the deployed list, so that two requirements constraining
+# the same package both get evaluated. Reading the constraints off the deployed package and taking
+# the first dropped every constraint after it: two entries naming `init`, one wanting >=0.85.0 and
+# one wanting >=2.0.0, reported success against the first and never evaluated the second -- a
+# silent pass, which is the one outcome this role exists to prevent.
+#
+# A requirement whose names are none of them deployed contributes nothing here. That absence is
+# the presence check in check_resources.yml, so a package that is not deployed at all is one
+# message and not two.
 - name: Record the prerequisite package version constraints
   ansible.builtin.set_fact:
     _zarf_prereq_version_checks: >-
       {{ _zarf_prereq_version_checks
-         + [{'label': 'the deployed zarf package ' ~ item.name,
-             'constraint': item.version,
-             'actual': _deployed_version}] }}
+         + [{'label': 'the deployed zarf package ' ~ _pkg_name,
+             'constraint': _constraint,
+             'actual': _deployed_version,
+             'id': item.0.id | default('', true)}] }}
   vars:
+    # subelements flattens each requirement across the names it accepts, which is the nested
+    # iteration Jinja cannot express on its own.
+    _pkg_name: "{{ item.1 }}"
+    _constraint: "{{ item.0.version }}"
     _deployed_version: >-
-      {{ (_zarf_prereq_deployed | selectattr('package', 'equalto', item.name)
+      {{ (_zarf_prereq_deployed | selectattr('package', 'equalto', _pkg_name)
           | map(attribute='version') | first) | default('', true) }}
-  loop: "{{ _zarf_prereq_required_packages | selectattr('version', 'defined') | list }}"
+  loop: >-
+    {{ _zarf_prereq_package_requirements
+       | selectattr('id', 'equalto', '')
+       | selectattr('version', '!=', '') | list | subelements('names') }}
   loop_control:
-    label: "{{ item.name }}"
+    label: "{{ item.1 }} {{ item.0.version }}"
   run_once: true
   when:
     - zarf_check_packages | bool
-    - item.name in (_zarf_prereq_deployed | map(attribute='package') | list)
+    - _pkg_name in (_zarf_prereq_deployed | map(attribute='package') | list)
+
+# For id groups, evaluate version constraints for deployed candidates so group satisfaction
+# can determine whether any candidate satisfies its version constraint.
+- name: Record the prerequisite package id group version constraints
+  ansible.builtin.set_fact:
+    _zarf_prereq_version_checks: >-
+      {{ _zarf_prereq_version_checks
+         + [{'label': 'the deployed zarf package ' ~ _pkg_name,
+             'constraint': _constraint,
+             'actual': _deployed_version,
+             'id': item.0.id}] }}
+  vars:
+    _pkg_name: "{{ item.1 }}"
+    _constraint: "{{ item.0.version }}"
+    _deployed_version: >-
+      {{ (_zarf_prereq_deployed | selectattr('package', 'equalto', _pkg_name)
+          | map(attribute='version') | first) | default('', true) }}
+  loop: >-
+    {{ _zarf_prereq_package_requirements
+       | rejectattr('id', 'equalto', '')
+       | selectattr('version', '!=', '') | list | subelements('names') }}
+  loop_control:
+    label: "{{ item.1 }} {{ item.0.version }}"
+  run_once: true
+  when:
+    - zarf_check_packages | bool
+    - _pkg_name in (_zarf_prereq_deployed | map(attribute='package') | list)
 
 # One entry per controller that states a version of its own. This is how a version is required
 # of something that is not a GitOps engine: the label is the same app.kubernetes.io/version

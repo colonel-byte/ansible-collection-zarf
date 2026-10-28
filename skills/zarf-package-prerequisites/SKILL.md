@@ -20,20 +20,20 @@ The format's full reference -- every section and why each is shaped the way it i
 
 ## The document
 
-| Section                | Required | What it states                                                                                                                             |
-| ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `apiVersion`           | yes      | Fixed to `colonel-byte.dev/v1alpha1`.                                                                                                      |
-| `kind`                 | yes      | Fixed to `PackagePrerequisites`.                                                                                                           |
-| `metadata`             | yes      | The package's name and version, and a sentence for a human.                                                                                |
-| `requires`             | yes      | What the cluster must already be.                                                                                                          |
-| `requires.kubernetes`  | no       | A SemVer constraint on the API server's version.                                                                                           |
-| `requires.fluxcd`      | no       | A SemVer constraint on the installed Flux. Mutually exclusive with `requires.argocd`.                                                      |
-| `requires.argocd`      | no       | A SemVer constraint on the installed Argo CD. Mutually exclusive with `requires.fluxcd`.                                                   |
-| `requires.controllers` | no       | The workloads that must be present and available, by name, namespace and kind, each with an optional SemVer constraint on its own version. |
-| `requires.crds`        | no       | The CustomResourceDefinitions that must be established.                                                                                    |
-| `requires.storage`     | no       | A default StorageClass, named StorageClasses, and the access modes claims ask for.                                                         |
-| `requires.packages`    | no       | Other Zarf packages that must be deployed first, with SemVer constraints.                                                                  |
-| `provides`             | no       | The capabilities, CRDs and namespaces this package contributes to the cluster.                                                             |
+| Section                | Required | What it states                                                                                                                                                                                                                        |
+| ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apiVersion`           | yes      | Fixed to `colonel-byte.dev/v1alpha1`.                                                                                                                                                                                                 |
+| `kind`                 | yes      | Fixed to `PackagePrerequisites`.                                                                                                                                                                                                      |
+| `metadata`             | yes      | The package's name and version, and a sentence for a human.                                                                                                                                                                           |
+| `requires`             | yes      | What the cluster must already be.                                                                                                                                                                                                     |
+| `requires.kubernetes`  | no       | A SemVer constraint on the API server's version.                                                                                                                                                                                      |
+| `requires.fluxcd`      | no       | A SemVer constraint on the installed Flux. Mutually exclusive with `requires.argocd`.                                                                                                                                                 |
+| `requires.argocd`      | no       | A SemVer constraint on the installed Argo CD. Mutually exclusive with `requires.fluxcd`.                                                                                                                                              |
+| `requires.controllers` | no       | The workloads that must be present and available, by name, namespace and kind, each with an optional SemVer constraint on its own version.                                                                                            |
+| `requires.crds`        | no       | The CustomResourceDefinitions that must be established.                                                                                                                                                                               |
+| `requires.storage`     | no       | A default StorageClass, named StorageClasses, and the access modes claims ask for.                                                                                                                                                    |
+| `requires.packages`    | no       | Other Zarf packages that must be deployed first, with SemVer constraints. An entry names one package with `name`, or every name it is published under with `names`. Alternative packages with different versions are grouped by `id`. |
+| `provides`             | no       | The capabilities, CRDs and namespaces this package contributes to the cluster.                                                                                                                                                        |
 
 `requires` is required and `provides` is not, which is the asymmetry the format is for: a package that requires nothing has no reason to ship the document, while a leaf workload that provides nothing downstream is the common case.
 
@@ -167,6 +167,28 @@ Deploying a bundle in order means checking inside the loop, not ahead of it: the
 - **The engine version is the engine's release, not a controller's.** For Flux, `>=2.9.0` is the flux2 release and not `source-controller` v1.9.5. It is read from the `app.kubernetes.io/version` label on the engine's own workloads, and neither upstream sets it: `flux install` adds it from its own build, and Argo CD's `install.yaml` carries none at all. A package that vendors either has to stamp the label itself -- in a kustomize `labels:` block with `includeSelectors: false`, since a label that reached `spec.selector.matchLabels` would make the next version bump unupgradable -- or the constraint is reported as unchecked.
 - **`minAvailable` is availability, not readiness.** A replica that is ready and not yet available has passed its probes and not satisfied `minReadySeconds`, which means its controller is mid-rollout.
 - **`requires.packages[].name` is what `zarf package list` reports**, which for the init package is `init`, not `cluster-init`.
+- **Use `names` when a package is published under more than one name, and never both keys.** The upstream init reports itself as `init` and a rebuild of it as `init-slim`, and a package needing an initialised cluster needs either -- so the requirement names both, and the version constraint is stated once for the requirement rather than per name. An entry carries `name` or `names` and exactly one of the two; the schema and the role both refuse an entry carrying both, or neither, because the role reads `names` in preference to `name` and would otherwise check something other than what the document says.
+
+  ```yaml
+  requires:
+    packages:
+      - names:
+          - init
+          - init-slim
+        version: ">=0.85.0"
+  ```
+- **Group alternative packages with different versions using `id`.** When alternatives have different version histories (such as two different storage providers satisfying a requirement), a single `version` constraint under `names` cannot describe both. Setting the same `id` on each alternative creates a disjunctive group: the requirement is satisfied if at least one branch in the group is deployed and meets its version constraint.
+
+  ```yaml
+  requires:
+    packages:
+      - name: csi-rook-ceph
+        version: ">=1.21.0"
+        id: storage
+      - name: csi-longhorn
+        version: ">=1.13.0"
+        id: storage
+  ```
 - **State `provides` on anything another package requires.** It is what lets a bundle be ordered without deploying any of it; `requires` alone can only be satisfied by a cluster that already exists.
 
 ## Two statements of one fact

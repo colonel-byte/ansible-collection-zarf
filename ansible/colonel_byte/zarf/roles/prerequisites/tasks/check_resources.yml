@@ -8,20 +8,74 @@
 - name: Check that each prerequisite package is deployed
   ansible.builtin.set_fact:
     zarf_prerequisites_checked: >-
-      {{ zarf_prerequisites_checked + ['the zarf package ' ~ item.name ~ ' is deployed'] }}
+      {{ zarf_prerequisites_checked + [_subject ~ ' is deployed'] }}
     zarf_prerequisites_unmet: >-
       {{ zarf_prerequisites_unmet
-         + ([] if item.name in (_zarf_prereq_deployed | map(attribute='package') | list)
-            else [_absent]) }}
+         + ([] if _satisfied
+            else [_subject ~ ' is required and is not deployed to this cluster']) }}
   vars:
-    # The message is built outside the expression above rather than written across two lines
-    # inside it. A string literal that spans lines in a folded scalar keeps the newline and the
-    # indentation that follows it, because YAML does not fold a more-indented line -- so the
-    # message reaches the operator with a line break and ten spaces in the middle of it.
-    _absent: "the zarf package {{ item.name }} is required and is not deployed to this cluster"
-  loop: "{{ _zarf_prereq_required_packages }}"
+    _deployed_names: "{{ _zarf_prereq_deployed | map(attribute='package') | list }}"
+    # One name reads as the package, several read as a choice between them, because "the zarf
+    # package init, init-slim is deployed" would be a sentence about one package with a comma in
+    # its name.
+    _subject: >-
+      {{ ('the zarf package ' ~ item.names | first) if (item.names | length == 1)
+         else ('one of the zarf packages ' ~ item.names | join(', ')) }}
+    _satisfied: "{{ (item.names | select('in', _deployed_names) | list | length) > 0 }}"
+  loop: "{{ _zarf_prereq_package_requirements | selectattr('id', 'equalto', '') | list }}"
   loop_control:
-    label: "{{ item.name }}"
+    label: "{{ item.names | join(', ') }}"
+  run_once: true
+  when: zarf_check_packages | bool
+
+- name: Check that each prerequisite package id group is satisfied
+  ansible.builtin.set_fact:
+    zarf_prerequisites_checked: >-
+      {{ zarf_prerequisites_checked
+         + ['one of the alternative zarf packages for ' ~ item.0 ~ ' (' ~ _group_desc ~ ') is satisfied'] }}
+    zarf_prerequisites_unmet: >-
+      {{ zarf_prerequisites_unmet
+         + ([] if _group_satisfied
+            else ['one of the alternative zarf packages for ' ~ item.0 ~ ' (' ~ _group_desc
+                  ~ ') is required, and ' ~ _group_reason]) }}
+  vars:
+    _deployed_names: "{{ _zarf_prereq_deployed | map(attribute='package') | list }}"
+    _group_desc: >-
+      {{ item.1 | map(attribute='names') | map('join', ', ')
+         | zip(item.1 | map(attribute='version'))
+         | map('join', ' ') | map('trim') | join(' or ') }}
+    _branches_satisfied: >-
+      {{ item.1 | selectattr('version', 'equalto', '')
+         | map(attribute='names') | list | flatten | select('in', _deployed_names) | list }}
+    _versioned_branches: >-
+      {{ item.1 | selectattr('version', '!=', '') | list }}
+    _group_evaluations: >-
+      {{ _zarf_prereq_version_evaluations | default([])
+         | selectattr('id', 'equalto', item.0) | list }}
+    _version_checks: >-
+      {{ _group_evaluations | selectattr('satisfied', 'equalto', true) | list }}
+    _group_satisfied: >-
+      {{ (_branches_satisfied | length > 0) or (_version_checks | length > 0) }}
+    # Which of the group's packages the cluster has at all, and which of its constraints this
+    # role could not read. Together they are the difference between the three ways a group fails.
+    _group_deployed: >-
+      {{ item.1 | map(attribute='names') | list | flatten | select('in', _deployed_names) | list }}
+    _group_unverifiable: >-
+      {{ _group_evaluations | rejectattr('evaluable') | map(attribute='label') | list }}
+    # A group is stricter than a plain requirement on purpose: a plain one passes an unevaluable
+    # constraint because its presence was proven separately, while a group's whole contract is
+    # "one of these, at an acceptable version", and an unreadable constraint proves nothing. So
+    # the group still fails -- it just has to say which of the three happened rather than assert
+    # that nothing is deployed.
+    _group_reason: >-
+      {{ 'none of them is deployed to this cluster' if (_group_deployed | length == 0)
+         else (('what is deployed carries a version range this role cannot evaluate ('
+                ~ (_group_unverifiable | join('; ')) ~ '), so no alternative could be verified')
+               if (_group_unverifiable | length > 0)
+               else 'what is deployed does not satisfy its version constraint') }}
+  loop: "{{ _zarf_prereq_package_requirements | rejectattr('id', 'equalto', '') | list | groupby('id') }}"
+  loop_control:
+    label: "{{ item.0 }}"
   run_once: true
   when: zarf_check_packages | bool
 
@@ -29,12 +83,15 @@
   ansible.builtin.set_fact:
     zarf_prerequisites_skipped: >-
       {{ zarf_prerequisites_skipped
-         + ['requires.packages names ' ~ (_zarf_prereq_required_packages
-            | map(attribute='name') | join(', ')) ~ ', and zarf_check_packages is false'] }}
+         + ['requires.packages names ' ~ _all_pkg_names ~ ', and zarf_check_packages is false'] }}
+  vars:
+    _all_pkg_names: >-
+      {{ _zarf_prereq_package_requirements | map(attribute='names') | list | flatten
+         | join(', ') }}
   run_once: true
   when:
     - not zarf_check_packages | bool
-    - _zarf_prereq_required_packages | length > 0
+    - _zarf_prereq_package_requirements | length > 0
 
 # A controller must be there and must have an available replica. Availability rather than
 # readiness is what minAvailable means, and it is the distinction that matters here: a replica
