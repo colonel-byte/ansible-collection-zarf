@@ -97,17 +97,9 @@ func runPackageRemove(ctx context.Context, run Runner, args *Args, resp *Respons
 	argv := buildRemoveArgs(&p)
 	resp.Zarf.Command = append([]string{commandName}, redact(argv)...)
 
-	configEnv, cleanupConfig, err := zarfConfigEnv(map[string]map[string]string{
-		viperRemoveSetValues: p.SetValues,
-	})
-	if err != nil {
-		return err
-	}
-	defer cleanupConfig()
-
 	res, runErr := run.Run(ctx, Invocation{
 		Args: argv,
-		Env:  append(p.env(), configEnv...),
+		Env:  p.env(),
 	})
 	resp.Zarf.ExitCode = res.ExitCode
 

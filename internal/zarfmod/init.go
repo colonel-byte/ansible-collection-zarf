@@ -179,19 +179,13 @@ func runInit(ctx context.Context, run Runner, args *Args, resp *Response) error 
 	prog := newProgress(hb, componentCount(p.Components))
 	argv := buildInitArgs(&p, source)
 
-	configEnv, cleanupConfig, err := p.configEnv()
-	if err != nil {
-		return err
-	}
-	defer cleanupConfig()
-
 	resp.Zarf.Command = append([]string{commandName}, redact(argv)...)
 	resp.Zarf.Directory = dir
 
 	res, runErr := run.Run(ctx, Invocation{
 		Args:   argv,
 		Dir:    dir,
-		Env:    append(p.childEnv(hb), configEnv...),
+		Env:    p.childEnv(hb),
 		OnLine: prog.line,
 	})
 	resp.Zarf.ExitCode = res.ExitCode

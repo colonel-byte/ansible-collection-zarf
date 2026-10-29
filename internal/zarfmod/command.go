@@ -17,6 +17,7 @@ package zarfmod
 import (
 	"sort"
 	"strconv"
+	"strings"
 )
 
 // command accumulates the argument vector a module renders. Every flag it adds is optional in the
@@ -86,20 +87,37 @@ func (c *command) repeated(name string, values []string) {
 // response reports the vector it ran, and a vector whose order comes from Go's map iteration
 // cannot be compared between two runs or asserted in a test.
 func (c *command) pairs(name string, values map[string]string) {
-	// A map holding a line break goes to zarf through a config file instead, and must not also be
-	// rendered here: pflag replaces the whole map on the flag's first appearance, so a single pair
-	// on the command line would discard everything the config file carried. See zarfConfigEnv.
-	if hasMultiline(values) {
-		return
-	}
 	keys := make([]string, 0, len(values))
 	for key := range values {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
-		c.argv = append(c.argv, "--"+name, key+"="+values[key])
+		c.argv = append(c.argv, "--"+name, csvSafePair(key+"="+values[key]))
 	}
+}
+
+// csvSafePair renders one key=value pair in the form pflag's stringToString will read back whole.
+//
+// That type's Set counts the `=` in what it is given, and anything past the first parses the whole
+// string through encoding/csv. A csv record ends at the first line break and a field at the first
+// comma, so a value carrying either is silently cut short -- a PEM private key supplies the second
+// `=` as base64 padding and a line break on every line, and arrives as its first line alone. See
+// finding 7 in docs/ZEP-finds.md.
+//
+// A csv field may hold both, so long as the whole field is quoted and its own quotes are doubled.
+// Quoting the pair rather than the value is what makes the key survive with it: the field is split
+// on `=` after csv has handed it back, not before.
+//
+// A pair holding one `=` never reaches csv, and goes as it always did. Quoting it would be worse
+// than leaving it alone, because that branch strips the quotes with strings.Trim and would take a
+// quote the value itself ended with. pflag loses such a quote either way, which is the one shape
+// this cannot render and finding 7's proposed change to zarf would fix.
+func csvSafePair(pair string) string {
+	if strings.Count(pair, "=") < 2 {
+		return pair
+	}
+	return `"` + strings.ReplaceAll(pair, `"`, `""`) + `"`
 }
 
 // args is the finished argument vector.
