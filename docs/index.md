@@ -80,7 +80,7 @@ Zarf itself is a prerequisite of the read-only modules, which shell out to the i
 <!-- x-release-please-start-version -->
 
 ```sh
-docker run --rm -v "$PWD:/workspace" ghcr.io/colonel-byte/zarf-ansible-modules:v0.88.0 \
+docker run --rm -v "$PWD:/workspace" ghcr.io/colonel-byte/zarf-ansible-modules:v0.88.1 \
   ansible-playbook -i management.ini playbooks/zarf-bundle-order.yml
 ```
 
