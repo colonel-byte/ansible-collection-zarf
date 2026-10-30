@@ -6,14 +6,15 @@ Every line reference is into the `github.com/zarf-dev/zarf` version this reposit
 
 The through-line is one sentence: **Ansible's contract is idempotency, and zarf does not currently give a consumer enough information to honour it.** Each finding below is a different face of that.
 
-| #   | Finding                                                                                                 | Severity for a native module | Workaround available?               |
-| --- | ------------------------------------------------------------------------------------------------------- | ---------------------------- | ----------------------------------- |
-| 1   | The deployed-package record is replaced per deploy, so a phased deploy cannot converge                  | Blocking                     | No                                  |
-| 2   | A deploy reports what it ran, never whether anything changed                                            | Blocking                     | No                                  |
-| 3   | The component selection a deploy would make is not exposed                                              | Serious                      | Only by reimplementing it           |
-| 4   | `required` and `optional` carry inverted defaults between the two package schemas                       | Trap                         | Yes, by branching on apiVersion     |
-| 5   | Leaked viper default for git-push-username breaks subsequent init when git was omitted                  | Serious                      | Yes, clear default on the flag      |
-| 6   | A package action's `./zarf` resolves to the system PATH or the consumer's own binary, never a named one | Serious                      | Yes, by keeping the library default |
+| #   | Finding                                                                                                 | Severity for a native module | Workaround available?                   |
+| --- | ------------------------------------------------------------------------------------------------------- | ---------------------------- | --------------------------------------- |
+| 1   | The deployed-package record is replaced per deploy, so a phased deploy cannot converge                  | Blocking                     | No                                      |
+| 2   | A deploy reports what it ran, never whether anything changed                                            | Blocking                     | No                                      |
+| 3   | The component selection a deploy would make is not exposed                                              | Serious                      | Only by reimplementing it               |
+| 4   | `required` and `optional` carry inverted defaults between the two package schemas                       | Trap                         | Yes, by branching on apiVersion         |
+| 5   | Leaked viper default for git-push-username breaks subsequent init when git was omitted                  | Serious                      | Yes, clear default on the flag          |
+| 6   | A package action's `./zarf` resolves to the system PATH or the consumer's own binary, never a named one | Serious                      | Yes, by keeping the library default     |
+| 7   | `--set-variables` silently truncates any value holding a line break and a second `=`                    | Blocking                     | Yes, by quoting the pair as a csv field |
 
 ## 1. The deployed-package record is replaced, not merged
 
@@ -157,6 +158,47 @@ Let a library consumer name the binary -- an `ActionsZarfPath`, or an `ActionsCo
 ### What we did instead
 
 We leave `config.ActionsUseSystemZarf` at the `true` that `src/config` initialises it to, which is the deliberate delta: zarf's own `main` sets it `false`, and the obvious reading of "we linked zarf in so there is no child process" says a library consumer should do the same. It must not. `internal/zarfmod/libraryrunner.go` restates the `true` in its `init` rather than relying on the default, so a zarf release that flips the default does not silently break every package action, and the management-node image installs `zarf` at `/usr/local/bin/zarf` so the bare name resolves.
+
+## 7. `--set-variables` silently truncates a value that holds a line break
+
+Zarf declares `--set-variables` and `--set-values` with pflag's `StringToString` (`vendor/github.com/zarf-dev/zarf/src/cmd/package.go`, and the same four lines in `initialize.go` and for `package remove`). That type's `Set` branches on how many `=` the value contains (`vendor/github.com/spf13/pflag/string_to_string.go`):
+
+```go
+n := strings.Count(val, "=")
+switch n {
+case 0:
+	return fmt.Errorf("%s must be formatted as key=value", val)
+case 1:
+	ss = append(ss, strings.Trim(val, `"`))
+default:
+	r := csv.NewReader(strings.NewReader(val))
+	ss, err = r.Read()
+}
+```
+
+`csv.Reader.Read` returns **one record**, and a record ends at the first line break. So any value carrying both a line break and a second `=` arrives at zarf as its first line, with no error and no warning.
+
+A PEM private key supplies both: the line breaks on every line, and the second `=` as base64 padding. Deploying a package whose component templates `###ZARF_VAR_ISTIO_TLS_KEY###` into a Secret therefore writes a Secret holding the 31-byte string `-----BEGIN RSA PRIVATE KEY-----` and nothing else. The first thing an operator sees is a consumer failing much later -- `java.lang.RuntimeException: Missing -----END RSA PRIVATE KEY----- delimiter` out of Keycloak, several components after the one that lost the key.
+
+What makes it worse than an ordinary parsing bug is that it is load-bearing on the padding. A key whose base64 needs no `=` padding takes the `case 1` branch and round-trips perfectly, so the same playbook against the same package works or silently corrupts depending on the key it was given. `TestStringToStringTruncatesAtALineBreak` in `internal/zarfmod/setvariables_test.go` holds both halves of that.
+
+This is a zarf-facing finding rather than an Ansible one: nothing about the module makes it happen, and `zarf package deploy --set-variables TLS_KEY="$(cat key.pem)"` loses the key from an operator's own shell just as completely.
+
+### Proposed change
+
+Do not parse `--set-variables` and `--set-values` with pflag's `StringToString`. A `StringArray` collected into a map, split on the first `=` per occurrence, takes the same command lines and cannot truncate -- `--set-variables` is already repeated per pair in practice, so the comma-separated form the csv branch exists to support is not worth a silently truncated private key. Failing the command on a value the flag cannot represent would also be an improvement on dropping it.
+
+### What we did instead
+
+`csvSafePair` in `internal/zarfmod/command.go` renders a pair holding more than one `=` as a single quoted csv field, doubling any quote the value carries. csv allows a quoted field to hold line breaks and commas, so the value arrives whole, and quoting the *pair* rather than the value is what carries the key with it -- `Set` splits on `=` after csv has handed the field back, not before. A pair holding one `=` never reaches csv and is rendered exactly as it always was.
+
+`TestPairsSurviveZarfsOwnFlagParsing` in `internal/zarfmod/command_test.go` parses what the module renders with the flag type zarf declares, so the round trip is asserted against pflag rather than against our reading of it.
+
+One shape stays unrepresentable: a value holding one `=` and a leading or trailing quote. That pair takes pflag's other branch, which strips quotes with `strings.Trim` and so takes one the value ended with -- quoting cannot help, because the same `Trim` removes whatever we add. pflag loses that quote today with or without this change, and the proposed change above is what would fix it.
+
+#### What we tried first, and why it cannot work
+
+The first attempt wrote the maps to a `zarf-config.yaml` and pointed `ZARF_CONFIG` at it, on the reasoning that viper parses YAML rather than csv. It silently passed nothing at all, which is worse than the truncation: `src/cmd/root.go` holds `var rootCmd = NewZarfCommand()`, so zarf's viper singleton and every flag default built from it are constructed while the `cmd` package initialises -- before any code of ours runs. A library consumer cannot set `ZARF_CONFIG` in time, and Go offers no ordering that would let it, because an imported package always initialises first. Worth recording as a second, smaller finding against using zarf as a library: the config file is not reachable from one.
 
 ## Checked and not a finding
 
