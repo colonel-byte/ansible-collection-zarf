@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.88.1](https://github.com/colonel-byte/ansible-collection-zarf/compare/v0.88.0...v0.88.1) (2026-10-30)
+
+
+### Features
+
+* **deploy_packages:** deploy a stack of packages with per-component drift detection ([#149](https://github.com/colonel-byte/ansible-collection-zarf/issues/149)) ([79d0144](https://github.com/colonel-byte/ansible-collection-zarf/commit/79d0144eaa0bec8098696daac2e84ca7ac0e7e94))
+* **prerequisites:** name a required package by any of several names ([#148](https://github.com/colonel-byte/ansible-collection-zarf/issues/148)) ([7df5395](https://github.com/colonel-byte/ansible-collection-zarf/commit/7df53956c11e580360956c5b70f017563fd23239))
+
+
+### Documentation
+
+* record the ZEP findings and the decisions behind the role's limits ([#151](https://github.com/colonel-byte/ansible-collection-zarf/issues/151)) ([1a28e5f](https://github.com/colonel-byte/ansible-collection-zarf/commit/1a28e5fc74822c687613880f191caa78f7e511a1))
+
+
+### Build
+
+* **deps:** Bump almalinux/10-base from `ed618ca` to `f72ef25` in /containers/ansible in the containers group ([#162](https://github.com/colonel-byte/ansible-collection-zarf/issues/162)) ([7d66dc6](https://github.com/colonel-byte/ansible-collection-zarf/commit/7d66dc625d6f7f8ae825f000f7e60689a02c0ee7))
+* **deps:** Bump github.com/letsencrypt/boulder from 0.20261020.1 to 0.20261027.0 ([#168](https://github.com/colonel-byte/ansible-collection-zarf/issues/168)) ([989c2fa](https://github.com/colonel-byte/ansible-collection-zarf/commit/989c2fab36e75c6702ae17b657282830e16983f5))
+* **deps:** Bump https://github.com/astral-sh/ruff-pre-commit from v0.17.2 to 0.17.3 ([#167](https://github.com/colonel-byte/ansible-collection-zarf/issues/167)) ([33252f0](https://github.com/colonel-byte/ansible-collection-zarf/commit/33252f02acd8f5e4c2de846e873cd96da697c90e))
+* **deps:** Bump https://github.com/python-jsonschema/check-jsonschema from 0.38.2 to 0.39.0 ([#166](https://github.com/colonel-byte/ansible-collection-zarf/issues/166)) ([36e79b1](https://github.com/colonel-byte/ansible-collection-zarf/commit/36e79b10ebc0b7bee8a9fdca8701ba869451abce))
+* **deps:** Bump zarf-dev/zarf/agent from v0.88.0 to v0.89.0 in /containers/ansible in the containers group ([#165](https://github.com/colonel-byte/ansible-collection-zarf/issues/165)) ([ea38740](https://github.com/colonel-byte/ansible-collection-zarf/commit/ea38740bec50c10af7270b5d2f37df158ff6317c))
+
 ## [0.88.0](https://github.com/colonel-byte/ansible-collection-zarf/compare/v0.87.0...v0.88.0) (2026-10-26)
 
 
