@@ -37,7 +37,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-38132619.js";
+            window.path_to_searchindex_js = "searchindex-184663b7.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-3ef04710.js"></script>
@@ -198,6 +198,7 @@
 <tr><td>4</td><td><code>required</code> and <code>optional</code> carry inverted defaults between the two package schemas</td><td>Trap</td><td>Yes, by branching on apiVersion</td></tr>
 <tr><td>5</td><td>Leaked viper default for git-push-username breaks subsequent init when git was omitted</td><td>Serious</td><td>Yes, clear default on the flag</td></tr>
 <tr><td>6</td><td>A package action’s <code>./zarf</code> resolves to the system PATH or the consumer’s own binary, never a named one</td><td>Serious</td><td>Yes, by keeping the library default</td></tr>
+<tr><td>7</td><td><code>--set-variables</code> silently truncates any value holding a line break and a second <code>=</code></td><td>Blocking</td><td>Yes, by quoting the pair as a csv field</td></tr>
 </tbody>
 </table>
 </div>
@@ -292,6 +293,31 @@ return executablePath, nil
 <p>Let a library consumer name the binary – an <code>ActionsZarfPath</code>, or an <code>ActionsCommandZarfPrefix</code> that may carry an absolute path of its own – so a consumer that is not a zarf CLI can point actions at a real zarf without putting it on <code>PATH</code> under that exact name.</p>
 <h3 id="what-we-did-instead-3"><a class="header" href="#what-we-did-instead-3">What we did instead</a></h3>
 <p>We leave <code>config.ActionsUseSystemZarf</code> at the <code>true</code> that <code>src/config</code> initialises it to, which is the deliberate delta: zarf’s own <code>main</code> sets it <code>false</code>, and the obvious reading of “we linked zarf in so there is no child process” says a library consumer should do the same. It must not. <code>internal/zarfmod/libraryrunner.go</code> restates the <code>true</code> in its <code>init</code> rather than relying on the default, so a zarf release that flips the default does not silently break every package action, and the management-node image installs <code>zarf</code> at <code>/usr/local/bin/zarf</code> so the bare name resolves.</p>
+<h2 id="7---set-variables-silently-truncates-a-value-that-holds-a-line-break"><a class="header" href="#7---set-variables-silently-truncates-a-value-that-holds-a-line-break">7. <code>--set-variables</code> silently truncates a value that holds a line break</a></h2>
+<p>Zarf declares <code>--set-variables</code> and <code>--set-values</code> with pflag’s <code>StringToString</code> (<code>vendor/github.com/zarf-dev/zarf/src/cmd/package.go</code>, and the same four lines in <code>initialize.go</code> and for <code>package remove</code>). That type’s <code>Set</code> branches on how many <code>=</code> the value contains (<code>vendor/github.com/spf13/pflag/string_to_string.go</code>):</p>
+<pre><code class="language-go">n := strings.Count(val, "=")
+switch n {
+case 0:
+	return fmt.Errorf("%s must be formatted as key=value", val)
+case 1:
+	ss = append(ss, strings.Trim(val, `"`))
+default:
+	r := csv.NewReader(strings.NewReader(val))
+	ss, err = r.Read()
+}
+</code></pre>
+<p><code>csv.Reader.Read</code> returns <strong>one record</strong>, and a record ends at the first line break. So any value carrying both a line break and a second <code>=</code> arrives at zarf as its first line, with no error and no warning.</p>
+<p>A PEM private key supplies both: the line breaks on every line, and the second <code>=</code> as base64 padding. Deploying a package whose component templates <code>###ZARF_VAR_ISTIO_TLS_KEY###</code> into a Secret therefore writes a Secret holding the 31-byte string <code>-----BEGIN RSA PRIVATE KEY-----</code> and nothing else. The first thing an operator sees is a consumer failing much later – <code>java.lang.RuntimeException: Missing -----END RSA PRIVATE KEY----- delimiter</code> out of Keycloak, several components after the one that lost the key.</p>
+<p>What makes it worse than an ordinary parsing bug is that it is load-bearing on the padding. A key whose base64 needs no <code>=</code> padding takes the <code>case 1</code> branch and round-trips perfectly, so the same playbook against the same package works or silently corrupts depending on the key it was given. <code>TestStringToStringTruncatesAtALineBreak</code> in <code>internal/zarfmod/setvariables_test.go</code> holds both halves of that.</p>
+<p>This is a zarf-facing finding rather than an Ansible one: nothing about the module makes it happen, and <code>zarf package deploy --set-variables TLS_KEY="$(cat key.pem)"</code> loses the key from an operator’s own shell just as completely.</p>
+<h3 id="proposed-change-5"><a class="header" href="#proposed-change-5">Proposed change</a></h3>
+<p>Do not parse <code>--set-variables</code> and <code>--set-values</code> with pflag’s <code>StringToString</code>. A <code>StringArray</code> collected into a map, split on the first <code>=</code> per occurrence, takes the same command lines and cannot truncate – <code>--set-variables</code> is already repeated per pair in practice, so the comma-separated form the csv branch exists to support is not worth a silently truncated private key. Failing the command on a value the flag cannot represent would also be an improvement on dropping it.</p>
+<h3 id="what-we-did-instead-4"><a class="header" href="#what-we-did-instead-4">What we did instead</a></h3>
+<p><code>csvSafePair</code> in <code>internal/zarfmod/command.go</code> renders a pair holding more than one <code>=</code> as a single quoted csv field, doubling any quote the value carries. csv allows a quoted field to hold line breaks and commas, so the value arrives whole, and quoting the <em>pair</em> rather than the value is what carries the key with it – <code>Set</code> splits on <code>=</code> after csv has handed the field back, not before. A pair holding one <code>=</code> never reaches csv and is rendered exactly as it always was.</p>
+<p><code>TestPairsSurviveZarfsOwnFlagParsing</code> in <code>internal/zarfmod/command_test.go</code> parses what the module renders with the flag type zarf declares, so the round trip is asserted against pflag rather than against our reading of it.</p>
+<p>One shape stays unrepresentable: a value holding one <code>=</code> and a leading or trailing quote. That pair takes pflag’s other branch, which strips quotes with <code>strings.Trim</code> and so takes one the value ended with – quoting cannot help, because the same <code>Trim</code> removes whatever we add. pflag loses that quote today with or without this change, and the proposed change above is what would fix it.</p>
+<h4 id="what-we-tried-first-and-why-it-cannot-work"><a class="header" href="#what-we-tried-first-and-why-it-cannot-work">What we tried first, and why it cannot work</a></h4>
+<p>The first attempt wrote the maps to a <code>zarf-config.yaml</code> and pointed <code>ZARF_CONFIG</code> at it, on the reasoning that viper parses YAML rather than csv. It silently passed nothing at all, which is worse than the truncation: <code>src/cmd/root.go</code> holds <code>var rootCmd = NewZarfCommand()</code>, so zarf’s viper singleton and every flag default built from it are constructed while the <code>cmd</code> package initialises – before any code of ours runs. A library consumer cannot set <code>ZARF_CONFIG</code> in time, and Go offers no ordering that would let it, because an imported package always initialises first. Worth recording as a second, smaller finding against using zarf as a library: the config file is not reachable from one.</p>
 <h2 id="checked-and-not-a-finding"><a class="header" href="#checked-and-not-a-finding">Checked and not a finding</a></h2>
 <p><strong>The deployed version string is the package’s own <code>metadata.version</code>.</strong> Worth recording because a consumer that skips work already done needs to compare versions, and it was not obvious that the two came from the same place. <code>zarf package list</code> builds its output with <code>Version: pkg.Metadata.Version</code> (<code>vendor/github.com/zarf-dev/zarf/src/cmd/package.go</code>, <code>packageListOptions.run</code>), which is the same field <code>zarf package inspect definition</code> reports, so the two are equal by construction rather than by convention. A package’s flavour appears in the tarball’s file name and in <code>build.flavor</code>, not in the version the cluster reports.</p>
 
