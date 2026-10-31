@@ -50,6 +50,12 @@
     zarf_init_seed_components: zarf-injector,zarf-seed-registry
     zarf_init_rest_components: zarf-registry,zarf-agent,git-server
     zarf_storage_components: local-path-images,local-path-chart
+    # Required because the registry mode is proxy: zarf v0.89 removed GetInjectorDaemonsetImage,
+    # the heuristic that picked the smallest pause image already on a node, so the image is now
+    # named or init refuses to run. This is that same pause image, read off the nodes of the
+    # cluster k3d-config.yaml builds -- so it is pinned to the k3s image that file pins, and
+    # bumping k3s is what would make it wrong.
+    zarf_injector_image: docker.io/rancher/mirrored-pause:3.10.2
   tasks:
     - name: Initialise the cluster with the phase that claims no volume
       colonel_byte.zarf.zarf_init:
@@ -58,6 +64,7 @@
         init_package: "{{ zarf_init_package }}"
         kubeconfig: "{{ zarf_kubeconfig }}"
         registry_mode: proxy
+        injector_image: "{{ zarf_injector_image }}"
         timeout: "{{ zarf_timeout | default('15m') }}"
       delegate_to: localhost
       run_once: true
@@ -98,6 +105,7 @@
         init_package: "{{ zarf_init_package }}"
         kubeconfig: "{{ zarf_kubeconfig }}"
         registry_mode: proxy
+        injector_image: "{{ zarf_injector_image }}"
         take_ownership: true
         timeout: "{{ zarf_timeout | default('15m') }}"
       delegate_to: localhost

@@ -29,6 +29,7 @@ argument_specs:
           - "C(timeout): Timeout override for this package deployment."
           - "C(wrapper_binary): Wrapper binary override for this package."
           - "C(registry_mode): Registry mode override for C(init) packages (C(nodeport), C(proxy), C(external))."
+          - "C(injector_image): Injector image override for C(init) packages. Overrides C(zarf_injector_image), and zarf requires it whenever the registry mode is C(proxy)."
           - "C(connected): Whether the cluster pulls the package's images itself rather than zarf pushing them. Overrides C(zarf_connected), and applies to non-init packages only."
           - "C(take_ownership): Whether zarf adopts cluster resources it did not create. Overrides C(zarf_take_ownership)."
           - "C(force_conflicts): Whether zarf overrides a server-side-apply conflict. Overrides C(zarf_force_conflicts)."
@@ -112,6 +113,13 @@ argument_specs:
           - external
         description:
           - "How zarf reaches the registry an C(init) package stands up. Can be overridden per package item, and applies to C(init) packages only."
+          - "Left empty, zarf's own default applies."
+      zarf_injector_image:
+        type: str
+        default: ""
+        description:
+          - "The image the zarf injector runs, which must already be present on every node. Can be overridden per package item, and applies to C(init) packages only."
+          - "Zarf requires it whenever the registry mode is C(proxy): zarf 0.89.0 removed the heuristic that picked a node's pause image, so an init in proxy mode that names no image is refused."
           - "Left empty, zarf's own default applies."
       zarf_connected:
         type: str

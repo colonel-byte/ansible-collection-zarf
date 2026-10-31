@@ -22,7 +22,9 @@ The role sets `zarf_deploy_packages_changed` to whether any item reached zarf, a
 
 Set `zarf_result_dir` and each item's result is written to `<position>-<package file name>.json` inside it. The position leads the name because the package does not identify the item -- a bundle names the same init package twice, once for the seed phase and once for the rest -- and it puts a listing of the directory in deployment order. `log_dest` on an item overrides the whole path.
 
-`registry_mode`, `connected`, `take_ownership` and `force_conflicts` are settings the role passes through rather than decides. Each has a role-level default (`zarf_registry_mode`, `zarf_connected`, `zarf_take_ownership`, `zarf_force_conflicts`) that a package item can override, and each is unset by default -- which leaves zarf's own behaviour alone. Turning `force_conflicts` on means a deploy takes fields another controller owns, so the role will not do it on an operator's behalf.
+`registry_mode`, `injector_image`, `connected`, `take_ownership` and `force_conflicts` are settings the role passes through rather than decides. Each has a role-level default (`zarf_registry_mode`, `zarf_injector_image`, `zarf_connected`, `zarf_take_ownership`, `zarf_force_conflicts`) that a package item can override, and each is unset by default -- which leaves zarf's own behaviour alone. Turning `force_conflicts` on means a deploy takes fields another controller owns, so the role will not do it on an operator's behalf.
+
+Setting `registry_mode` to `proxy` makes `injector_image` required, and that is zarf rather than this role: zarf v0.89 removed the heuristic that picked a pause image off the cluster's own nodes, so an init in proxy mode that names no image is refused before it starts. The image has to be one every node already holds, because the injector runs as a daemonset and pulls nothing.
 
 The boolean item keys below take `true` or `false`. Their role-level counterparts are typed `str` with an empty choice instead, because a role default needs a third state -- empty means "say nothing and leave zarf's own behaviour alone", which `false` cannot express.
 

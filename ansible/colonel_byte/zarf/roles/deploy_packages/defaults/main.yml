@@ -40,6 +40,10 @@ zarf_force_conflicts: ""
 # empty, zarf's own default applies.
 zarf_registry_mode: ""
 
+# The image the zarf injector runs, which must already be present on every node. Required by zarf
+# when zarf_registry_mode is proxy. Left empty, zarf's own default applies.
+zarf_injector_image: ""
+
 # Whether the cluster pulls a package's images itself rather than zarf pushing them to the
 # registry. Left empty, zarf's own default applies. Applies to non-init packages only.
 zarf_connected: ""

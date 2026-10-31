@@ -44,6 +44,11 @@
         # a node port -- fine on a cluster whose nodes are reachable, and slow on one where the
         # push has to retry.
         zarf_registry_mode: proxy
+        # Proxy mode requires it, and it must already be present on every node: the injector runs
+        # as a daemonset and pulls nothing. Zarf v0.89 removed the heuristic that picked a pause
+        # image off the nodes, so naming one is now the operator's job. Replace this with whatever
+        # the cluster's own container runtime already holds.
+        zarf_injector_image: docker.io/rancher/mirrored-pause:3.10.2
         zarf_packages_to_deploy:
           # The seed phase: the injector and the seed registry, plus the git server, for the reason
           # in the header.
