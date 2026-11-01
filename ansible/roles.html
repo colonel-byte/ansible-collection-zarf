@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-184663b7.js";
+            window.path_to_searchindex_js = "../searchindex-25bdd2db.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-3ef04710.js"></script>
@@ -204,7 +204,8 @@
 <p>Skipping is per component, and an item that names no <code>components</code> is deployed every run. That is a limit rather than an oversight: with no components named, zarf picks the set itself – every non-optional component, plus any optional one marked <code>default</code>, with <code>required</code> and <code>optional</code> carrying inverted defaults between the v1alpha1 and v1beta1 package schemas – and the role does not reimplement that choice to guess what it would be. Naming the components is what turns drift detection on.</p>
 <p>The role sets <code>zarf_deploy_packages_changed</code> to whether any item reached zarf, and refreshes the <code>zarf_packages</code> fact once at the end when one did.</p>
 <p>Set <code>zarf_result_dir</code> and each item’s result is written to <code>&lt;position&gt;-&lt;package file name&gt;.json</code> inside it. The position leads the name because the package does not identify the item – a bundle names the same init package twice, once for the seed phase and once for the rest – and it puts a listing of the directory in deployment order. <code>log_dest</code> on an item overrides the whole path.</p>
-<p><code>registry_mode</code>, <code>connected</code>, <code>take_ownership</code> and <code>force_conflicts</code> are settings the role passes through rather than decides. Each has a role-level default (<code>zarf_registry_mode</code>, <code>zarf_connected</code>, <code>zarf_take_ownership</code>, <code>zarf_force_conflicts</code>) that a package item can override, and each is unset by default – which leaves zarf’s own behaviour alone. Turning <code>force_conflicts</code> on means a deploy takes fields another controller owns, so the role will not do it on an operator’s behalf.</p>
+<p><code>registry_mode</code>, <code>injector_image</code>, <code>connected</code>, <code>take_ownership</code> and <code>force_conflicts</code> are settings the role passes through rather than decides. Each has a role-level default (<code>zarf_registry_mode</code>, <code>zarf_injector_image</code>, <code>zarf_connected</code>, <code>zarf_take_ownership</code>, <code>zarf_force_conflicts</code>) that a package item can override, and each is unset by default – which leaves zarf’s own behaviour alone. Turning <code>force_conflicts</code> on means a deploy takes fields another controller owns, so the role will not do it on an operator’s behalf.</p>
+<p>Setting <code>registry_mode</code> to <code>proxy</code> makes <code>injector_image</code> required, and that is zarf rather than this role: zarf v0.89 removed the heuristic that picked a pause image off the cluster’s own nodes, so an init in proxy mode that names no image is refused before it starts. The image has to be one every node already holds, because the injector runs as a daemonset and pulls nothing.</p>
 <p>The boolean item keys below take <code>true</code> or <code>false</code>. Their role-level counterparts are typed <code>str</code> with an empty choice instead, because a role default needs a third state – empty means “say nothing and leave zarf’s own behaviour alone”, which <code>false</code> cannot express.</p>
 <p>Each dictionary entry in <code>zarf_packages_to_deploy</code> supports:</p>
 <div class="table-wrapper">
