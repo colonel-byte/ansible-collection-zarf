@@ -21,7 +21,9 @@ repos:
         # tree arrives by accident -- Argo CD's applicationset-crd.yaml is 1.4 MB of OpenAPI
         # schema because that is what the CRD weighs upstream, and dropping it would ship the
         # ApplicationSet controller in namespace-install.yaml with no CRD to reconcile.
-        exclude: ^(vendor/|examples/packages/[^/]+/upstream/)
+        # docs/js/mermaid.min.js is 3.2 MB because that is what a mermaid release weighs. The
+        # book vendors it so that a diagram renders with nothing fetched at page load.
+        exclude: ^(vendor/|examples/packages/[^/]+/upstream/|docs/js/mermaid\.min\.js$)
         args:
           - "--maxkb=1024"
       - id: check-merge-conflict
@@ -32,21 +34,21 @@ repos:
       - id: fix-byte-order-marker
         exclude: vendor/.*
       - id: end-of-file-fixer
-        exclude: vendor/.*
+        exclude: (vendor/.*|^docs/js/mermaid\.min\.js$)
       - id: trailing-whitespace
         args:
           - --markdown-linebreak-ext=md
-        exclude: vendor/.*
+        exclude: (vendor/.*|^docs/js/mermaid\.min\.js$)
   - repo: https://github.com/sirosen/texthooks
     rev: 1.0.0
     hooks:
       - id: fix-smartquotes
-        exclude: vendor/.*
+        exclude: (vendor/.*|^docs/js/mermaid\.min\.js$)
   - repo: https://github.com/google/addlicense
     rev: v1.2.0
     hooks:
       - id: addlicense
-        exclude: vendor/.*
+        exclude: (vendor/.*|^docs/js/mermaid\.min\.js$)
         exclude_types:
           - yaml
           - markdown
