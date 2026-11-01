@@ -93,3 +93,4 @@
 - [todo-deploy-packages-component-selection](agent/todo-deploy-packages-component-selection.md)
 - [todo-deploy-packages-item-contract](agent/todo-deploy-packages-item-contract.md)
 - [todo-roles-are-single-host](agent/todo-roles-are-single-host.md)
+- [todo-v1beta1-migration](agent/todo-v1beta1-migration.md)
