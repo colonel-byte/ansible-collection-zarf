@@ -1,0 +1,28 @@
+---
+# yaml-language-server: $schema=../../../../../../../schema/zarf-v1alpha1-package-prerequisites-schema.json
+#
+# The low-priority candidate of the `gitops-engine` group. Its version is 3.5.1 against Flux's 2.9.5 on purpose: the two engines do not number together, which is why a version is never compared across the group.
+#
+# Nothing here is contacted.
+apiVersion: colonel-byte.dev/v1alpha1
+kind: PackagePrerequisites
+metadata:
+  package: gitops-argocd
+  version: 3.5.1
+  description: The other GitOps engine
+
+requires:
+  packages:
+    - name: init
+
+provides:
+  priority: 50
+  capabilities:
+    - name: gitops-engine
+      version: "3.5.1"
+    - name: argocd-engine
+      version: "3.5.1"
+  crds:
+    - applications.argoproj.io
+  namespaces:
+    - argocd

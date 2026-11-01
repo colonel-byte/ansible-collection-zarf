@@ -1,0 +1,35 @@
+---
+# yaml-language-server: $schema=../../../../../../../schema/zarf-v1alpha1-package-prerequisites-schema.json
+#
+# The consumer that declares both alternative groups. Each `id` is a disjunction -- one of the entries sharing it must be deployed -- and the planner picks which by the chain in docs/agent/choice-prerequisites-package-dag.md.
+#
+# Nothing here is contacted.
+apiVersion: colonel-byte.dev/v1alpha1
+kind: PackagePrerequisites
+metadata:
+  package: workload-app
+  version: 1.0.0
+  description: The consumer the whole plan is built for
+
+requires:
+  packages:
+    - name: init
+    # A package that carries no prerequisites document of its own. The requirement is
+    # written the same way; it is the planner that has to find the name somewhere other
+    # than in a document.
+    - name: metrics-server
+    # One of these three. The group is the consumer's construct: the providers have never heard of
+    # the name `storage`, which is why the priority that ranks them lives in their own `provides`.
+    - id: storage
+      name: csi-rook-ceph
+    - id: storage
+      name: csi-longhorn
+    - id: storage
+      name: csi-nfs
+    - id: storage
+      name: csi-aws-ebs
+    # And one of these two.
+    - id: gitops-engine
+      name: gitops-fluxcd
+    - id: gitops-engine
+      name: gitops-argocd
