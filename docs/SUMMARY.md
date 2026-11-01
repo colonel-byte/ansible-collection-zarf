@@ -8,6 +8,7 @@
 
 # Guides
 
+- [bundle-phases](guides/bundle-phases.md)
 - [package-prerequisites](guides/package-prerequisites.md)
 - [prerequisites-package-id-groups](guides/prerequisites-package-id-groups.md)
 - [zarf-ansible-module](guides/zarf-ansible-module.md)
@@ -35,6 +36,7 @@
   - [deploy_packages](ansible/role_deploy_packages.md)
   - [package_inspect](ansible/role_package_inspect.md)
   - [packages](ansible/role_packages.md)
+  - [plan_packages](ansible/role_plan_packages.md)
   - [prerequisites](ansible/role_prerequisites.md)
   - [state](ansible/role_state.md)
 
@@ -93,3 +95,4 @@
 - [todo-deploy-packages-component-selection](agent/todo-deploy-packages-component-selection.md)
 - [todo-deploy-packages-item-contract](agent/todo-deploy-packages-item-contract.md)
 - [todo-roles-are-single-host](agent/todo-roles-are-single-host.md)
+- [todo-tarball-metadata-extraction](agent/todo-tarball-metadata-extraction.md)

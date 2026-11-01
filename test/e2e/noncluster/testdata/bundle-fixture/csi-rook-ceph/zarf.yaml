@@ -1,0 +1,21 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/zarf-dev/zarf/main/zarf.schema.json
+#
+# A candidate for the `storage` group, and the one `provides.priority` should win for.
+#
+# A component with no resources at all, which is the smallest thing `zarf package create` builds:
+# no files, no images, no charts, so a fixture bundle is built with no registry, no cluster and no
+# network. See README.md beside this directory for the pool these belong to.
+#
+# Nothing here is contacted.
+kind: ZarfPackageConfig
+metadata:
+  name: csi-rook-ceph
+  version: 1.18.0
+  description: A storage provider, the bundle's preferred one
+documentation:
+  prerequisites: docs/prerequisites.yaml
+
+components:
+  - name: placeholder
+    required: true

@@ -1,0 +1,21 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/zarf-dev/zarf/main/zarf.schema.json
+#
+# The version-conflict case, kept out of the happy bundle by not being named in it.
+#
+# A component with no resources at all, which is the smallest thing `zarf package create` builds:
+# no files, no images, no charts, so a fixture bundle is built with no registry, no cluster and no
+# network. See README.md beside this directory for the pool these belong to.
+#
+# Nothing here is contacted.
+kind: ZarfPackageConfig
+metadata:
+  name: workload-pinned
+  version: 1.0.0
+  description: A consumer whose version constraint no archive in the pool satisfies
+documentation:
+  prerequisites: docs/prerequisites.yaml
+
+components:
+  - name: placeholder
+    required: true

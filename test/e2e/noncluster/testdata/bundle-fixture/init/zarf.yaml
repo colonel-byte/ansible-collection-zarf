@@ -1,0 +1,21 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/zarf-dev/zarf/main/zarf.schema.json
+#
+# The root of the fixture bundle: the one package nothing requires anything of.
+#
+# A component with no resources at all, which is the smallest thing `zarf package create` builds:
+# no files, no images, no charts, so a fixture bundle is built with no registry, no cluster and no
+# network. See README.md beside this directory for the pool these belong to.
+#
+# Nothing here is contacted.
+kind: ZarfPackageConfig
+metadata:
+  name: init
+  version: 0.89.0
+  description: The initialised cluster every other fixture requires
+documentation:
+  prerequisites: docs/prerequisites.yaml
+
+components:
+  - name: placeholder
+    required: true

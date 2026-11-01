@@ -1,0 +1,26 @@
+---
+# yaml-language-server: $schema=../../../../../../../schema/zarf-v1alpha1-package-prerequisites-schema.json
+#
+# The high-priority candidate of the `storage` group. Its priority ties with csi-nfs on purpose -- a test that wants the tie feeds both in, and one that wants a clean win leaves csi-nfs out.
+#
+# Nothing here is contacted.
+apiVersion: colonel-byte.dev/v1alpha1
+kind: PackagePrerequisites
+metadata:
+  package: csi-rook-ceph
+  version: 1.18.0
+  description: A storage provider, the bundle's preferred one
+
+requires:
+  packages:
+    - name: init
+
+provides:
+  # Rank among candidates for the same group, not a score. A planner compares this only against
+  # csi-longhorn, csi-nfs and csi-aws-ebs, and only when more than one of them is in the directory.
+  priority: 100
+  capabilities:
+    - name: storage-class
+      version: "1.18.0"
+  namespaces:
+    - rook-ceph

@@ -1,0 +1,25 @@
+---
+# yaml-language-server: $schema=../../../../../../../schema/zarf-v1alpha1-package-prerequisites-schema.json
+#
+# A storage candidate that requires the AWS Cloud Controller Manager. When this one loses its group, pkg-aws-ccm must be pruned with it: nothing else in the pool requires the CCM, so a plan that still deploys it is deploying an AWS controller onto a cluster that chose Longhorn.
+#
+# Nothing here is contacted.
+apiVersion: colonel-byte.dev/v1alpha1
+kind: PackagePrerequisites
+metadata:
+  package: csi-aws-ebs
+  version: 1.48.0
+  description: A storage provider carrying a dependency of its own
+
+requires:
+  packages:
+    - name: init
+    # The real dependency this fixture exists for: the CSI driver cannot talk to EC2 without the
+    # cloud controller manager, and it is published as a separate package.
+    - name: pkg-aws-ccm
+
+provides:
+  priority: 10
+  capabilities:
+    - name: storage-class
+      version: "1.48.0"

@@ -1,0 +1,16 @@
+---
+# yaml-language-server: $schema=../../../../../../../schema/zarf-v1alpha1-package-prerequisites-schema.json
+#
+# One half of the cycle case. It is two packages rather than one self-reference because a planner that catches `A -> A` can still miss `A -> B -> A`. Neither is named by the happy bundle, so only a test that feeds both in sees the cycle.
+#
+# Nothing here is contacted.
+apiVersion: colonel-byte.dev/v1alpha1
+kind: PackagePrerequisites
+metadata:
+  package: cycle-b
+  version: 1.0.0
+  description: Half of a dependency cycle, requiring cycle-a
+
+requires:
+  packages:
+    - name: cycle-a

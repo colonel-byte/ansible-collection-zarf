@@ -1,0 +1,22 @@
+---
+# yaml-language-server: $schema=../../../../../../../schema/zarf-v1alpha1-package-prerequisites-schema.json
+#
+# Priority 100, the same as csi-rook-ceph. A group holding both is the ambiguity case the planner must refuse rather than resolve by sort order -- which is why the value is identical rather than merely close.
+#
+# Nothing here is contacted.
+apiVersion: colonel-byte.dev/v1alpha1
+kind: PackagePrerequisites
+metadata:
+  package: csi-nfs
+  version: 4.11.0
+  description: A storage provider with the same priority as Rook-Ceph
+
+requires:
+  packages:
+    - name: init
+
+provides:
+  priority: 100
+  capabilities:
+    - name: storage-class
+      version: "4.11.0"

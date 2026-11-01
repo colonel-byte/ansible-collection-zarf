@@ -194,6 +194,14 @@
     },
     "Provides": {
       "properties": {
+        "priority": {
+          "type": "integer",
+          "description": "Priority ranks this package against the other candidates for the same alternative group,\nwhere a planner choosing between them prefers the highest.\n\nIt is a rank and not a score. Only the relative order matters, and only among packages that\nare candidates for one `requires.packages[].id` group: a planner never ranks a storage\nprovider against a service mesh, so the number needs no scale that holds across a bundle.\nThe cost of that is a value a reader cannot interpret alone -- `priority: 100` does not say\nwhat it is competing with -- which is what metadata.description beside it is for.\n\nThe group is the *consumer's* construct: it is declared under `requires.packages[].id` by\nthe package doing the choosing, and the candidates have never heard of its name. So this\ncannot be scoped to a group here, and a package carrying one priority is ranked by it in\nevery group it is ever a candidate for.\n\nIt is the package's own opinion of itself, which is why a planner weighs it last. A\ncandidate already deployed on the cluster outranks it -- replacing a running storage\nprovider because a bundle rates another one higher is not a planner's decision -- and so\ndoes an operator who named a preference. Every provider rates itself highly; only the\ncluster and the operator know which one this cluster should have.\n\nAbsent means zero, and a tie at the top of a group is refused rather than broken: two\ncandidates at the same priority is a bundle that stated two preferences and therefore\nstated none, and picking between them by sort order would make a plan depend on a file\nname. See docs/agent/choice-prerequisites-package-dag.md.",
+          "examples": [
+            100,
+            50
+          ]
+        },
         "capabilities": {
           "items": {
             "$ref": "#/$defs/Capability"

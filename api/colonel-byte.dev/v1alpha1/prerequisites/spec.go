@@ -303,6 +303,31 @@ func (PackageRequirement) JSONSchemaExtend(schema *jsonschema.Schema) {
 // against another package's `provides` and sort the bundle; one that can only read a live cluster
 // has to deploy to find out.
 type Provides struct {
+	// Priority ranks this package against the other candidates for the same alternative group,
+	// where a planner choosing between them prefers the highest.
+	//
+	// It is a rank and not a score. Only the relative order matters, and only among packages that
+	// are candidates for one `requires.packages[].id` group: a planner never ranks a storage
+	// provider against a service mesh, so the number needs no scale that holds across a bundle.
+	// The cost of that is a value a reader cannot interpret alone -- `priority: 100` does not say
+	// what it is competing with -- which is what metadata.description beside it is for.
+	//
+	// The group is the *consumer's* construct: it is declared under `requires.packages[].id` by
+	// the package doing the choosing, and the candidates have never heard of its name. So this
+	// cannot be scoped to a group here, and a package carrying one priority is ranked by it in
+	// every group it is ever a candidate for.
+	//
+	// It is the package's own opinion of itself, which is why a planner weighs it last. A
+	// candidate already deployed on the cluster outranks it -- replacing a running storage
+	// provider because a bundle rates another one higher is not a planner's decision -- and so
+	// does an operator who named a preference. Every provider rates itself highly; only the
+	// cluster and the operator know which one this cluster should have.
+	//
+	// Absent means zero, and a tie at the top of a group is refused rather than broken: two
+	// candidates at the same priority is a bundle that stated two preferences and therefore
+	// stated none, and picking between them by sort order would make a plan depend on a file
+	// name. See docs/agent/choice-prerequisites-package-dag.md.
+	Priority int `json:"priority,omitempty" jsonschema:"example=100,example=50"`
 	// Capabilities are named, versioned capabilities other packages may require. The name is a
 	// label this format owns rather than anything Kubernetes knows about, which is what lets two
 	// different packages provide the same capability -- `fluxcd-engine` from an upstream chart or
