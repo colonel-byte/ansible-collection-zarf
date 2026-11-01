@@ -20,6 +20,11 @@
     zarf_init_package: /srv/staging/zarf-init-amd64-v0.85.0.tar.zst
     zarf_public_key: /etc/zarf/colonel-byte-zarf-packages.pub
     zarf_timeout: 15m
+    # Required because the registry mode is proxy, and it must already be present on every node:
+    # the injector runs as a daemonset and pulls nothing. Zarf v0.89 removed the heuristic that
+    # picked a pause image off the nodes, so naming one is now the operator's job. Replace this
+    # with whatever the cluster's own container runtime already holds.
+    zarf_injector_image: docker.io/rancher/mirrored-pause:3.10.2
 
     # Target versions expected for drift comparison.
     zarf_init_package_name: init
@@ -59,6 +64,7 @@
         init_package: "{{ zarf_init_package }}"
         kubeconfig: "{{ zarf_kubeconfig }}"
         registry_mode: proxy
+        injector_image: "{{ zarf_injector_image }}"
         timeout: "{{ zarf_timeout }}"
       delegate_to: localhost
       run_once: true

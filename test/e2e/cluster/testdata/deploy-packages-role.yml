@@ -55,6 +55,14 @@
     zarf_storage_components:
       - local-path-images
       - local-path-chart
+    # Required because both include_role calls below set zarf_registry_mode to proxy: zarf v0.89
+    # removed GetInjectorDaemonsetImage, the heuristic that picked the smallest pause image already
+    # on a node, so the image is now named or init refuses to run. This is that same pause image,
+    # read off the nodes of the cluster k3d-config-local-storage.yaml builds -- so it is pinned to
+    # the k3s image that file pins, and bumping k3s is what would make it wrong. Set here rather
+    # than beside each zarf_registry_mode so the pin is written once; role defaults lose to a play
+    # var either way.
+    zarf_injector_image: docker.io/rancher/mirrored-pause:3.10.2
   tasks:
     - name: Deploy the stack
       ansible.builtin.include_role:

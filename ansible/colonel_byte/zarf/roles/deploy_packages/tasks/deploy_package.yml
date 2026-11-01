@@ -20,6 +20,9 @@
     _item_take_ownership: "{{ pkg_item.take_ownership | default(zarf_take_ownership) }}"
     _item_force_conflicts: "{{ pkg_item.force_conflicts | default(zarf_force_conflicts) }}"
     _item_registry_mode: "{{ pkg_item.registry_mode | default(zarf_registry_mode) }}"
+    # Required by zarf whenever the registry mode is proxy: zarf 0.89.0 dropped the heuristic that
+    # picked a node's pause image, so the image is now named or init refuses to run.
+    _item_injector_image: "{{ pkg_item.injector_image | default(zarf_injector_image) }}"
     _item_connected: "{{ pkg_item.connected | default(zarf_connected) }}"
     _item_delegate_to: "{{ pkg_item.delegate_to | default(zarf_delegate_to) }}"
     _item_binary: "{{ pkg_item.zarf_binary | default(zarf_binary) }}"
@@ -123,6 +126,7 @@
             public_key: "{{ _item_public_key if (_item_public_key | length > 0) else omit }}"
             verify: "{{ _item_verify }}"
             registry_mode: "{{ _item_registry_mode if (_item_registry_mode is not none and _item_registry_mode | string | length > 0) else omit }}"
+            injector_image: "{{ _item_injector_image if (_item_injector_image is not none and _item_injector_image | string | length > 0) else omit }}"
             take_ownership: "{{ _item_take_ownership if (_item_take_ownership is not none and _item_take_ownership | string | length > 0) else omit }}"
             force_conflicts: "{{ _item_force_conflicts if (_item_force_conflicts is not none and _item_force_conflicts | string | length > 0) else omit }}"
             timeout: "{{ _item_timeout if (_item_timeout | length > 0) else omit }}"

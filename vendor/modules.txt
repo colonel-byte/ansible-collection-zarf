@@ -3244,8 +3244,8 @@ github.com/yuin/gopher-lua
 github.com/yuin/gopher-lua/ast
 github.com/yuin/gopher-lua/parse
 github.com/yuin/gopher-lua/pm
-# github.com/zarf-dev/zarf v0.88.0
-## explicit; go 1.26.9
+# github.com/zarf-dev/zarf v0.89.0
+## explicit; go 1.26.10
 github.com/zarf-dev/zarf/src/api
 github.com/zarf-dev/zarf/src/api/convert
 github.com/zarf-dev/zarf/src/api/v1alpha1
