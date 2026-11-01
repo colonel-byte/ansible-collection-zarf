@@ -20,6 +20,7 @@ src      = "docs"
 [output.html]
 fold.enable          = false
 additional-css       = [ "docs/css/root.css", "docs/css/print.css" ]
+additional-js        = [ "docs/js/mermaid.min.js", "docs/js/mermaid-init.js" ]
 no-section-label     = true
 admonitions          = true
 git-repository-url   = "https://github.com/colonel-byte/ansible-collection-zarf/tree/main"

@@ -21,3 +21,7 @@ skills/zarf-package-prerequisites/*.json linguist-generated
 examples/packages/*/upstream/**/*.yaml linguist-generated
 
 # mage generate:zarfFlags
+
+# Third-party build output, vendored so the book renders diagrams offline. Not this
+# repository's code, and not counted as its language.
+docs/js/mermaid.min.js linguist-vendored
