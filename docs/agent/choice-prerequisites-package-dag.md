@@ -63,7 +63,7 @@ flowchart TD
 - **Multiple packages in the same `id` group**: When a directory contains multiple provider archives that satisfy the same consumer `id` group (e.g. both `csi-rook-ceph` and `csi-longhorn` for `id: storage`):
   1. *Default fail-fast rule*: The planner refuses the plan and errors out immediately. Attempting to deploy both mutually exclusive providers, or arbitrarily picking one without operator intent, risks conflicting storage classes or incorrect infrastructure.
   2. *Cluster precedence (existing installation preference)*: If one candidate from the group is already deployed on the cluster (e.g. `csi-longhorn` is already installed and healthy), cluster-aware mode prefers the existing installation. The requirement is satisfied by the cluster, avoiding an unnecessary redeployment or duplicate provider rollout.
-  3. *Priority / weight ranking*: If offline bundles must choose between multiple candidate providers without operator intervention, package requirements or inventory configuration can declare an explicit weight or priority (e.g. `priority: 100` on `rook-ceph` vs `priority: 50` on `longhorn`). In the absence of an explicit priority or existing cluster deployment, equal-priority candidates remain a hard ambiguity failure.
+  3. *Priority / weight ranking*: If offline bundles must choose between multiple candidate providers without operator intervention, an explicit priority breaks the tie. The ordered rule these three settle into, the `provides.priority` field it reads and what becomes of the losing candidate's own dependencies are specified in [Choosing between alternatives](#choosing-between-alternatives) below.
 
 ```mermaid
 flowchart TD
@@ -155,6 +155,93 @@ flowchart TD
 - **Directory hygiene and non-archive artifacts**: Staging directories frequently hold non-package artifacts (`.sha256` checksums, `.sig` Cosign signatures, `README.md`, or unrelated files). Furthermore, Zarf packages already embed internal checksums and metadata specifications.
   1. *Archive filtering*: The planner must strictly filter for valid archive extensions (`*.tar.zst`, `*.tar`) and ignore non-tarball companion files.
   2. *Graceful warning on non-Zarf tarballs*: When an archive in the directory cannot be parsed by Zarf (e.g. an arbitrary tarball missing `zarf.yaml` or failing internal checksum validation), the planner warns or ignores the file rather than aborting the entire bundle plan.
+
+## Choosing between alternatives
+
+A group with one candidate in the directory needs no rule: that candidate is the provider. The rule below runs only when a group has more than one, which is the case the whiteboard bundle is made of -- four CSI providers, four load balancers, four meshes and two GitOps engines staged side by side, of which one of each is deployed.
+
+The first rule that resolves the group wins:
+
+1. **Already deployed on the cluster.** If one candidate appears in `zarf package list`, it is the provider. A cluster that already runs Longhorn does not get Rook-Ceph because the bundle rates Rook-Ceph higher -- replacing a storage provider under a running cluster is not a thing a planner decides.
+2. **Operator preference.** `zarf_plan_preferred`, an ordered list of package names; the first entry present among the candidates wins. This is where an operator states an opinion for a cluster, and where a bundle vendor ships one in `group_vars` beside the archives.
+3. **`provides.priority`.** The highest value among the candidates wins.
+4. **Otherwise, fail**, naming the group and every candidate in it. A tie at the top of rule 3 is a failure too: two candidates at `priority: 100` is a bundle that did not state a preference, and picking one by sort order would make the plan depend on a file name.
+
+Rule 1 before rule 3 is the whole point of the order, and it is the case that motivated this: priority says which provider a fresh cluster should get, not which one a running cluster should be migrated to.
+
+### The `provides.priority` field
+
+```yaml
+provides:
+  priority: 100
+  capabilities:
+    - name: storage-class
+      version: "1.7.2"
+```
+
+A new integer field on `Provides`, absent meaning zero. Three things about what it is and is not:
+
+- **It is a rank, not a score.** Only the relative order matters, and only among packages that are candidates for the same `id` group. `100` means nothing on its own.
+- **It is only ever compared within one group.** The planner never ranks a storage provider against a mesh, so the number does not need a scale that holds across the bundle. It does mean the value is unanchored -- a reader cannot tell from `priority: 100` alone what it is competing with -- and the description field beside it is where a package says.
+- **It is the package's own opinion, which is why it loses to both rules above it.** Every provider rates itself highly. A cluster that already made the choice, and an operator who made it deliberately, both outrank what the archive thinks of itself.
+
+Adding it is an API change rather than a convention: the field goes on `Provides` in `api/colonel-byte.dev/v1alpha1/prerequisites/spec.go`, `generate:schema` rewrites the committed schema, and `TestCommittedSchemasAreCurrent` and `TestExampleDocumentsMatchTheTypes` hold the two together.
+
+### Cluster presence is not cluster health
+
+Rule 1 reads presence in `zarf package list`, which is not the same as a working provider: a Longhorn whose deployment failed halfway is present, wins its group, and then does not provide storage. Checking `minAvailable` on its controllers first is the correct version and needs the readiness machinery the `prerequisites` role already has.
+
+The first implementation takes presence at face value. A degraded provider that wins its group is re-reconciled by `deploy_packages`' own drift check rather than silently skipped, which is the tolerable failure; the intolerable one -- deploying a second storage provider beside a half-broken first -- is what rule 1 prevents either way.
+
+## The chosen alternative drags its own dependencies in
+
+Choosing a provider is not choosing one node. `csi-aws-ebs` and `csi-aws-efs` both need the AWS Cloud Controller Manager, published separately as [`pkg-aws-ccm`](https://github.com/colonel-byte/zarf-csi-aws/tree/main/pkg-ccm), and a plan that deploys the CSI driver without it deploys a driver that cannot talk to EC2. Rook-Ceph and Longhorn need no such thing. So the dependency is not a property of the storage phase -- it is a property of one candidate in it, and it enters the graph only if that candidate wins.
+
+Nothing new is needed to find the edge. `csi-aws-ebs` names `pkg-aws-ccm` under `requires.packages`, the planner resolves it like any other package edge, and the CCM is ordered first. The CCM itself carries no `documentation:` mapping today and so ships no prerequisites document at all, which is fine on the provider side: a package with no document is a root with nothing of its own to require. It would need one only to state what it requires in turn, or to be reachable by capability rather than by name.
+
+What is new is the other half: **the plan is the subgraph reachable from the chosen candidates, not every archive in the directory.** After the groups are resolved, the planner walks forward from the winners and the ungrouped roots and keeps what it reaches; a losing candidate is dropped, and so is anything that only the loser required. Without that step a directory staging all four CSI providers deploys the AWS Cloud Controller Manager onto a bare-metal cluster that chose Rook-Ceph, because `pkg-aws-ccm` is a valid node with in-degree zero and nothing said it was optional.
+
+```mermaid
+flowchart TD
+    CCM["pkg-aws-ccm"]
+
+    subgraph storage ["Storage (id: storage)"]
+        LH["csi-longhorn<br/>chosen"]
+        EBS["csi-aws-ebs<br/>requires: pkg-aws-ccm"]
+        EFS["csi-aws-efs<br/>requires: pkg-aws-ccm"]
+        RC["csi-rook-ceph"]
+    end
+
+    App["workload-app<br/>requires id: storage"]
+
+    CCM --> EBS
+    CCM --> EFS
+    LH --> App
+
+    style LH stroke-width:3px
+    style EBS stroke-dasharray: 4 4
+    style EFS stroke-dasharray: 4 4
+    style RC stroke-dasharray: 4 4
+    style CCM stroke-dasharray: 4 4
+```
+
+Dashed nodes are pruned: the three losing candidates because they lost, and `pkg-aws-ccm` because the only packages that required it are gone. Had `csi-aws-ebs` won instead, the CCM would be solid and ordered ahead of it.
+
+A package that is required by both a winner and a loser is kept, which falls out of reachability without a special case. A package in the directory that nothing reaches is not deployed at all -- which is the right default for a staging directory, and the one thing here an operator may want to override.
+
+## The plan is the same every run, and the three things that change it
+
+The order is a pure function of the package names, their versions, the documents they carry, the list of packages the cluster reports, and the operator's preference list. Nothing else reaches it: not the order the directory is listed in, not the archive filenames, not mtimes, and not Python's per-process hash seed -- every set in the planner is iterated through `sorted()`, so a set's iteration order cannot leak into a plan. Where the graph leaves the order free, the tie is broken lexically by package name.
+
+That is a property worth stating because the failure it prevents is nearly invisible: a planner whose output followed the filesystem's listing order produces one order on the operator's laptop and another on the management node, from the same tarballs, and the difference only ever shows up as a deployment that failed in one place and not the other. `test/e2e/noncluster/testdata/deployment-order.yml` holds it by ordering a subset twice with the input reversed.
+
+Three things do change a plan, and none of them changes it quietly:
+
+1. **The cluster changed.** Rule 1 of the chain reads what is deployed, so a plan is a statement about one cluster at one moment rather than about the directory alone. In the ordinary case this is self-stabilising -- the first run picks the highest-priority candidate, and every run after it finds that candidate deployed and picks it again -- but a provider installed out of band legitimately moves the plan onto it. That is the rule working, and it is the deliberate cost of letting a running cluster outrank a bundle's opinion of itself.
+2. **The preference list changed.** `zarf_plan_preferred` is operator input and is read in the order it is written.
+3. **The directory changed.** Adding an archive can change which candidates a group has. Adding a *second archive of a package already there* -- an upgraded tarball, or the same package built for another architecture -- is refused rather than resolved, because selecting between them is exactly the choice a planner has no basis to make.
+
+What is explicitly not a source of variation is a package carrying no prerequisites document. It is a root with nothing of its own to require, which is a defined position in the graph rather than a gap to be filled differently on each run.
 
 ## Output shape and execution contract
 

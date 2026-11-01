@@ -22,17 +22,19 @@ They are a **pool, not a bundle**. A planner takes a list of archives, so each t
 
 ## What each case is fed
 
+These are the cases `test/e2e/noncluster/testdata/deployment-order.yml` runs, and the orders below are what the planner actually returns. Where more than one order satisfies the graph, the planner breaks the tie lexically, which is why `metrics-server` lands where it does rather than beside the other root.
+
 | Case                | Subset                                                                                                      | Expected                                                                   |
 | ------------------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Clean plan          | `init`, `metrics-server`, `csi-rook-ceph`, `csi-longhorn`, `gitops-fluxcd`, `gitops-argocd`, `workload-app` | `init`, `metrics-server`, `csi-rook-ceph`, `gitops-fluxcd`, `workload-app` |
-| Cluster precedence  | the same, with `csi-longhorn` reported deployed                                                             | Longhorn wins despite the lower priority                                   |
-| Operator preference | the same, with `zarf_plan_preferred: [csi-longhorn]`                                                        | Longhorn wins, without the cluster being consulted                         |
-| Priority tie        | add `csi-nfs`                                                                                               | Refused, naming the group and both candidates                              |
-| Transitive pull-in  | `init`, `metrics-server`, `csi-aws-ebs`, `pkg-aws-ccm`, `workload-app`                                      | `pkg-aws-ccm` ordered before `csi-aws-ebs`                                 |
+| Clean plan          | `init`, `metrics-server`, `csi-rook-ceph`, `csi-longhorn`, `gitops-fluxcd`, `gitops-argocd`, `workload-app` | `init`, `csi-rook-ceph`, `gitops-fluxcd`, `metrics-server`, `workload-app` |
+| Cluster precedence  | the same, with `csi-longhorn` reported deployed                                                             | `csi-longhorn` replaces `csi-rook-ceph`                                    |
+| Operator preference | the same, with `preferred=['csi-longhorn']`                                                                 | the same again, without the cluster being read                             |
+| Priority tie        | the same, plus `csi-nfs`                                                                                    | Refused, naming the group and both priority-100 candidates                 |
+| Transitive pull-in  | `init`, `metrics-server`, `csi-aws-ebs`, `pkg-aws-ccm`, `gitops-fluxcd`, `workload-app`                     | `pkg-aws-ccm` ordered before `csi-aws-ebs`                                 |
 | Pruning             | the same, plus `csi-rook-ceph`                                                                              | Rook-Ceph wins; `csi-aws-ebs` and `pkg-aws-ccm` are both dropped           |
 | Version conflict    | `init`, `csi-rook-ceph`, `workload-pinned`                                                                  | Refused, naming `<=1.0.0` against 1.18.0                                   |
-| Cycle               | `cycle-a`, `cycle-b`                                                                                        | Refused, with the trace                                                    |
-| Missing provider    | `workload-app` alone                                                                                        | Refused, naming what nothing provides                                      |
+| Cycle               | `cycle-a`, `cycle-b`                                                                                        | Refused, naming both packages                                              |
+| Missing provider    | `workload-app` alone                                                                                        | Refused, naming `init`                                                     |
 
 ## The documentless case
 

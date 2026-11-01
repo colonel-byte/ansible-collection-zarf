@@ -1,0 +1,228 @@
+---
+# What colonel_byte.zarf.deployment_order makes of the fixture bundle pool.
+#
+# The pool is read from testdata/bundle-fixture/ rather than written out here: those directories
+# are the packages, and a copy of their documents in this file would be a second thing to keep
+# current. Each case names the subset it needs, which is what lets the cycle and the version
+# conflict live in the same pool as the happy path. README.md beside the pool is the same table in
+# prose, and the two are meant to agree.
+#
+# Nothing is built and nothing is deployed: the filter takes parsed documents, so this needs no
+# zarf, no tarballs and no cluster. The paths in the pool are the archives the packages would build
+# into, and are never opened.
+#
+# Nothing here is contacted.
+- name: colonel_byte.zarf.deployment_order orders a staging directory
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    bundle: "{{ playbook_dir }}/bundle-fixture"
+    clean:
+      - init
+      - metrics-server
+      - csi-rook-ceph
+      - csi-longhorn
+      - gitops-fluxcd
+      - gitops-argocd
+      - workload-app
+
+  tasks:
+    # `find` rather than a fileglob: the lookup globs one path segment, and the packages are a
+    # directory each.
+    - name: Find every fixture package directory
+      ansible.builtin.find:
+        paths: "{{ bundle }}"
+        patterns: zarf.yaml
+        recurse: true
+      register: fixtures
+
+    - name: Read every fixture package in the pool
+      ansible.builtin.set_fact:
+        pool: >-
+          {{ pool | default({}) | combine({definition.metadata.name: {
+               'path': bundle ~ '/' ~ (item | basename) ~ '/zarf-package-'
+                       ~ definition.metadata.name ~ '-amd64-' ~ definition.metadata.version ~ '.tar.zst',
+               'name': definition.metadata.name,
+               'version': definition.metadata.version | string,
+               'prerequisites': document,
+             }}) }}
+      vars:
+        definition: "{{ lookup('file', item ~ '/zarf.yaml') | from_yaml }}"
+        # A package with no documentation mapping has no file to read, and `errors: ignore` is what
+        # makes that a missing document rather than a failed play -- which is the case
+        # metrics-server is in the pool for.
+        raw: "{{ lookup('file', item ~ '/docs/prerequisites.yaml', errors='ignore') | default('', true) }}"
+        document: "{{ (raw | from_yaml) if (raw | length > 0) else None }}"
+      loop: "{{ fixtures.files | map(attribute='path') | map('dirname') | sort }}"
+      loop_control:
+        label: "{{ item | basename }}"
+
+    - name: The pool holds every fixture package
+      ansible.builtin.assert:
+        that:
+          - pool | length == 13
+          - pool['metrics-server'].prerequisites is none
+          - pool['csi-rook-ceph'].prerequisites.provides.priority == 100
+        success_msg: ASSERTED the fixture pool was read, including the package with no document
+
+    - name: Order the clean subset
+      ansible.builtin.set_fact:
+        clean_plan: "{{ (clean | map('extract', pool) | list) | colonel_byte.zarf.deployment_order }}"
+
+    - name: The clean plan deploys the preferred candidate of each group and nothing else
+      ansible.builtin.assert:
+        that:
+          - clean_plan | map(attribute='name') | list ==
+            ['init', 'csi-rook-ceph', 'gitops-fluxcd', 'metrics-server', 'workload-app']
+          - clean_plan | map(attribute='path') | select('search', 'csi-rook-ceph') | list | length == 1
+        success_msg: ASSERTED priority picks rook-ceph and fluxcd, and the losers are dropped
+
+    # The plan has to be a function of the documents and nothing else. A staging directory is
+    # listed in whatever order the filesystem gives, and a planner whose output followed that would
+    # produce a different order on a different machine from the same tarballs -- which is the kind
+    # of difference nobody chases until a deployment fails on one node and not another.
+    - name: Order the clean subset again with the input reversed
+      ansible.builtin.set_fact:
+        reversed_plan: >-
+          {{ (clean | reverse | map('extract', pool) | list)
+             | colonel_byte.zarf.deployment_order }}
+
+    - name: The order of the input does not reach the order of the plan
+      ansible.builtin.assert:
+        that:
+          - reversed_plan == clean_plan
+        success_msg: ASSERTED the plan is the same whatever order the directory is read in
+
+    - name: Order the clean subset against a cluster already running Longhorn
+      ansible.builtin.set_fact:
+        cluster_plan: >-
+          {{ (clean | map('extract', pool) | list)
+             | colonel_byte.zarf.deployment_order(deployed=[{'package': 'csi-longhorn', 'version': '1.9.2'}]) }}
+
+    - name: A deployed candidate wins its group despite the lower priority
+      ansible.builtin.assert:
+        that:
+          - "'csi-longhorn' in (cluster_plan | map(attribute='name') | list)"
+          - "'csi-rook-ceph' not in (cluster_plan | map(attribute='name') | list)"
+        success_msg: ASSERTED the cluster's existing provider outranks the bundle's preference
+
+    - name: Order the clean subset with an operator preference
+      ansible.builtin.set_fact:
+        preferred_plan: >-
+          {{ (clean | map('extract', pool) | list)
+             | colonel_byte.zarf.deployment_order(preferred=['csi-longhorn']) }}
+
+    - name: The operator's preference wins without the cluster being consulted
+      ansible.builtin.assert:
+        that:
+          - "'csi-longhorn' in (preferred_plan | map(attribute='name') | list)"
+          - "'csi-rook-ceph' not in (preferred_plan | map(attribute='name') | list)"
+        success_msg: ASSERTED a named preference outranks provides.priority
+
+    - name: Order a subset whose chosen candidate carries a dependency
+      ansible.builtin.set_fact:
+        aws_plan: >-
+          {{ (['init', 'metrics-server', 'csi-aws-ebs', 'pkg-aws-ccm', 'gitops-fluxcd', 'workload-app']
+              | map('extract', pool) | list)
+             | colonel_byte.zarf.deployment_order }}
+
+    - name: The dependency of the chosen candidate is ordered before it
+      ansible.builtin.assert:
+        that:
+          - (aws_plan | map(attribute='name') | list).index('pkg-aws-ccm') <
+            (aws_plan | map(attribute='name') | list).index('csi-aws-ebs')
+        success_msg: ASSERTED a candidate's own prerequisite is pulled in and ordered first
+
+    - name: Order the same subset with a candidate that beats the AWS driver
+      ansible.builtin.set_fact:
+        pruned_plan: >-
+          {{ (['init', 'metrics-server', 'csi-aws-ebs', 'pkg-aws-ccm', 'csi-rook-ceph',
+               'gitops-fluxcd', 'workload-app']
+              | map('extract', pool) | list)
+             | colonel_byte.zarf.deployment_order }}
+
+    - name: The losing candidate's dependency is pruned with it
+      ansible.builtin.assert:
+        that:
+          - "'csi-aws-ebs' not in (pruned_plan | map(attribute='name') | list)"
+          - "'pkg-aws-ccm' not in (pruned_plan | map(attribute='name') | list)"
+        success_msg: ASSERTED the AWS controller is not deployed to a cluster that chose Rook-Ceph
+
+    # Everything below is a refusal. Each one is a case where deploying anything at all would be
+    # worse than stopping, and the plan is read before a single package reaches the cluster --
+    # which is the one moment where failing costs nothing.
+    - name: Two candidates at the same priority are refused
+      block:
+        - name: Order a subset holding both priority-100 storage providers
+          ansible.builtin.set_fact:
+            tie_plan: >-
+              {{ ((clean + ['csi-nfs']) | map('extract', pool) | list)
+                 | colonel_byte.zarf.deployment_order }}
+        - name: The tie was not refused
+          ansible.builtin.fail:
+            msg: "the planner picked {{ tie_plan | map(attribute='name') | list }} out of a tie"
+      rescue:
+        - name: The tie is reported as ambiguous, naming both candidates
+          ansible.builtin.assert:
+            that:
+              - "'ambiguous' in ansible_failed_result.msg"
+              - "'csi-nfs' in ansible_failed_result.msg"
+              - "'csi-rook-ceph' in ansible_failed_result.msg"
+            success_msg: ASSERTED a priority tie is refused rather than broken by sort order
+
+    - name: A version constraint nothing satisfies is refused
+      block:
+        - name: Order a subset whose consumer pins a version the pool does not hold
+          ansible.builtin.set_fact:
+            pinned_plan: >-
+              {{ (['init', 'csi-rook-ceph', 'workload-pinned'] | map('extract', pool) | list)
+                 | colonel_byte.zarf.deployment_order }}
+        - name: The version conflict was not refused
+          ansible.builtin.fail:
+            msg: "the planner accepted 1.18.0 against a <=1.0.0 constraint"
+      rescue:
+        - name: The conflict names the constraint and the version on disk
+          ansible.builtin.assert:
+            that:
+              - "'<=1.0.0' in ansible_failed_result.msg"
+              - "'1.18.0' in ansible_failed_result.msg"
+            success_msg: ASSERTED an unsatisfiable version constraint is refused
+
+    - name: A cycle is refused rather than returned as an empty plan
+      block:
+        - name: Order the two halves of the cycle
+          ansible.builtin.set_fact:
+            cycle_plan: >-
+              {{ (['cycle-a', 'cycle-b'] | map('extract', pool) | list)
+                 | colonel_byte.zarf.deployment_order }}
+        - name: The cycle was not refused
+          ansible.builtin.fail:
+            msg: "the planner returned {{ cycle_plan }} for a cycle"
+      rescue:
+        - name: The cycle names both packages in it
+          ansible.builtin.assert:
+            that:
+              - "'cycle' in ansible_failed_result.msg"
+              - "'cycle-a' in ansible_failed_result.msg"
+              - "'cycle-b' in ansible_failed_result.msg"
+            success_msg: ASSERTED a cycle is refused, not silently pruned to nothing
+
+    - name: A requirement nothing provides is refused
+      block:
+        - name: Order a consumer with none of its providers present
+          ansible.builtin.set_fact:
+            lonely_plan: >-
+              {{ (['workload-app'] | map('extract', pool) | list)
+                 | colonel_byte.zarf.deployment_order }}
+        - name: The missing provider was not refused
+          ansible.builtin.fail:
+            msg: "the planner returned {{ lonely_plan }} for a consumer with no providers"
+      rescue:
+        - name: The missing provider is named
+          ansible.builtin.assert:
+            that:
+              - "'init' in ansible_failed_result.msg"
+              - "'neither in the directory nor on the cluster' in ansible_failed_result.msg"
+            success_msg: ASSERTED a requirement nothing provides stops the plan
