@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.89.1](https://github.com/colonel-byte/ansible-collection-zarf/compare/v0.89.0...v0.89.1) (2026-11-06)
+
+
+### Build
+
+* **deps:** Bump the core group with 3 updates ([#173](https://github.com/colonel-byte/ansible-collection-zarf/issues/173)) ([08831f5](https://github.com/colonel-byte/ansible-collection-zarf/commit/08831f50b4feb643e8c9689d00f9e791cae528ef))
+
 ## [0.89.0](https://github.com/colonel-byte/ansible-collection-zarf/compare/v0.88.0...v0.89.0) (2026-11-01)
 
 
