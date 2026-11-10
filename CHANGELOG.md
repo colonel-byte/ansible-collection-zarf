@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.89.1](https://github.com/colonel-byte/ansible-collection-zarf/compare/v0.89.0...v0.89.1) (2026-11-10)
+
+
+### Build
+
+* **deps:** Bump https://github.com/astral-sh/ruff-pre-commit from v0.17.3 to 0.17.4 ([#175](https://github.com/colonel-byte/ansible-collection-zarf/issues/175)) ([2fb7840](https://github.com/colonel-byte/ansible-collection-zarf/commit/2fb784096bc4413addd3bbc346e3768a87cc8875))
+* **deps:** Bump the core group with 3 updates ([#173](https://github.com/colonel-byte/ansible-collection-zarf/issues/173)) ([08831f5](https://github.com/colonel-byte/ansible-collection-zarf/commit/08831f50b4feb643e8c9689d00f9e791cae528ef))
+* **deps:** Bump the core group with 5 updates ([#176](https://github.com/colonel-byte/ansible-collection-zarf/issues/176)) ([6fa20c1](https://github.com/colonel-byte/ansible-collection-zarf/commit/6fa20c1d442d81a0086dfe85e7245eb0b0c0e233))
+* **deps:** Bump zarf-dev/zarf/agent from v0.89.0 to v1.0.0 in /containers/ansible in the containers group ([#177](https://github.com/colonel-byte/ansible-collection-zarf/issues/177)) ([7062b65](https://github.com/colonel-byte/ansible-collection-zarf/commit/7062b651fb3a8e3a9a39d24fa2d156a42debc55e))
+
 ## [0.89.0](https://github.com/colonel-byte/ansible-collection-zarf/compare/v0.88.0...v0.89.0) (2026-11-01)
 
 
