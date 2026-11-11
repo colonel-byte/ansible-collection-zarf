@@ -20,9 +20,16 @@
 # docs/agent/choice-zarf-info-modules.md -- so without one in the image every task using those
 # three fails on a binary it cannot find. `zarf completion bash` below also comes from it.
 #
-# Keep this tag in step with the github.com/zarf-dev/zarf version in go.mod. Nothing enforces it,
-# and a mismatch means the read-only modules report on a different zarf release than the
-# converging two execute.
+# Keep this tag in step with the github.com/zarf-dev/zarf version in go.mod. The last of the
+# contract checks below enforces it, by comparing what this binary reports as its linked zarf
+# version against what the installed one prints, so a mismatch fails the image build.
+#
+# It is worth enforcing rather than remembering because the two versions are not interchangeable
+# in both directions. zarf's deployed-package Secret is written by whichever zarf wrote it and read
+# by whichever zarf reads it, and a newer writer can produce a Secret an older reader cannot parse
+# at all -- zarf#5619 compresses it, gated on an annotation only the newer reader knows to look
+# for. A skew that used to mean "the read-only modules report on a different release" now means the
+# converging modules fail on state the read-only ones created.
 #
 # It comes from the agent image rather than from a release archive because that image is already a
 # signed, multi-architecture artifact carrying the whole CLI at /zarf -- zarf's own agent runs
@@ -95,7 +102,11 @@ RUN rpm --install --verbose /tmp/rpms/*.rpm \
 # thing being proved rather than an implementation detail. zarf_kubectl is checked three ways: a
 # command kubectl does not have must be refused by name rather than printing help and reporting
 # success, and `kubectl version --client` must come back in zarf.output, which needs no cluster and
-# is the whole of what that module is. The checks that pipe read
+# is the whole of what that module is. That same answer carries zarf.version, which is the linked
+# zarf's own version rather than kubectl's, so it is where the pinned tag above is held against
+# go.mod: the module resolves it out of its build info -- see the init in
+# internal/zarfmod/libraryrunner.go -- and `zarf version` prints the installed binary's, and the
+# two have to be the same string. The checks that pipe read
 # their parameters on stdin, which is the path this collection's action plugin uses.
 # The checks below pipe the module's output into a parser, and a wrapper that crashed mid-pipe
 # must fail the build rather than be covered by the parser's exit status.
@@ -152,7 +163,7 @@ RUN ansible-galaxy collection list >/tmp/collections 2>/dev/null \
     | python3 -c 'import json,sys; r=json.load(sys.stdin); sys.exit(0 if r.get("failed") and "frobnicate" in r.get("msg","") else 1)' \
   && printf '%s' '{"args":["version","--client","-o","json"]}' \
     | ZARF_ANSIBLE_MODULE=kubectl zarf_kubectl \
-    | python3 -c 'import json,sys; r=json.load(sys.stdin); d=r.get("zarf",{}); sys.exit(0 if not r.get("failed") and json.loads(d.get("output",""))  else 1)' \
+    | python3 -c 'import json,sys; r=json.load(sys.stdin); d=r.get("zarf",{}); sys.exit(0 if not r.get("failed") and json.loads(d.get("output","")) and d.get("version") == sys.argv[1] else 1)' "$(zarf version)" \
   && zarf completion bash |  tee /etc/bash_completion.d/zarf > /dev/null
 
 ENV HOME=/home/nonroot
