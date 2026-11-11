@@ -1,12 +1,42 @@
 # Roles
 
-| Role                                         | What it does                                                                           |
-| -------------------------------------------- | -------------------------------------------------------------------------------------- |
-| [`deploy_packages`](role_deploy_packages.md) | Deploys a list of Zarf packages with component-level drift detection.                  |
-| [`packages`](role_packages.md)               | Queries the cluster via `zarf package list` and sets the `zarf_packages` fact.         |
-| [`package_inspect`](role_package_inspect.md) | Inspects a Zarf package definition and sets structured metadata facts.                 |
-| [`prerequisites`](role_prerequisites.md)     | Checks a cluster against the prerequisites a package declares, and refuses to proceed. |
-| [`state`](role_state.md)                     | Queries the cluster for the `zarf-state` Secret and sets the parsed `zarf_state` fact. |
+| Role                                         | What it does                                                                                     |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| [`deploy_packages`](role_deploy_packages.md) | Deploys a list of Zarf packages with component-level drift detection.                            |
+| [`plan_packages`](role_plan_packages.md)     | Orders a directory of package archives into a deployment plan from the prerequisites they carry. |
+| [`packages`](role_packages.md)               | Queries the cluster via `zarf package list` and sets the `zarf_packages` fact.                   |
+| [`package_inspect`](role_package_inspect.md) | Inspects a Zarf package definition and sets structured metadata facts.                           |
+| [`prerequisites`](role_prerequisites.md)     | Checks a cluster against the prerequisites a package declares, and refuses to proceed.           |
+| [`state`](role_state.md)                     | Queries the cluster for the `zarf-state` Secret and sets the parsed `zarf_state` fact.           |
+
+## plan_packages
+
+`plan_packages` turns a staging directory into the list `deploy_packages` consumes. It inspects every archive, extracts the `PackagePrerequisites` document the ones that carry it have, and sets `zarf_packages_to_deploy` to those packages in an order that satisfies what they declare -- so the two roles compose, with this one deciding what is deployed and in what order and that one deploying it.
+
+Packages declaring alternatives under one `requires.packages[].id` are resolved to a single candidate: one already on the cluster wins, then one named in `zarf_plan_preferred`, then the highest `provides.priority`. A group none of the three settles is refused rather than guessed at, and so are a cycle, a version constraint nothing satisfies and a requirement nothing provides. All of that happens before a package reaches the cluster, which is the one moment where failing costs nothing.
+
+A package no plan reaches is left out rather than deployed. That is what keeps a losing candidate's own dependencies off the cluster -- the AWS cloud controller manager is not deployed to a cluster that chose Longhorn, even though nothing else in the directory required it either.
+
+The plan is the same for the same archives, the same cluster and the same preference list, whatever order the directory is read in. [choice-prerequisites-package-dag](../agent/choice-prerequisites-package-dag.md) records the rules, the three things that do change a plan, and the cases that are deliberately refused.
+
+```yaml
+- name: Plan and deploy a staging directory
+  hosts: localhost
+  tasks:
+    - name: Work out what to deploy and in what order
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.plan_packages
+      vars:
+        zarf_plan_directory: /srv/zarf/staging
+        zarf_plan_preferred:
+          - csi-longhorn
+
+    - name: Deploy it
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.deploy_packages
+```
+
+See [role_plan_packages](role_plan_packages.md) for every variable.
 
 ## deploy_packages
 

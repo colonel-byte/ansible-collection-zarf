@@ -1,0 +1,7 @@
+---
+galaxy_info:
+  author: Allen Conlon
+  description: Order a directory of Zarf packages into a deployment plan from the prerequisites they carry
+  license: Apache-2.0
+  min_ansible_version: "2.15.0"
+dependencies: []

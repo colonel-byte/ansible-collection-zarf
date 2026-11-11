@@ -1,0 +1,36 @@
+---
+# Defaults for colonel_byte.zarf.plan_packages.
+#
+# The key order in defaults/main.yml determines the table row order in the generated documentation.
+
+# The directory holding the package archives to plan. Required.
+zarf_plan_directory: ""
+
+# The filename patterns an archive is recognised by. Anything else in the directory -- a checksum,
+# a signature, a README -- is ignored rather than inspected.
+zarf_plan_patterns:
+  - "*.tar.zst"
+  - "*.tar"
+
+# Package names in preference order, used to settle a group of alternatives the cluster has not
+# already settled. The first of them present among a group's candidates wins the group.
+zarf_plan_preferred: []
+
+# Whether to read the cluster's deployed packages before planning. A candidate already deployed
+# wins its group, so a plan made with this off is the plan for a cluster with nothing on it.
+zarf_plan_use_cluster: true
+
+# Path to the kubeconfig file used to reach the cluster.
+zarf_kubeconfig: ""
+
+# Path to the public key used to verify package signatures.
+zarf_public_key: ""
+
+# When to verify package signatures: empty string (default), never, if-possible, or always.
+zarf_verify: ""
+
+# Path to the zarf binary on the delegated host.
+zarf_binary: zarf
+
+# The node on which to execute the inspection tasks.
+zarf_delegate_to: localhost

@@ -1,0 +1,70 @@
+---
+# The role's documented interface.
+argument_specs:
+  main:
+    short_description: Order a directory of Zarf packages into a deployment plan
+    description:
+      - "Inspects every package archive in a directory, extracts the C(PackagePrerequisites) document the ones that carry it have, and sets C(zarf_packages_to_deploy) to those packages in an order that satisfies what they declare."
+      - "The result is the input C(colonel_byte.zarf.deploy_packages) consumes, so the two roles compose: this one decides what is deployed and in what order, and that one deploys it."
+      - "Packages declaring alternatives under one C(requires.packages[].id) are resolved to a single candidate. A candidate already on the cluster wins, then one named in C(zarf_plan_preferred), then the highest C(provides.priority). A group none of the three settles is an error rather than a guess."
+      - "A package no plan reaches is left out rather than deployed, which is what keeps a losing candidate's own dependencies off the cluster."
+      - "The plan is the same for the same archives, the same cluster and the same preference list, whatever order the directory is read in."
+      - "A file in the directory that is not a Zarf package is reported and skipped. A cycle, an unsatisfiable version constraint, a requirement nothing provides and an unresolved group all fail the play before anything is deployed."
+      - "Every task carries C(run_once: true) and delegates to C(zarf_delegate_to)."
+    version_added: "0.90.0"
+    options:
+      zarf_plan_directory:
+        type: str
+        default: ""
+        description:
+          - "The directory holding the package archives to plan. Required: the role refuses an empty one."
+      zarf_plan_patterns:
+        type: list
+        elements: str
+        default:
+          - "*.tar.zst"
+          - "*.tar"
+        description:
+          - "The filename patterns an archive is recognised by. Anything else in the directory - a checksum, a signature, a README - is ignored rather than inspected."
+      zarf_plan_preferred:
+        type: list
+        elements: str
+        default: []
+        description:
+          - "Package names in preference order, used to settle a group of alternatives the cluster has not already settled. The first of them present among a group's candidates wins the group."
+          - "It is where an operator states which provider this cluster should have, and it outranks the candidates' own C(provides.priority): every provider rates itself highly, and only the operator knows which one is wanted here."
+      zarf_plan_use_cluster:
+        type: bool
+        default: true
+        description:
+          - "Whether to read the cluster's deployed packages before planning. A candidate already deployed wins its group, so a plan made with this off is the plan for a cluster with nothing on it."
+      zarf_kubeconfig:
+        type: str
+        default: ""
+        description:
+          - "Path to the kubeconfig file used to reach the cluster. Left empty, uses the default kubeconfig."
+      zarf_public_key:
+        type: str
+        default: ""
+        description:
+          - "Path to the public key used to verify package signatures."
+      zarf_verify:
+        type: str
+        default: ""
+        choices:
+          - ""
+          - never
+          - if-possible
+          - always
+        description:
+          - "When to verify package signatures. Left empty, zarf's own default applies."
+      zarf_binary:
+        type: str
+        default: zarf
+        description:
+          - "Path to the C(zarf) binary on the delegated host."
+      zarf_delegate_to:
+        type: str
+        default: localhost
+        description:
+          - "The node on which to execute the inspection tasks."

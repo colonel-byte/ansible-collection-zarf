@@ -1,0 +1,28 @@
+---
+# yaml-language-server: $schema=../../../../../../../schema/zarf-v1alpha1-package-prerequisites-schema.json
+#
+# The high-priority candidate of the `gitops-engine` group. A second group exists so that a test covers a plan resolving two independent choices rather than one.
+#
+# Nothing here is contacted.
+apiVersion: colonel-byte.dev/v1alpha1
+kind: PackagePrerequisites
+metadata:
+  package: gitops-fluxcd
+  version: 2.9.5
+  description: A GitOps engine, the bundle's preferred one
+
+requires:
+  packages:
+    - name: init
+
+provides:
+  priority: 100
+  capabilities:
+    - name: gitops-engine
+      version: "2.9.5"
+    - name: fluxcd-engine
+      version: "2.9.5"
+  crds:
+    - helmreleases.helm.toolkit.fluxcd.io
+  namespaces:
+    - flux-system

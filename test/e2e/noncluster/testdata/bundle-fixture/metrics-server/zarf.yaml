@@ -1,0 +1,29 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/zarf-dev/zarf/main/zarf.schema.json
+#
+# The package with no document: no `documentation:` mapping, so `zarf package inspect documentation`
+# returns nothing for it and the planner has no prerequisites to read.
+#
+# Every other fixture in the pool carries one, which is not what a staging directory looks like --
+# any archive from outside this ecosystem arrives without one, and most of them always will. The
+# rule is that such a package is a root with nothing of its own to require, rather than an error.
+#
+# It is required by workload-app rather than left unreferenced, because the interesting half is
+# how the planner learns its identity: with no document there is no `metadata.package` to match a
+# requirement against, so the name and version have to come from the package definition itself.
+# An unreferenced documentless package would never exercise that.
+#
+# A component with no resources at all, which is the smallest thing `zarf package create` builds:
+# no files, no images, no charts, so a fixture bundle is built with no registry, no cluster and no
+# network. See README.md beside this directory for the pool these belong to.
+#
+# Nothing here is contacted.
+kind: ZarfPackageConfig
+metadata:
+  name: metrics-server
+  version: 0.8.0
+  description: A third-party package carrying no prerequisites document
+
+components:
+  - name: placeholder
+    required: true

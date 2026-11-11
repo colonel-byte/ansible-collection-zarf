@@ -1,0 +1,21 @@
+---
+# yaml-language-server: $schema=../../../../../../../schema/zarf-v1alpha1-package-prerequisites-schema.json
+#
+# A document with an empty `requires`, which is what a root looks like. Every other fixture in the pool names this one, so a plan that does not put it first is wrong.
+#
+# Nothing here is contacted.
+apiVersion: colonel-byte.dev/v1alpha1
+kind: PackagePrerequisites
+metadata:
+  package: init
+  version: 0.89.0
+  description: The initialised cluster every other fixture requires
+
+# A root requires nothing. The key is still written, because it is not optional in the format: a
+# document that omits it is not a PackagePrerequisites.
+requires: {}
+
+provides:
+  capabilities:
+    - name: cluster-init
+      version: "0.89.0"

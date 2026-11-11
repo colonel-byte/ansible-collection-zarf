@@ -1,0 +1,21 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/zarf-dev/zarf/main/zarf.schema.json
+#
+# The candidate whose own prerequisite is the thing pruning has to get right.
+#
+# A component with no resources at all, which is the smallest thing `zarf package create` builds:
+# no files, no images, no charts, so a fixture bundle is built with no registry, no cluster and no
+# network. See README.md beside this directory for the pool these belong to.
+#
+# Nothing here is contacted.
+kind: ZarfPackageConfig
+metadata:
+  name: csi-aws-ebs
+  version: 1.48.0
+  description: A storage provider carrying a dependency of its own
+documentation:
+  prerequisites: docs/prerequisites.yaml
+
+components:
+  - name: placeholder
+    required: true

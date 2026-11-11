@@ -1,0 +1,152 @@
+---
+# Main entry point for colonel_byte.zarf.plan_packages.
+#
+# Reads every archive in a directory, extracts the PackagePrerequisites document the ones that
+# carry it have, and hands the lot to colonel_byte.zarf.deployment_order, which returns them in an
+# order that satisfies what they declare. The result is set as zarf_packages_to_deploy, which is
+# what colonel_byte.zarf.deploy_packages consumes.
+#
+# Nothing here reaches the cluster except the deployed-package query, and that one is a read. The
+# plan is made before anything is deployed, which is the whole point: a directory that cannot be
+# ordered coherently fails here, with no package on the cluster, rather than halfway through.
+
+- name: Check that a directory to plan was named
+  ansible.builtin.assert:
+    that:
+      - zarf_plan_directory | length > 0
+    fail_msg: zarf_plan_directory is empty; set it to the directory holding the package archives.
+    quiet: true
+  run_once: true
+
+- name: Find the package archives in the directory
+  ansible.builtin.find:
+    paths: "{{ zarf_plan_directory }}"
+    patterns: "{{ zarf_plan_patterns }}"
+    file_type: file
+  delegate_to: "{{ zarf_delegate_to }}"
+  run_once: true
+  register: _plan_archives
+
+- name: Check that the directory holds something to plan
+  ansible.builtin.assert:
+    that:
+      - _plan_archives.files | length > 0
+    fail_msg: >-
+      {{ zarf_plan_directory }} holds no file matching {{ zarf_plan_patterns | join(', ') }}, so
+      there is nothing to plan.
+    quiet: true
+  run_once: true
+
+# Identity first, and from the package definition rather than from the prerequisites document: a
+# package carrying no document still has a name and a version, and a requirement naming it has to
+# resolve. The document's own metadata.package is the author's statement of what the document
+# describes, not the cluster's name for the package, which is why it is not read here.
+#
+# `failed_when: false` is what lets an arbitrary tarball sit in a staging directory. zarf refuses
+# anything that is not a package, and the plan skips it rather than aborting -- a signature file
+# someone renamed should not cost a deployment.
+#
+# What separates the two afterwards is `package_name`, not `failed`: `failed_when: false` sets
+# `failed` to false on every result including the ones that did fail, so a filter reading it keeps
+# the tarball that is not a package and then asks it for a name it does not have. The presence of
+# what the module returns is the only thing here that still distinguishes them.
+- name: Inspect each archive for the name and version it carries
+  colonel_byte.zarf.zarf_package_inspect:
+    package: "{{ item }}"
+    public_key: "{{ zarf_public_key if (zarf_public_key | length > 0) else omit }}"
+    verify: "{{ zarf_verify if (zarf_verify | length > 0) else omit }}"
+    kubeconfig: "{{ zarf_kubeconfig if (zarf_kubeconfig | length > 0) else omit }}"
+    zarf_binary: "{{ zarf_binary }}"
+  delegate_to: "{{ zarf_delegate_to }}"
+  run_once: true
+  failed_when: false
+  loop: "{{ _plan_archives.files | map(attribute='path') | sort }}"
+  loop_control:
+    label: "{{ item | basename }}"
+  register: _plan_inspected
+
+- name: Report the files that are not Zarf packages
+  ansible.builtin.debug:
+    msg: >-
+      {{ _plan_inspected.results | rejectattr('package_name', 'defined')
+         | map(attribute='item') | map('basename') | list }}
+      could not be inspected as Zarf packages and are left out of the plan
+  run_once: true
+  when: _plan_inspected.results | rejectattr('package_name', 'defined') | list | length > 0
+
+# A second zarf invocation per package, and it is not avoidable: `inspect` reports which
+# documentation keys a package carries and `inspect documentation` is what extracts their contents.
+# Only the archives that named a prerequisites key are extracted, so a directory of packages none
+# of which carry one costs nothing here.
+- name: Extract the prerequisites document from each package that carries one
+  colonel_byte.zarf.zarf_package_documentation:
+    package: "{{ item.item }}"
+    keys:
+      - prerequisites
+    public_key: "{{ zarf_public_key if (zarf_public_key | length > 0) else omit }}"
+    verify: "{{ zarf_verify if (zarf_verify | length > 0) else omit }}"
+    kubeconfig: "{{ zarf_kubeconfig if (zarf_kubeconfig | length > 0) else omit }}"
+    zarf_binary: "{{ zarf_binary }}"
+  delegate_to: "{{ zarf_delegate_to }}"
+  run_once: true
+  loop: "{{ _plan_inspected.results | selectattr('package_name', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.item | basename }}"
+  when: "'prerequisites' in (item.package_documentation | default({}))"
+  register: _plan_documents
+
+- name: Load the packages the cluster already has
+  ansible.builtin.include_role:
+    name: colonel_byte.zarf.packages
+  when: zarf_plan_use_cluster | bool
+
+# One entry per package: where it is, what it is called, and what it declares. A package whose
+# extraction was skipped contributes `prerequisites: none`, which the planner reads as a root with
+# nothing of its own to require rather than as a document it failed to parse.
+- name: Start the planner's input empty
+  ansible.builtin.set_fact:
+    zarf_plan_candidates: []
+  run_once: true
+
+- name: Assemble the planner's input
+  ansible.builtin.set_fact:
+    zarf_plan_candidates: >-
+      {{ zarf_plan_candidates + [{
+           'path': item.item,
+           'name': item.package_name,
+           'version': item.package_version,
+           'prerequisites': _document,
+         }] }}
+  vars:
+    # The extraction task's result for this same archive, if it ran. A package carrying no
+    # prerequisites key was skipped by its `when`, and a skipped result has no `parsed` at all --
+    # which is why the shape is tested rather than the value defaulted.
+    _extracted: >-
+      {{ _plan_documents.results | default([])
+         | rejectattr('skipped', 'defined')
+         | selectattr('item.item', 'equalto', item.item) | list }}
+    _document: >-
+      {{ (_extracted | first).parsed.prerequisites
+         if (_extracted | length > 0
+             and (_extracted | first).parsed is defined
+             and 'prerequisites' in (_extracted | first).parsed)
+         else None }}
+  loop: "{{ _plan_inspected.results | selectattr('package_name', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.item | basename }}"
+  run_once: true
+
+- name: Order the packages into a deployment plan
+  ansible.builtin.set_fact:
+    zarf_packages_to_deploy: >-
+      {{ zarf_plan_candidates
+         | colonel_byte.zarf.deployment_order(
+             deployed=(zarf_packages | default([]) if (zarf_plan_use_cluster | bool) else []),
+             preferred=zarf_plan_preferred) }}
+  run_once: true
+
+- name: Report the plan
+  ansible.builtin.debug:
+    msg: >-
+      {{ zarf_packages_to_deploy | map(attribute='name') | list }} will be deployed in that order
+  run_once: true

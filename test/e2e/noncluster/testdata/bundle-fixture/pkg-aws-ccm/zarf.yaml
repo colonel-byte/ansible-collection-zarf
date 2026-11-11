@@ -1,0 +1,26 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/zarf-dev/zarf/main/zarf.schema.json
+#
+# The dependency a storage candidate drags in with it. Nothing requires it directly: the edge comes
+# from csi-aws-ebs, which cannot talk to EC2 without it, so this package is in a plan only when that
+# candidate wins its group, and is pruned with it when it loses.
+#
+# Modelled on github.com/colonel-byte/zarf-csi-aws/tree/main/pkg-ccm, which carries no
+# `documentation:` mapping today and is to gain one.
+#
+# A component with no resources at all, which is the smallest thing `zarf package create` builds:
+# no files, no images, no charts, so a fixture bundle is built with no registry, no cluster and no
+# network. See README.md beside this directory for the pool these belong to.
+#
+# Nothing here is contacted.
+kind: ZarfPackageConfig
+metadata:
+  name: pkg-aws-ccm
+  version: 0.0.12
+  description: The AWS Cloud Controller Manager, required by the AWS CSI drivers
+documentation:
+  prerequisites: docs/prerequisites.yaml
+
+components:
+  - name: placeholder
+    required: true

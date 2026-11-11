@@ -29,7 +29,7 @@ The first two converge a cluster and are the proof. `zarf_package_remove` is the
 
 The other five read a cluster, are not part of the proof, and are plain action plugins with no binary behind them -- [choice-zarf-info-modules](docs/agent/choice-zarf-info-modules.md) records why, and why `zarf_state_info` redacts.
 
-There are five roles: `packages`, `package_inspect` and `state` wrap a read-only module apiece, [`deploy_packages`](docs/ansible/role_deploy_packages.md) manages multi-package stack deployments with drift detection, and [`prerequisites`](docs/ansible/role_prerequisites.md) refuses to deploy a package onto a cluster that cannot run it.
+There are six roles: `packages`, `package_inspect` and `state` wrap a read-only module apiece, [`plan_packages`](docs/ansible/role_plan_packages.md) orders a directory of package archives into a deployment plan from the prerequisites they carry, [`deploy_packages`](docs/ansible/role_deploy_packages.md) manages multi-package stack deployments with drift detection, and [`prerequisites`](docs/ansible/role_prerequisites.md) refuses to deploy a package onto a cluster that cannot run it.
 
 ## Package prerequisites
 

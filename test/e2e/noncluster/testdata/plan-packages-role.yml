@@ -1,0 +1,69 @@
+---
+# What colonel_byte.zarf.plan_packages makes of a staging directory of real package archives.
+#
+# The directory is built by the Go test from testdata/bundle-fixture/, and holds the clean subset
+# of the pool plus two files that are not packages: one matching the archive patterns and one not.
+# Both belong here -- a staging directory in the field holds checksums, signatures and whatever
+# else was copied beside the packages, and a planner that aborted on one of them would be useless
+# for the thing it is for.
+#
+# zarf_plan_use_cluster is false, so nothing reads a cluster and the plan is the one for a cluster
+# with nothing on it. The cluster-precedence rule is covered in testdata/deployment-order.yml,
+# which drives the planner directly and needs no archives at all.
+#
+# Nothing here is contacted.
+- name: colonel_byte.zarf.plan_packages orders a staging directory of real archives
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Plan the staging directory
+      ansible.builtin.include_role:
+        name: colonel_byte.zarf.plan_packages
+      vars:
+        zarf_plan_use_cluster: false
+
+    - name: The plan is the packages in dependency order, and only the ones a plan reaches
+      ansible.builtin.assert:
+        that:
+          - zarf_packages_to_deploy | map(attribute='name') | list ==
+            ['init', 'csi-rook-ceph', 'gitops-fluxcd', 'metrics-server', 'workload-app']
+        success_msg: ASSERTED the role plans a directory of archives into deployment order
+        fail_msg: >-
+          the plan is {{ zarf_packages_to_deploy | map(attribute='name') | list }}
+
+    - name: Every planned item names an archive that is in the directory
+      ansible.builtin.assert:
+        that:
+          - zarf_packages_to_deploy | map(attribute='path') | select('search', zarf_plan_directory)
+            | list | length == (zarf_packages_to_deploy | length)
+          - zarf_packages_to_deploy | map(attribute='version') | select('equalto', '') | list | length == 0
+        success_msg: ASSERTED each item carries the archive path and version deploy_packages needs
+
+    - name: The files that are not packages are left out of the plan
+      ansible.builtin.assert:
+        that:
+          # Both the candidate list and the plan: the tarball that is not a package matches the
+          # patterns and was inspected, so it is the one that has to be dropped on purpose rather
+          # than never looked at.
+          - zarf_plan_candidates | map(attribute='path') | select('search', 'not-a-package')
+            | list | length == 0
+          - zarf_plan_candidates | map(attribute='path') | select('search', 'checksums')
+            | list | length == 0
+        success_msg: ASSERTED a tarball that is not a Zarf package does not stop the plan
+
+    - name: The package carrying no prerequisites document is planned as a root
+      ansible.builtin.assert:
+        that:
+          - (zarf_plan_candidates | selectattr('name', 'equalto', 'metrics-server')
+             | map(attribute='prerequisites') | first) is none
+          - "'metrics-server' in (zarf_packages_to_deploy | map(attribute='name') | list)"
+        success_msg: ASSERTED a package with no documentation mapping is planned rather than refused
+
+    - name: The plan does not depend on the order the directory was read in
+      ansible.builtin.assert:
+        that:
+          - (zarf_plan_candidates | reverse | list
+             | colonel_byte.zarf.deployment_order) == zarf_packages_to_deploy
+        success_msg: ASSERTED the role's plan is the planner's plan whatever order the archives arrive in
