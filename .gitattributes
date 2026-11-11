@@ -20,4 +20,5 @@ skills/zarf-package-prerequisites/*.json linguist-generated
 # output; both are removed and rewritten wholesale by the target, and neither is edited by hand.
 examples/packages/*/upstream/**/*.yaml linguist-generated
 
-# mage generate:zarfFlags
+# nix flake lock -- machine-written and reviewed as a version bump, not as source.
+flake.lock linguist-generated
