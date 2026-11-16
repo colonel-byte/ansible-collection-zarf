@@ -1522,8 +1522,8 @@ github.com/extism/go-sdk
 # github.com/facebookincubator/nvdtools v0.1.5
 ## explicit; go 1.14
 github.com/facebookincubator/nvdtools/wfn
-# github.com/fairwindsops/pluto/v5 v5.24.4
-## explicit; go 1.27.1
+# github.com/fairwindsops/pluto/v5 v5.24.5
+## explicit; go 1.27.3
 github.com/fairwindsops/pluto/v5
 github.com/fairwindsops/pluto/v5/pkg/api
 # github.com/fatih/camelcase v1.0.0
@@ -3453,7 +3453,7 @@ go.uber.org/zap/zapcore
 # go.yaml.in/yaml/v2 v2.4.4
 ## explicit; go 1.15
 go.yaml.in/yaml/v2
-# go.yaml.in/yaml/v3 v3.0.5
+# go.yaml.in/yaml/v3 v3.0.6
 ## explicit; go 1.16
 go.yaml.in/yaml/v3
 # go.yaml.in/yaml/v4 v4.0.0-rc.6
@@ -4490,6 +4490,8 @@ k8s.io/client-go/tools/clientcmd
 k8s.io/client-go/tools/clientcmd/api
 k8s.io/client-go/tools/clientcmd/api/latest
 k8s.io/client-go/tools/clientcmd/api/v1
+k8s.io/client-go/tools/leaderelection
+k8s.io/client-go/tools/leaderelection/resourcelock
 k8s.io/client-go/tools/metrics
 k8s.io/client-go/tools/pager
 k8s.io/client-go/tools/portforward
@@ -4652,8 +4654,8 @@ k8s.io/streaming/pkg/httpstream
 k8s.io/streaming/pkg/httpstream/spdy
 k8s.io/streaming/pkg/httpstream/wsstream
 k8s.io/streaming/pkg/runtime
-# k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3
-## explicit; go 1.25
+# k8s.io/utils v0.0.0-20261023123148-ca04ba58ecab
+## explicit; go 1.26
 k8s.io/utils/buffer
 k8s.io/utils/clock
 k8s.io/utils/dump
@@ -4749,13 +4751,17 @@ sigs.k8s.io/cli-utils/pkg/kstatus/polling/statusreaders
 sigs.k8s.io/cli-utils/pkg/kstatus/status
 sigs.k8s.io/cli-utils/pkg/kstatus/watcher
 sigs.k8s.io/cli-utils/pkg/object
-# sigs.k8s.io/controller-runtime v0.24.1
+# sigs.k8s.io/controller-runtime v0.25.2
 ## explicit; go 1.26.0
+sigs.k8s.io/controller-runtime/pkg/cache/cacheapi
 sigs.k8s.io/controller-runtime/pkg/client
 sigs.k8s.io/controller-runtime/pkg/client/apiutil
+sigs.k8s.io/controller-runtime/pkg/client/internal/consistencyhandler
+sigs.k8s.io/controller-runtime/pkg/client/internal/writebarrier
 sigs.k8s.io/controller-runtime/pkg/log
+sigs.k8s.io/controller-runtime/pkg/metrics
 sigs.k8s.io/controller-runtime/pkg/scheme
-# sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730
+# sigs.k8s.io/json v0.0.0-20260909141634-11ed52e25bc5
 ## explicit; go 1.23
 sigs.k8s.io/json
 sigs.k8s.io/json/internal/golang/encoding/json
