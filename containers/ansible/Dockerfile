@@ -34,7 +34,7 @@
 # clients, Kustomize and cosign. There is no smaller artifact that is still the whole CLI.
 FROM ghcr.io/zarf-dev/zarf/agent:v1.0.1@sha256:81b6e798133e7ac055b2755baed93b45dfb8a38dfc075ca5a88d0501c3d701e0 AS zarf
 
-FROM ghcr.io/almalinux/10-base:10.2@sha256:4489fd6a9f9e01070ba4d6cad9772442cc7a4e6cabd7860395bea990b0077194
+FROM ghcr.io/almalinux/10-base:10.3@sha256:677055c28c1b3f2d31f7f83e0d7be802519b9632ce1362a2bf2f0070c176c8fd
 
 ARG TARGETPLATFORM
 # Both pins are moved by `go run ./magefiles/core generate:dnfPins`, which reads the newest
